@@ -243,9 +243,16 @@ Every call of scenario (e) was sent with exactly 100 Tgas attached, a whole matc
 
 ## Measurements (NEAR testnet, 2026-11-10)
 
-Test deployment: `game.deedlords.testnet` (code hash `CWgLMPL61iCd8VN2mTSUC3FNvMXq74TPXixXcsXHSesi`, owner
-`deedlords.testnet`, house `house.deedlords.testnet`, `max_stake` 1 NEAR). Its full-access key still exists, so the
-code can be replaced ("Known limits").
+Test deployment: `game.deedlords.testnet` (code hash `CRBA9Sf1dTadmgPPXwQS75ef84n7aV2eWjEBfiGEuWkK`, owner
+`deedlords.testnet`, house `house.deedlords.testnet`, `max_stake` 1 NEAR, `fee_bps` 250). Its full-access key still
+exists, so the code can be replaced ("Known limits").
+
+It was first deployed without the fee (code hash `CWgLMPL61iCd8VN2mTSUC3FNvMXq74TPXixXcsXHSesi`) and upgraded in place
+on 2026-11-10 by `sandbox/testnet.js run`: one transaction with the deploy (525,921 bytes) and `migrate(250)`,
+`3bWxiEx4RxRVkCrr7w5RBrh1VnQ2NMY84pGbVzfWbRii`, 40.18 Tgas, 3.996 mNEAR, result after 2.64 s, final after 4.25 s.
+Read back afterwards: the five matches settled before the upgrade still answer `get_result` (fee 0), the three played
+after it paid 0.0025 NEAR each on a 0.1 NEAR pot (`get_fees` 0.0075 NEAR), no session key and no open match were left.
+The table below was measured on the first build.
 
 Measured by `sandbox/testnet.js run` through the free public RPC `https://test.rpc.fastnear.com` (one RPC round trip:
 about 0.25 s). Protocol 88, block time 0.60 s, gas price 10^8 yoctoNEAR per gas unit, 100 Tgas attached to every
