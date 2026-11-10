@@ -1,0 +1,17 @@
+[package]
+name = "deedlords"
+version = "0.1.0"
+edition = "2021"
+description = "Deedlords NEAR contract: matches, stakes, on-chain dice, payouts and Deed NFTs around the deedlords-engine rules."
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+deedlords-engine = { path = "../engine" }
+near-sdk = "5.27.0"
+near-contract-standards = "5.27.0"
+
+[dev-dependencies]
+near-sdk = { version = "5.27.0", features = ["unit-testing"] }

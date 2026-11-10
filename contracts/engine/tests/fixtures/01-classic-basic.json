@@ -1,0 +1,215 @@
+{
+  "version": 1,
+  "seed": 1,
+  "rules": { "salary": 200, "cash": 1500, "blitz": false, "maxRounds": 0 },
+  "players": ["p0", "p1"],
+  "steps": [
+    {
+      "op": "start", "player": null, "index": null,
+      "rng": [{ "kind": "below", "n": 2, "value": 0 }],
+      "ok": true,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 0, "stage": "roll", "dice": null, "doubles": 0, "again": false, "round": 0,
+        "props": {}, "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [], "minted": 3000, "rolls": 0, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1500, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 1500, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "roll", "player": "p0", "index": null,
+      "rng": [],
+      "ok": false,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 0, "stage": "roll", "dice": null, "doubles": 0, "again": false, "round": 0,
+        "props": {}, "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [], "minted": 3000, "rolls": 0, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1500, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 1500, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "roll", "player": "p1", "index": null,
+      "rng": [{ "kind": "die", "value": 1 }, { "kind": "die", "value": 2 }],
+      "ok": true,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 0, "stage": "buy", "dice": [1, 2], "doubles": 0, "again": false, "round": 0,
+        "props": {}, "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [], "minted": 3000, "rolls": 1, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1500, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 1500, "position": 3, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "buy", "player": "p1", "index": null,
+      "rng": [],
+      "ok": true,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 0, "stage": "end", "dice": [1, 2], "doubles": 0, "again": false, "round": 0,
+        "props": { "3": { "owner": "p1", "houses": 0, "mortgaged": false } },
+        "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [], "minted": 2940, "rolls": 1, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1500, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 1440, "position": 3, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "end", "player": "p1", "index": null,
+      "rng": [],
+      "ok": true,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 1, "stage": "roll", "dice": [1, 2], "doubles": 0, "again": false, "round": 0,
+        "props": { "3": { "owner": "p1", "houses": 0, "mortgaged": false } },
+        "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [], "minted": 2940, "rolls": 1, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1500, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 1440, "position": 3, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "roll", "player": "p0", "index": null,
+      "rng": [{ "kind": "die", "value": 3 }, { "kind": "die", "value": 4 }, { "kind": "below", "n": 14, "value": 9 }],
+      "ok": true,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 1, "stage": "end", "dice": [3, 4], "doubles": 0, "again": false, "round": 0,
+        "props": { "3": { "owner": "p1", "houses": 0, "mortgaged": false } },
+        "debt": null, "pendingMove": null, "card": { "deck": "chance", "index": 9 }, "buildAt": null, "builtThisTurn": [], "minted": 3090, "rolls": 2, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1650, "position": 7, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 1440, "position": 3, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "end", "player": "p0", "index": null,
+      "rng": [],
+      "ok": true,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 0, "stage": "roll", "dice": [3, 4], "doubles": 0, "again": false, "round": 1,
+        "props": { "3": { "owner": "p1", "houses": 0, "mortgaged": false } },
+        "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [], "minted": 3090, "rolls": 2, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1650, "position": 7, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 1440, "position": 3, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "roll", "player": "p1", "index": null,
+      "rng": [{ "kind": "die", "value": 2 }, { "kind": "die", "value": 2 }, { "kind": "below", "n": 14, "value": 6 }],
+      "ok": true,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 0, "stage": "end", "dice": [2, 2], "doubles": 1, "again": true, "round": 1,
+        "props": { "3": { "owner": "p1", "houses": 0, "mortgaged": false } },
+        "debt": null, "pendingMove": null, "card": { "deck": "chance", "index": 6 }, "buildAt": null, "builtThisTurn": [], "minted": 2890, "rolls": 3, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1650, "position": 7, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 1240, "position": 4, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "end", "player": "p1", "index": null,
+      "rng": [],
+      "ok": false,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 0, "stage": "end", "dice": [2, 2], "doubles": 1, "again": true, "round": 1,
+        "props": { "3": { "owner": "p1", "houses": 0, "mortgaged": false } },
+        "debt": null, "pendingMove": null, "card": { "deck": "chance", "index": 6 }, "buildAt": null, "builtThisTurn": [], "minted": 2890, "rolls": 3, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1650, "position": 7, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 1240, "position": 4, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "roll", "player": "p1", "index": null,
+      "rng": [{ "kind": "die", "value": 5 }, { "kind": "die", "value": 6 }],
+      "ok": true,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 0, "stage": "buy", "dice": [5, 6], "doubles": 1, "again": false, "round": 1,
+        "props": { "3": { "owner": "p1", "houses": 0, "mortgaged": false } },
+        "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [], "minted": 2890, "rolls": 4, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1650, "position": 7, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 1240, "position": 15, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "skip", "player": "p1", "index": null,
+      "rng": [],
+      "ok": true,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 0, "stage": "end", "dice": [5, 6], "doubles": 1, "again": false, "round": 1,
+        "props": { "3": { "owner": "p1", "houses": 0, "mortgaged": false } },
+        "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [], "minted": 2890, "rolls": 4, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1650, "position": 7, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 1240, "position": 15, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "end", "player": "p1", "index": null,
+      "rng": [],
+      "ok": true,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 1, "stage": "roll", "dice": [5, 6], "doubles": 0, "again": false, "round": 1,
+        "props": { "3": { "owner": "p1", "houses": 0, "mortgaged": false } },
+        "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [], "minted": 2890, "rolls": 4, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1650, "position": 7, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 1240, "position": 15, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "build", "player": "p1", "index": 3,
+      "rng": [],
+      "ok": false,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 1, "stage": "roll", "dice": [5, 6], "doubles": 0, "again": false, "round": 1,
+        "props": { "3": { "owner": "p1", "houses": 0, "mortgaged": false } },
+        "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [], "minted": 2890, "rolls": 4, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1650, "position": 7, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 1240, "position": 15, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "mortgage", "player": "p1", "index": 3,
+      "rng": [],
+      "ok": true,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 1, "stage": "roll", "dice": [5, 6], "doubles": 0, "again": false, "round": 1,
+        "props": { "3": { "owner": "p1", "houses": 0, "mortgaged": true } },
+        "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [], "minted": 2920, "rolls": 4, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1650, "position": 7, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 1270, "position": 15, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "sell", "player": "p0", "index": -1,
+      "rng": [],
+      "ok": false,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 1, "stage": "roll", "dice": [5, 6], "doubles": 0, "again": false, "round": 1,
+        "props": { "3": { "owner": "p1", "houses": 0, "mortgaged": true } },
+        "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [], "minted": 2920, "rolls": 4, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1650, "position": 7, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 1270, "position": 15, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    }
+  ]
+}

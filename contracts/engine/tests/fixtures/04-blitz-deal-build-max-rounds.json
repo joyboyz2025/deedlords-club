@@ -1,0 +1,313 @@
+{
+  "version": 1,
+  "seed": 4,
+  "rules": { "salary": 200, "cash": 2000, "blitz": true, "maxRounds": 1 },
+  "players": ["p0", "p1"],
+  "steps": [
+    {
+      "op": "start", "player": null, "index": null,
+      "rng": [
+        { "kind": "below", "n": 2, "value": 0 },
+        { "kind": "below", "n": 28, "value": 0 },
+        { "kind": "below", "n": 27, "value": 26 },
+        { "kind": "below", "n": 26, "value": 25 },
+        { "kind": "below", "n": 25, "value": 24 },
+        { "kind": "below", "n": 24, "value": 23 },
+        { "kind": "below", "n": 23, "value": 22 },
+        { "kind": "below", "n": 22, "value": 21 },
+        { "kind": "below", "n": 21, "value": 20 },
+        { "kind": "below", "n": 20, "value": 19 },
+        { "kind": "below", "n": 19, "value": 18 },
+        { "kind": "below", "n": 18, "value": 17 },
+        { "kind": "below", "n": 17, "value": 16 },
+        { "kind": "below", "n": 16, "value": 15 },
+        { "kind": "below", "n": 15, "value": 14 },
+        { "kind": "below", "n": 14, "value": 13 },
+        { "kind": "below", "n": 13, "value": 12 },
+        { "kind": "below", "n": 12, "value": 11 },
+        { "kind": "below", "n": 11, "value": 10 },
+        { "kind": "below", "n": 10, "value": 9 },
+        { "kind": "below", "n": 9, "value": 8 },
+        { "kind": "below", "n": 8, "value": 7 },
+        { "kind": "below", "n": 7, "value": 6 },
+        { "kind": "below", "n": 6, "value": 5 },
+        { "kind": "below", "n": 5, "value": 4 },
+        { "kind": "below", "n": 4, "value": 3 },
+        { "kind": "below", "n": 3, "value": 2 },
+        { "kind": "below", "n": 2, "value": 0 }
+      ],
+      "ok": true,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 0, "stage": "roll", "dice": null, "doubles": 0, "again": false, "round": 0,
+        "props": {
+          "3": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "5": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "6": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "8": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "9": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "11": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "12": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "13": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "14": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "39": { "owner": "p1", "houses": 0, "mortgaged": false }
+        },
+        "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [], "minted": 2430, "rolls": 0, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1290, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 1140, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "build", "player": "p1", "index": 3,
+      "rng": [],
+      "ok": true,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 0, "stage": "roll", "dice": null, "doubles": 0, "again": false, "round": 0,
+        "props": {
+          "3": { "owner": "p1", "houses": 1, "mortgaged": false },
+          "5": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "6": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "8": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "9": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "11": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "12": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "13": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "14": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "39": { "owner": "p1", "houses": 0, "mortgaged": false }
+        },
+        "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [3], "minted": 2380, "rolls": 0, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1290, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 1090, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "build", "player": "p1", "index": 3,
+      "rng": [],
+      "ok": false,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 0, "stage": "roll", "dice": null, "doubles": 0, "again": false, "round": 0,
+        "props": {
+          "3": { "owner": "p1", "houses": 1, "mortgaged": false },
+          "5": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "6": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "8": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "9": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "11": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "12": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "13": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "14": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "39": { "owner": "p1", "houses": 0, "mortgaged": false }
+        },
+        "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [3], "minted": 2380, "rolls": 0, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1290, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 1090, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "build", "player": "p1", "index": 5,
+      "rng": [],
+      "ok": false,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 0, "stage": "roll", "dice": null, "doubles": 0, "again": false, "round": 0,
+        "props": {
+          "3": { "owner": "p1", "houses": 1, "mortgaged": false },
+          "5": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "6": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "8": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "9": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "11": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "12": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "13": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "14": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "39": { "owner": "p1", "houses": 0, "mortgaged": false }
+        },
+        "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [3], "minted": 2380, "rolls": 0, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1290, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 1090, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "build", "player": "p1", "index": 39,
+      "rng": [],
+      "ok": true,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 0, "stage": "roll", "dice": null, "doubles": 0, "again": false, "round": 0,
+        "props": {
+          "3": { "owner": "p1", "houses": 1, "mortgaged": false },
+          "5": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "6": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "8": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "9": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "11": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "12": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "13": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "14": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "39": { "owner": "p1", "houses": 1, "mortgaged": false }
+        },
+        "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [3, 39], "minted": 2180, "rolls": 0, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1290, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 890, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "build", "player": "p0", "index": 9,
+      "rng": [],
+      "ok": false,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 0, "stage": "roll", "dice": null, "doubles": 0, "again": false, "round": 0,
+        "props": {
+          "3": { "owner": "p1", "houses": 1, "mortgaged": false },
+          "5": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "6": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "8": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "9": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "11": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "12": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "13": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "14": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "39": { "owner": "p1", "houses": 1, "mortgaged": false }
+        },
+        "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [3, 39], "minted": 2180, "rolls": 0, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1290, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 890, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "roll", "player": "p1", "index": null,
+      "rng": [{ "kind": "die", "value": 4 }, { "kind": "die", "value": 5 }],
+      "ok": true,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 0, "stage": "end", "dice": [4, 5], "doubles": 0, "again": false, "round": 0,
+        "props": {
+          "3": { "owner": "p1", "houses": 1, "mortgaged": false },
+          "5": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "6": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "8": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "9": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "11": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "12": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "13": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "14": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "39": { "owner": "p1", "houses": 1, "mortgaged": false }
+        },
+        "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [3, 39], "minted": 2180, "rolls": 1, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1300, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 880, "position": 9, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "end", "player": "p1", "index": null,
+      "rng": [],
+      "ok": true,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 1, "stage": "roll", "dice": [4, 5], "doubles": 0, "again": false, "round": 0,
+        "props": {
+          "3": { "owner": "p1", "houses": 1, "mortgaged": false },
+          "5": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "6": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "8": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "9": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "11": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "12": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "13": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "14": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "39": { "owner": "p1", "houses": 1, "mortgaged": false }
+        },
+        "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [], "minted": 2180, "rolls": 1, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1300, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 880, "position": 9, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "build", "player": "p0", "index": 11,
+      "rng": [],
+      "ok": true,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 1, "stage": "roll", "dice": [4, 5], "doubles": 0, "again": false, "round": 0,
+        "props": {
+          "3": { "owner": "p1", "houses": 1, "mortgaged": false },
+          "5": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "6": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "8": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "9": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "11": { "owner": "p0", "houses": 1, "mortgaged": false },
+          "12": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "13": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "14": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "39": { "owner": "p1", "houses": 1, "mortgaged": false }
+        },
+        "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [11], "minted": 2080, "rolls": 1, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1200, "position": 0, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 880, "position": 9, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "roll", "player": "p0", "index": null,
+      "rng": [{ "kind": "die", "value": 1 }, { "kind": "die", "value": 2 }],
+      "ok": true,
+      "state": {
+        "phase": "playing", "order": ["p1", "p0"], "turn": 1, "stage": "end", "dice": [1, 2], "doubles": 0, "again": false, "round": 0,
+        "props": {
+          "3": { "owner": "p1", "houses": 1, "mortgaged": false },
+          "5": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "6": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "8": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "9": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "11": { "owner": "p0", "houses": 1, "mortgaged": false },
+          "12": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "13": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "14": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "39": { "owner": "p1", "houses": 1, "mortgaged": false }
+        },
+        "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [11], "minted": 2080, "rolls": 2, "result": null,
+        "players": [
+          { "id": "p0", "cash": 1170, "position": 3, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 910, "position": 9, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    },
+    {
+      "op": "end", "player": "p0", "index": null,
+      "rng": [],
+      "ok": true,
+      "state": {
+        "phase": "ended", "order": ["p1", "p0"], "turn": 1, "stage": "end", "dice": [1, 2], "doubles": 0, "again": false, "round": 1,
+        "props": {
+          "3": { "owner": "p1", "houses": 1, "mortgaged": false },
+          "5": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "6": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "8": { "owner": "p1", "houses": 0, "mortgaged": false },
+          "9": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "11": { "owner": "p0", "houses": 1, "mortgaged": false },
+          "12": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "13": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "14": { "owner": "p0", "houses": 0, "mortgaged": false },
+          "39": { "owner": "p1", "houses": 1, "mortgaged": false }
+        },
+        "debt": null, "pendingMove": null, "card": null, "buildAt": null, "builtThisTurn": [11], "minted": 2080, "rolls": 2,
+        "result": { "reason": "time", "ranking": ["p1", "p0"] },
+        "players": [
+          { "id": "p0", "cash": 1170, "position": 3, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null },
+          { "id": "p1", "cash": 910, "position": 9, "jail": null, "freeCards": [], "bankrupt": false, "outAt": null }
+        ]
+      }
+    }
+  ]
+}

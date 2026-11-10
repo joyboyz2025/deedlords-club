@@ -1,0 +1,14 @@
+{
+  "name": "deedlords-sandbox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local near-sandbox integration test for the Deedlords contract. Never touches testnet or mainnet.",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node run.js ../target/wasm32-unknown-unknown/release/deedlords.wasm"
+  },
+  "dependencies": {
+    "near-api-js": "5.1.1",
+    "near-sandbox": "0.3.5"
+  }
+}
