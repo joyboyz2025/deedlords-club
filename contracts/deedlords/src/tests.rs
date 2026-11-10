@@ -17,7 +17,8 @@ use near_sdk::{env, testing_env, AccountId, Gas, NearToken};
 use crate::autoplay::{apply_logged, liquidation_step, play_turn, resolve_debt, timeout_step, Plan, Step};
 use crate::rng::{below_from_u32, below_limit, die_from_byte, near_sha256, ChainRng};
 use crate::{
-    current_seat, split_pot, Contract, Match, RulesArg, Status, ABANDON_AFTER_NS, DEFAULT_TURN_SECONDS, STORAGE_RESERVE_BYTES,
+    current_seat, split_pot, Contract, Match, RulesArg, Status, ABANDON_AFTER_NS, DEFAULT_TURN_SECONDS, MAX_STAKE, MIN_MOVE_GAS,
+    STORAGE_RESERVE_BYTES,
 };
 
 // ----- Environment helpers -------------------------------------------------------------------------------------------
@@ -33,6 +34,10 @@ const SEC: u64 = 1_000_000_000;
 const NEAR: u128 = 10u128.pow(24);
 const STAKE: u128 = NEAR;
 const STORAGE: u128 = NEAR / 10;
+/// Stake cap of the test deployment.
+const CAP: u128 = 100 * NEAR;
+/// The longest match the contract accepts, for tests where the round limit plays no part.
+const MANY_ROUNDS: u8 = 255;
 
 fn acc(id: &str) -> AccountId {
     id.parse().unwrap()
@@ -46,6 +51,10 @@ fn seed(n: u64) -> [u8; 32] {
 }
 
 fn context(predecessor: &str, deposit: u128, now: u64, random: [u8; 32]) {
+    context_with_gas(predecessor, deposit, now, random, 300);
+}
+
+fn context_with_gas(predecessor: &str, deposit: u128, now: u64, random: [u8; 32], tgas: u64) {
     let mut builder = VMContextBuilder::new();
     builder
         .current_account_id(acc(CONTRACT))
@@ -55,7 +64,7 @@ fn context(predecessor: &str, deposit: u128, now: u64, random: [u8; 32]) {
         .block_timestamp(now)
         .random_seed(random)
         .account_balance(NearToken::from_near(10_000))
-        .prepaid_gas(Gas::from_tgas(300));
+        .prepaid_gas(Gas::from_tgas(tgas));
     testing_env!(builder.build());
 }
 
@@ -74,12 +83,16 @@ impl T {
 
     fn with_seed(base: u64) -> Self {
         context(CONTRACT, 0, NOW0, seed(base));
-        T { c: Contract::new(acc(OWNER), acc(HOUSE)), now: NOW0, calls: 0, base }
+        T { c: Contract::new(acc(OWNER), acc(HOUSE), U128(CAP)), now: NOW0, calls: 0, base }
     }
 
     fn call(&mut self, who: &str, deposit: u128) {
+        self.call_with_gas(who, deposit, 300);
+    }
+
+    fn call_with_gas(&mut self, who: &str, deposit: u128, tgas: u64) {
         self.calls += 1;
-        context(who, deposit, self.now, seed(self.base.wrapping_mul(1_000_003).wrapping_add(self.calls)));
+        context_with_gas(who, deposit, self.now, seed(self.base.wrapping_mul(1_000_003).wrapping_add(self.calls)), tgas);
     }
 
     fn create(&mut self, id: &str, seats: u8, split: Vec<u16>, rules: RulesArg, solo: Option<&str>) {
@@ -126,8 +139,8 @@ fn blitz(max_rounds: u8) -> RulesArg {
     RulesArg { salary: 200, cash: 2000, blitz: true, max_rounds }
 }
 
-fn expect_panic<F: FnOnce()>(f: F, needle: &str) {
-    let error = catch_unwind(AssertUnwindSafe(f)).expect_err("expected the call to panic");
+fn expect_panic<R, F: FnOnce() -> R>(f: F, needle: &str) {
+    let error = catch_unwind(AssertUnwindSafe(f)).err().expect("expected the call to panic");
     let message = error
         .downcast_ref::<String>()
         .cloned()
@@ -227,28 +240,43 @@ fn create_join_and_auto_start() {
 #[test]
 fn create_match_validates_its_arguments() {
     let mut t = T::new();
-    t.create("dup", 2, vec![10000], classic(0), None);
+    t.create("dup", 2, vec![10000], classic(MANY_ROUNDS), None);
     type Case = (&'static str, u8, Vec<u16>, RulesArg, u128, &'static str);
     let cases: Vec<Case> = vec![
-        ("dup", 2, vec![10000], classic(0), STORAGE, "already used"),
-        ("bad id!", 2, vec![10000], classic(0), STORAGE, "may only contain"),
-        ("", 2, vec![10000], classic(0), STORAGE, "1..=32"),
-        ("x", 1, vec![10000], classic(0), STORAGE, "seats must be 2..=4"),
-        ("x", 5, vec![10000], classic(0), STORAGE, "seats must be 2..=4"),
-        ("x", 2, vec![5000, 4000], classic(0), STORAGE, "sum to 10000"),
-        ("x", 2, vec![5000, 3000, 2000], classic(0), STORAGE, "1..=seats"),
+        ("dup", 2, vec![10000], classic(MANY_ROUNDS), STORAGE, "already used"),
+        ("bad id!", 2, vec![10000], classic(MANY_ROUNDS), STORAGE, "may only contain"),
+        ("", 2, vec![10000], classic(MANY_ROUNDS), STORAGE, "1..=32"),
+        ("x", 1, vec![10000], classic(MANY_ROUNDS), STORAGE, "seats must be 2..=4"),
+        ("x", 5, vec![10000], classic(MANY_ROUNDS), STORAGE, "seats must be 2..=4"),
+        ("x", 2, vec![5000, 4000], classic(MANY_ROUNDS), STORAGE, "sum to 10000"),
+        ("x", 2, vec![5000, 3000, 2000], classic(MANY_ROUNDS), STORAGE, "1..=seats"),
         ("x", 4, vec![10000], RulesArg { cash: 1669, ..blitz(3) }, STORAGE, "cash >= 1670"),
-        ("x", 2, vec![10000], RulesArg { cash: 0, ..classic(0) }, STORAGE, "rules.cash"),
-        ("x", 2, vec![10000], RulesArg { salary: -1, ..classic(0) }, STORAGE, "rules.salary"),
-        ("x", 2, vec![10000], classic(0), 1, "attach at least"),
+        ("x", 2, vec![10000], RulesArg { cash: 0, ..classic(MANY_ROUNDS) }, STORAGE, "rules.cash"),
+        ("x", 2, vec![10000], RulesArg { salary: -1, ..classic(MANY_ROUNDS) }, STORAGE, "rules.salary"),
+        ("x", 2, vec![10000], classic(0), STORAGE, "rules.max_rounds must be 1..=255"),
+        ("x", 2, vec![10000], classic(MANY_ROUNDS), 1, "attach at least"),
     ];
     for (id, seats, split, rules, deposit, needle) in cases {
         t.call(ALICE, deposit);
         expect_panic(|| t.c.create_match(id.into(), seats, U128(STAKE), split, rules, None, None), needle);
     }
     t.call(ALICE, STORAGE);
-    expect_panic(|| t.c.create_match("x".into(), 2, U128(STAKE), vec![10000], classic(0), None, Some(0)), "turn_seconds");
+    expect_panic(|| t.c.create_match("x".into(), 2, U128(STAKE), vec![10000], classic(MANY_ROUNDS), None, Some(0)), "turn_seconds");
+    // The stake cap of the deployment, and the house as the solo player.
+    t.call(ALICE, STORAGE);
+    expect_panic(
+        || t.c.create_match("x".into(), 2, U128(CAP + 1), vec![10000], classic(MANY_ROUNDS), None, None),
+        &format!("stake too large: this contract allows at most {CAP} yoctoNEAR"),
+    );
+    t.call(ALICE, STORAGE);
+    expect_panic(
+        || t.c.create_match("x".into(), 2, U128(STAKE), vec![10000], classic(MANY_ROUNDS), Some(acc(HOUSE)), None),
+        "the house cannot be the solo player",
+    );
     assert!(t.c.matches.get("x").is_none(), "a rejected create leaves nothing behind");
+    t.call(ALICE, STORAGE);
+    t.c.create_match("cap".into(), 2, U128(CAP), vec![10000], classic(1), None, None);
+    assert_eq!(t.m("cap").stake.as_yoctonear(), CAP, "a stake of exactly the cap is accepted");
     // Blitz with exactly enough cash, and the camelCase rules field, are accepted.
     let rules: RulesArg = near_sdk::serde_json::from_str(r#"{"salary":200,"cash":1670,"blitz":true,"maxRounds":3}"#).unwrap();
     assert_eq!(rules.max_rounds, 3);
@@ -264,13 +292,34 @@ fn solo_matches_accept_only_the_solo_player_and_the_house() {
     t.call(BOB, STAKE);
     expect_panic(|| t.c.join("solo".into(), 0), "solo match");
     t.join("solo", HOUSE, 1);
-    t.join("solo", HOUSE, 2);
     t.join("solo", ALICE, 0);
+    // One seat for the solo player: every other seat is the house's.
+    t.call(ALICE, STAKE);
+    expect_panic(|| t.c.join("solo".into(), 2), "the solo player backs exactly one seat");
+    t.join("solo", HOUSE, 2);
     assert_eq!(t.m("solo").status, Status::Lobby);
     t.join("solo", HOUSE, 3);
     let m = t.m("solo");
     assert_eq!(m.status, Status::Playing);
     assert_eq!(m.game.props.len(), 20, "Blitz deals 5 squares to each of the 4 seats");
+
+    // The house cannot fill the match on its own either: the last free seat waits for the solo player.
+    t.create("duel", 2, vec![10000], classic(3), Some(ALICE));
+    t.join("duel", HOUSE, 1);
+    t.call(HOUSE, STAKE);
+    expect_panic(|| t.c.join("duel".into(), 0), "the last free seat is the solo player's");
+    t.join("duel", ALICE, 0);
+    let m = t.m("duel");
+    assert_eq!(m.status, Status::Playing);
+    assert_eq!(m.seats[0].backer, Some(acc(ALICE)));
+    assert_eq!(m.seats[1].backer, Some(acc(HOUSE)));
+    // After leaving, the solo player may sit down again (still one seat).
+    t.create("again", 3, vec![10000], classic(3), Some(ALICE));
+    t.join("again", ALICE, 2);
+    t.call(ALICE, 0);
+    t.c.leave("again".into(), 2);
+    t.join("again", ALICE, 0);
+    assert_eq!(t.m("again").seats[0].backer, Some(acc(ALICE)));
 }
 
 #[test]
@@ -296,7 +345,7 @@ fn leave_refunds_the_stake_before_the_start() {
 #[test]
 fn play_requires_the_backer_or_the_driver_of_the_seat() {
     let mut t = T::new();
-    started_pair(&mut t, 0);
+    started_pair(&mut t, MANY_ROUNDS);
     let (s, backer) = t.current("m");
     let (other_seat, other) = (1 - s, if backer == ALICE { BOB } else { ALICE });
 
@@ -319,8 +368,10 @@ fn play_requires_the_backer_or_the_driver_of_the_seat() {
     t.c.set_driver("m".into(), s as u8, Some(acc(CAROL)));
     assert_eq!(event("set_driver")["data"]["driver"], CAROL);
     t.call(CAROL, 0);
-    t.c.play("m".into(), s as u8, vec![Action::Roll]);
+    let outcome = t.c.play("m".into(), s as u8, vec![Action::Roll]);
+    assert_eq!(outcome, near_sdk::serde_json::json!({ "applied": 1, "rejected": null }));
     let actions = event("actions");
+    assert!(actions["data"].get("rejected").is_none(), "no `rejected` key when every action was applied");
     assert_eq!(actions["data"]["kind"], "play");
     assert_eq!(actions["data"]["by"], CAROL);
     assert_eq!(actions["data"]["steps"][0]["action"], "Roll");
@@ -335,24 +386,103 @@ fn play_requires_the_backer_or_the_driver_of_the_seat() {
 }
 
 #[test]
-fn an_illegal_action_rejects_the_whole_call() {
+fn a_rejected_action_reverts_the_call_only_while_nothing_was_drawn() {
     let mut t = T::new();
-    started_pair(&mut t, 0);
+    started_pair(&mut t, MANY_ROUNDS);
     let (s, backer) = t.current("m");
     let before = t.c.get_match("m".into()).unwrap();
     let draws = t.m("m").draws;
+    // Bankrupt is illegal without a debt, and no die was rolled before it: nothing of the call survives.
     t.call(&backer, 0);
-    // The roll succeeds inside the call, then Bankrupt is illegal (no debt): nothing of the call survives.
-    expect_panic(|| t.c.play("m".into(), s as u8, vec![Action::Roll, Action::Bankrupt]), "action 1 (bankrupt) rejected");
+    expect_panic(|| t.c.play("m".into(), s as u8, vec![Action::Bankrupt, Action::Roll]), "action 0 (bankrupt) rejected");
     assert_eq!(t.c.get_match("m".into()).unwrap(), before);
     assert_eq!(t.m("m").draws, draws);
     assert!(events().iter().all(|e| e["event"] != "actions"));
+
+    // The same illegal action after a roll: the roll stands, the rest of the list is dropped and reported. If the
+    // call reverted here, appending an action that fails on unwanted outcomes would be a free re-roll.
+    t.call(&backer, 0);
+    let outcome = t.c.play("m".into(), s as u8, vec![Action::Roll, Action::Bankrupt, Action::End]);
+    assert_eq!(outcome["applied"], 1);
+    assert_eq!(outcome["rejected"]["index"], 1);
+    assert_eq!(outcome["rejected"]["action"], "Bankrupt");
+    assert!(!outcome["rejected"]["error"].as_str().unwrap().is_empty());
+    let m = t.m("m");
+    assert_eq!(m.game.rolls, 1, "the roll is kept");
+    assert!(m.draws > draws);
+    let actions = event("actions");
+    let steps = actions["data"]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0]["action"], "Roll");
+    assert_eq!(actions["data"]["rejected"], outcome["rejected"]);
+    assert_eq!(t.c.get_match("m".into()).unwrap()["game"], t.m("m").game.snapshot(), "the kept roll is what the view shows");
+}
+
+#[test]
+fn calls_that_may_roll_need_the_gas_floor_attached() {
+    let floor = MIN_MOVE_GAS.as_tgas();
+    let needle = format!("attach at least {floor} Tgas");
+    let mut t = T::new();
+    t.create("m", 2, vec![7000, 3000], classic(MANY_ROUNDS), None);
+    t.call_with_gas(ALICE, STAKE, floor - 1);
+    expect_panic(|| t.c.join("m".into(), 0), &needle);
+    t.join("m", ALICE, 0);
+    t.join("m", BOB, 1);
+    let (s, backer) = t.current("m");
+    let before = t.c.get_match("m".into()).unwrap();
+    t.call_with_gas(&backer, 0, floor - 1);
+    expect_panic(|| t.c.play("m".into(), s as u8, vec![Action::Roll]), &needle);
+    t.call_with_gas(&backer, 0, floor - 1);
+    expect_panic(|| t.c.turn("m".into(), s as u8, Plan::default()), &needle);
+    t.now = t.m("m").turn_deadline + 1;
+    t.call_with_gas(CAROL, 0, floor - 1);
+    expect_panic(|| t.c.timeout("m".into()), &needle);
+    assert_eq!(t.c.get_match("m".into()).unwrap(), before);
+    // Exactly the floor is enough.
+    t.call_with_gas(&backer, 0, floor);
+    t.c.play("m".into(), s as u8, vec![Action::Roll]);
+    assert_eq!(t.m("m").game.rolls, 1);
+}
+
+#[test]
+fn only_a_roll_or_a_change_of_seat_restarts_the_turn_clock() {
+    let mut t = T::new();
+    t.create("b", 2, vec![10000], blitz(MANY_ROUNDS), None);
+    t.join("b", ALICE, 0);
+    t.join("b", BOB, 1);
+    let (s, backer) = t.current("b");
+    let square = *t.m("b").game.props.iter().find(|(_, o)| o.owner == format!("s{s}")).unwrap().0;
+    let deadline = t.m("b").turn_deadline;
+    // The seat to move mortgages and redeems again and again: free moves, which must not buy it more time.
+    for _ in 0..3 {
+        t.now += 2 * SEC;
+        t.call(&backer, 0);
+        t.c.play("b".into(), s as u8, vec![Action::Mortgage(square), Action::Redeem(square)]);
+        assert_eq!(t.m("b").turn_deadline, deadline, "free moves do not extend the turn");
+    }
+    // Its roll does.
+    t.now += 2 * SEC;
+    t.call(&backer, 0);
+    t.c.play("b".into(), s as u8, vec![Action::Roll]);
+    let after_roll = t.m("b").turn_deadline;
+    assert_eq!(after_roll, t.now + 20 * SEC);
+    // And after the roll, free moves again leave the deadline alone.
+    if current_seat(&t.m("b").game) == Some(s) {
+        t.now += 2 * SEC;
+        t.call(&backer, 0);
+        t.c.play("b".into(), s as u8, vec![Action::Mortgage(square)]);
+        assert_eq!(t.m("b").turn_deadline, after_roll);
+    }
+    // Once the deadline passes, anyone moves the game on.
+    t.now = after_roll + 1;
+    t.call(CAROL, 0);
+    t.c.timeout("b".into());
 }
 
 #[test]
 fn out_of_turn_sales_follow_the_engine_and_do_not_extend_the_deadline() {
     let mut t = T::new();
-    t.create("b", 2, vec![10000], blitz(0), None);
+    t.create("b", 2, vec![10000], blitz(MANY_ROUNDS), None);
     t.join("b", ALICE, 0);
     t.join("b", BOB, 1);
     let (s, _) = t.current("b");
@@ -374,7 +504,7 @@ fn out_of_turn_sales_follow_the_engine_and_do_not_extend_the_deadline() {
 fn turn_plays_a_whole_turn_deterministically() {
     fn scenario(base: u64) -> (Value, Vec<Value>) {
         let mut t = T::with_seed(base);
-        t.create("d", 3, vec![6000, 4000], blitz(0), None);
+        t.create("d", 3, vec![6000, 4000], blitz(MANY_ROUNDS), None);
         t.join("d", ALICE, 0);
         t.join("d", BOB, 1);
         t.join("d", CAROL, 2);
@@ -405,7 +535,7 @@ fn turn_plays_a_whole_turn_deterministically() {
     assert_ne!(a.0["game"], c.0["game"], "another seed plays differently");
 
     let mut t = T::new();
-    started_pair(&mut t, 0);
+    started_pair(&mut t, MANY_ROUNDS);
     let (s, backer) = t.current("m");
     let (_, other) = (1 - s, if backer == ALICE { BOB } else { ALICE });
     t.call(other, 0);
@@ -417,7 +547,7 @@ fn turn_plays_a_whole_turn_deterministically() {
 #[test]
 fn timeout_only_after_the_deadline_and_the_deadline_stays_expired_until_the_turn_passes() {
     let mut t = T::new();
-    started_pair(&mut t, 0);
+    started_pair(&mut t, MANY_ROUNDS);
     let deadline = t.m("m").turn_deadline;
     let (s, _) = t.current("m");
     t.now = deadline;
@@ -469,7 +599,7 @@ fn force_debt(t: &mut T, id: &str, cash: i64, debt: i64, props: &[(u8, u8, bool)
 #[test]
 fn timeout_in_debt_sells_houses_then_mortgages_then_pays() {
     let mut t = T::new();
-    started_pair(&mut t, 0);
+    started_pair(&mut t, MANY_ROUNDS);
     // Owes 300 with 10 cash; Singapore (37, no houses) and Hanoi (39, two houses at 200 each).
     let player = force_debt(&mut t, "m", 10, 300, &[(37, 0, false), (39, 2, false)]);
     t.now = t.m("m").turn_deadline + 1;
@@ -491,7 +621,7 @@ fn timeout_in_debt_sells_houses_then_mortgages_then_pays() {
 #[test]
 fn timeout_in_hopeless_debt_declares_bankruptcy_and_settles() {
     let mut t = T::new();
-    started_pair(&mut t, 0);
+    started_pair(&mut t, MANY_ROUNDS);
     let (s, _) = t.current("m");
     force_debt(&mut t, "m", 10, 300, &[(1, 0, true)]);
     t.now = t.m("m").turn_deadline + 1;
@@ -518,7 +648,7 @@ fn timeout_in_hopeless_debt_declares_bankruptcy_and_settles() {
 #[test]
 fn abandon_only_after_15_minutes_in_the_lobby_and_refunds_everything() {
     let mut t = T::new();
-    t.create("a", 3, vec![10000], classic(0), None);
+    t.create("a", 3, vec![10000], classic(MANY_ROUNDS), None);
     t.join("a", BOB, 0);
     t.join("a", CAROL, 2);
     let created = t.m("a").created_at;
@@ -538,7 +668,7 @@ fn abandon_only_after_15_minutes_in_the_lobby_and_refunds_everything() {
     expect_panic(|| t.c.abandon("a".into()), "no such match");
 
     // A started match cannot be abandoned.
-    started_pair(&mut t, 0);
+    started_pair(&mut t, MANY_ROUNDS);
     t.now += ABANDON_AFTER_NS;
     t.call(OWNER, 0);
     expect_panic(|| t.c.abandon("m".into()), "still in the lobby");
@@ -633,7 +763,7 @@ fn settlement_pays_backers_forfeits_house_shares_records_stats_and_settles_once(
     }
     // Settles once: every entry point now refuses the id, and settling a stale copy panics.
     for (who, f) in [
-        (BOB, Box::new(|c: &mut Contract| c.play("s".into(), 0, vec![Action::Roll])) as Box<dyn Fn(&mut Contract)>),
+        (BOB, Box::new(|c: &mut Contract| drop(c.play("s".into(), 0, vec![Action::Roll]))) as Box<dyn Fn(&mut Contract)>),
         (BOB, Box::new(|c: &mut Contract| c.turn("s".into(), 0, Plan::default()))),
         (CAROL, Box::new(|c: &mut Contract| c.timeout("s".into()))),
         (CAROL, Box::new(|c: &mut Contract| c.abandon("s".into()))),
@@ -735,8 +865,8 @@ fn storage_reserve_covers_a_full_match() {
 #[test]
 fn views_expose_meta_snapshot_log_and_lists() {
     let mut t = T::new();
-    started_pair(&mut t, 0);
-    t.create("lobby", 2, vec![10000], classic(0), None);
+    started_pair(&mut t, MANY_ROUNDS);
+    t.create("lobby", 2, vec![10000], classic(MANY_ROUNDS), None);
     let view = t.c.get_match("m".into()).unwrap();
     assert_eq!(view["meta"]["status"], "playing");
     assert_eq!(view["meta"]["seats"][0]["backer"], ALICE);
@@ -751,7 +881,25 @@ fn views_expose_meta_snapshot_log_and_lists() {
     assert_eq!(t.c.list_matches(None, Some(1))[0]["id"], "m");
     assert!(t.c.get_result("m".into()).is_none());
     assert_eq!(t.c.get_stats(acc(ALICE))["played"], 0);
-    assert_eq!(t.c.get_config()["house"], HOUSE);
+    let config = t.c.get_config();
+    assert_eq!(config["house"], HOUSE);
+    assert_eq!(config["max_stake"], CAP.to_string());
+    assert_eq!(config["min_move_gas"], MIN_MOVE_GAS.as_gas().to_string());
+}
+
+#[test]
+fn the_stake_cap_is_set_once_at_deployment() {
+    context(CONTRACT, 0, NOW0, seed(0));
+    expect_panic(|| Contract::new(acc(OWNER), acc(HOUSE), U128(MAX_STAKE + 1)), "max_stake must be at most");
+    let c = Contract::new(acc(OWNER), acc(HOUSE), U128(MAX_STAKE));
+    assert_eq!(c.get_config()["max_stake"], MAX_STAKE.to_string());
+    // A cap of 0 makes a free-play deployment: only stake-0 matches.
+    let mut t = T::new();
+    t.c = Contract::new(acc(OWNER), acc(HOUSE), U128(0));
+    t.call(ALICE, STORAGE);
+    expect_panic(|| t.c.create_match("paid".into(), 2, U128(1), vec![10000], classic(1), None, None), "stake too large");
+    t.call(ALICE, STORAGE);
+    t.c.create_match("free".into(), 2, U128(0), vec![10000], classic(1), None, None);
 }
 
 // ----- Rng ---------------------------------------------------------------------------------------------------------------

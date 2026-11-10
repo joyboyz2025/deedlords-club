@@ -1,11 +1,14 @@
 //! Deedlords NEAR contract: the referee around the pure rules engine (`deedlords-engine`).
 //!
 //! * A match has 2–4 seats. Seat `k` is the engine player `"s<k>"` and is backed by an account that paid the stake;
-//!   the backer may name a driver (an agent account) that may also play the seat. One account may back several seats
-//!   (typically the house in a solo match).
+//!   the backer may name a driver (an agent account) that may also play the seat. In a solo match the solo player
+//!   backs exactly one seat and the house backs the others; in any other match one account may back several seats.
 //! * When the last seat is backed the game starts in the same call. Every move goes through the engine with the
-//!   on-chain Rng ([`rng`]); any engine error rejects the whole call.
-//! * Each turn has a deadline; after it anyone may call `timeout`, so no one can stall a match.
+//!   on-chain Rng ([`rng`]). A roll can never be taken back: a call that drew no randomness is rejected whole on an
+//!   engine error, but once a die or a card was drawn the call stands (what was applied is kept, the rejected action
+//!   is reported), and every call that may draw needs [`MIN_MOVE_GAS`] attached so it cannot be made to run out of gas.
+//! * Each turn has a deadline, renewed only when the seat to move changes or the current seat rolls; after it anyone
+//!   may call `timeout`, so no one can stall a match.
 //! * When the engine reports the end, the contract settles once: pays the pot by rank, locks the house's shares
 //!   forever (`forfeited`), mints a Deed NFT (NEP-171) to a non-house winner, records stats and a summary, deletes the
 //!   match and refunds the creator's storage deposit (minus the bytes the permanent records occupy).
@@ -31,7 +34,7 @@ use near_sdk::json_types::{U128, U64};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::serde_json::{self, json, Value};
 use near_sdk::store::{IterableMap, LookupMap};
-use near_sdk::{env, near, require, AccountId, NearToken, PanicOnDefault, Promise, PromiseOrValue};
+use near_sdk::{env, near, require, AccountId, Gas, NearToken, PanicOnDefault, Promise, PromiseOrValue};
 
 pub use autoplay::{Plan, Step};
 use autoplay::{apply_logged, play_turn, timeout_step, MAX_PLAN_LIST};
@@ -51,10 +54,16 @@ pub const MAX_CASH: i64 = 1_000_000;
 pub const MAX_SALARY: i64 = 100_000;
 /// Basis points of a full pot.
 pub const SPLIT_TOTAL: u32 = 10_000;
-/// Largest stake (1,000,000 NEAR), so `pot * basis points` always fits in a u128.
+/// Upper bound of a deployment's stake cap (1,000,000 NEAR), so `pot * basis points` always fits in a u128. The cap
+/// that matches are checked against is `max_stake`, set once in `new`.
 pub const MAX_STAKE: u128 = 1_000_000 * 10u128.pow(24);
 pub const MAX_ID_LEN: usize = 32;
 pub const MAX_ACTIONS_PER_CALL: usize = 32;
+/// Gas that `join`, `play`, `turn` and `timeout` require to be attached. These calls may draw dice or cards, and a call
+/// that ran out of gas after the draw would revert it: a caller could tune the gas so that only the outcomes it likes
+/// fit, and roll again otherwise. The floor is several times the heaviest call measured (contracts/README.md), so
+/// every outcome completes.
+pub const MIN_MOVE_GAS: Gas = Gas::from_tgas(100);
 /// Bytes the creator pre-pays on top of the measured size of the new match: the growth of the match while it is played
 /// (backers, drivers, owned squares, the 30-event log) and the permanent records written when it is settled (summary,
 /// stats, Deed NFT). Measured in `tests::storage_reserve_covers_a_full_match`: a full 4-seat Blitz match with
@@ -161,6 +170,8 @@ pub struct Contract {
     /// House shares locked forever. No method moves them.
     forfeited: NearToken,
     tokens: NonFungibleToken,
+    /// Largest stake per seat a match may ask for. Set in `new`; no method changes it.
+    max_stake: NearToken,
 }
 
 // ----- Helpers ---------------------------------------------------------------------------------------------------------
@@ -171,6 +182,26 @@ fn panic_msg(message: String) -> ! {
 
 fn storage_cost(bytes: u64) -> u128 {
     env::storage_byte_cost().as_yoctonear() * u128::from(bytes)
+}
+
+/// First check of every call that may draw randomness (see [`MIN_MOVE_GAS`]).
+fn require_move_gas() {
+    if env::prepaid_gas() < MIN_MOVE_GAS {
+        panic_msg(format!(
+            "attach at least {} Tgas: a call that may roll dice must not be able to run out of gas",
+            MIN_MOVE_GAS.as_tgas()
+        ));
+    }
+}
+
+/// What to do with an engine error in the middle of a call. If the call drew no randomness, rejecting it whole is
+/// harmless: the caller learned nothing. Once a die or a card was drawn the call must stand, or the caller could
+/// append an action that fails on the outcomes it dislikes and roll again; then `detail` is returned for the event.
+fn keep_or_revert(randomness_drawn: bool, message: String, detail: Value) -> Value {
+    if !randomness_drawn {
+        panic_msg(message);
+    }
+    detail
 }
 
 fn emit(event: &str, data: Value) {
@@ -198,6 +229,8 @@ fn validate_rules(rules: RulesArg) -> Rules {
     if rules.blitz {
         require!(rules.cash >= BLITZ_MIN_CASH, "Blitz needs rules.cash >= 1670 to pay for the dealt squares");
     }
+    // Without a round limit a match could be kept alive forever with the stakes locked in it.
+    require!(rules.max_rounds >= 1, "rules.max_rounds must be 1..=255");
     Rules { salary: rules.salary, cash: rules.cash, blitz: rules.blitz, max_rounds: rules.max_rounds }
 }
 
@@ -220,6 +253,13 @@ fn seat_of(player: &str) -> usize {
 
 fn current_seat(game: &Game) -> Option<usize> {
     game.current_player().map(seat_of)
+}
+
+/// Whether moves made by seat `s` restart the turn clock: only when the seat to move changed, or when `s` was the seat
+/// to move and rolled. Building, selling, mortgaging and redeeming are free and unlimited, so they never extend the
+/// deadline; a turn lasts at most `turn_seconds` after each of its rolls.
+fn restarts_clock(game: &Game, s: usize, seat_before: Option<usize>, rolls_before: u32) -> bool {
+    current_seat(game) != seat_before || (seat_before == Some(s) && game.rolls > rolls_before)
 }
 
 fn transfer_all(transfers: BTreeMap<AccountId, u128>) {
@@ -295,10 +335,13 @@ impl Match {
 
 #[near]
 impl Contract {
+    /// `max_stake` (yoctoNEAR) is the largest stake per seat any match of this deployment may ask for.
     #[init]
     #[private]
-    pub fn new(owner: AccountId, house: AccountId) -> Self {
+    pub fn new(owner: AccountId, house: AccountId, max_stake: U128) -> Self {
+        require!(max_stake.0 <= MAX_STAKE, "max_stake must be at most 1,000,000 NEAR");
         Self {
+            max_stake: NearToken::from_yoctonear(max_stake.0),
             owner: owner.clone(),
             house,
             matches: IterableMap::new(b"m".to_vec()),
@@ -327,7 +370,13 @@ impl Contract {
         validate_id(&id);
         require!(!self.matches.contains_key(&id) && !self.results.contains_key(&id), "match id already used");
         require!((MIN_SEATS..=MAX_SEATS).contains(&seats), "seats must be 2..=4");
-        require!(stake.0 <= MAX_STAKE, "stake too large");
+        if stake.0 > self.max_stake.as_yoctonear() {
+            panic_msg(format!(
+                "stake too large: this contract allows at most {} yoctoNEAR per seat",
+                self.max_stake.as_yoctonear()
+            ));
+        }
+        require!(solo_player.as_ref() != Some(&self.house), "the house cannot be the solo player");
         validate_split(&split, seats);
         let rules = validate_rules(rules);
         let turn_seconds = turn_seconds.unwrap_or(DEFAULT_TURN_SECONDS);
@@ -372,16 +421,29 @@ impl Contract {
         emit("create_match", data);
     }
 
-    /// Backs a free seat with exactly the stake. Backing the last seat starts the game.
+    /// Backs a free seat with exactly the stake. Backing the last seat starts the game (and draws the turn order, and
+    /// the Blitz deal), so every `join` needs [`MIN_MOVE_GAS`] attached.
+    ///
+    /// In a solo match the solo player backs exactly one seat and the house backs all the others: a match in which one
+    /// account played every seat would hand it a win, stats and a Deed for nothing.
     #[payable]
     pub fn join(&mut self, id: String, seat: u8) {
+        require_move_gas();
         let mut m = self.load(&id);
         require!(m.status == Status::Lobby, "the match is not in the lobby");
         let s = m.seat_index(seat);
         require!(m.seats[s].backer.is_none(), "seat already backed");
         let caller = env::predecessor_account_id();
         if let Some(solo) = &m.solo_player {
-            require!(&caller == solo || caller == self.house, "solo match: only the solo player or the house may back seats");
+            let is_house = caller == self.house;
+            require!(&caller == solo || is_house, "solo match: only the solo player or the house may back seats");
+            let solo_seated = m.seats.iter().any(|seat| seat.backer.as_ref() == Some(solo));
+            if is_house {
+                let free = m.seats.iter().filter(|seat| seat.backer.is_none()).count();
+                require!(solo_seated || free > 1, "solo match: the last free seat is the solo player's");
+            } else {
+                require!(!solo_seated, "solo match: the solo player backs exactly one seat");
+            }
         }
         if env::attached_deposit() != m.stake {
             panic_msg(format!("attach exactly the stake: {} yoctoNEAR", m.stake.as_yoctonear()));
@@ -443,48 +505,77 @@ impl Contract {
         emit("set_driver", json!({ "id": id, "seat": s, "backer": caller, "driver": driver }));
     }
 
-    /// Applies `actions` in order as `seat` (backer or driver only). Any engine error rejects the whole call.
+    /// Applies `actions` in order as `seat` (backer or driver only) and returns
+    /// `{ "applied": <count>, "rejected": null | { "index", "action", "error" } }`.
+    ///
+    /// If the engine rejects an action before the call drew any randomness, the whole call is rejected and nothing
+    /// changes. Once a die or a card was drawn the call stands: the actions applied so far are kept, the rest of the
+    /// list is dropped, and the rejected action is reported in the return value and in the `actions` event. (If it
+    /// reverted instead, `["Roll", <an action that fails after a bad roll>]` would be a free re-roll.)
+    ///
     /// `Sell`/`Mortgage`/`Redeem` work out of turn exactly as the engine allows. `Start` and `Auto` are not accepted
     /// (`Auto` is what `timeout` does).
-    pub fn play(&mut self, id: String, seat: u8, actions: Vec<Action>) {
+    pub fn play(&mut self, id: String, seat: u8, actions: Vec<Action>) -> Value {
+        require_move_gas();
         require!(!actions.is_empty() && actions.len() <= MAX_ACTIONS_PER_CALL, "send 1..=32 actions");
         let mut m = self.load_playing(&id);
         let s = m.seat_index(seat);
         let caller = m.authorize(s);
-        let before = current_seat(&m.game);
+        // Checked for the whole list before anything is applied, so this rejection never follows a roll.
+        if let Some((i, action)) = actions.iter().enumerate().find(|(_, action)| matches!(action, Action::Start | Action::Auto)) {
+            panic_msg(format!("action {i} ({}) is not playable; use timeout() after the deadline", action.op()));
+        }
+        let seat_before = current_seat(&m.game);
+        let rolls_before = m.game.rolls;
+        let draws_before = m.draws;
         let mut steps = Vec::new();
+        let mut failure = None;
         {
             let mut rng = ChainRng::new(env::random_seed_array(), &id, &mut m.draws, near_sha256);
             for (i, &action) in actions.iter().enumerate() {
-                if matches!(action, Action::Start | Action::Auto) {
-                    panic_msg(format!("action {i} ({}) is not playable; use timeout() after the deadline", action.op()));
-                }
                 if let Err(error) = apply_logged(&mut m.game, Some(SEAT_IDS[s]), action, &mut rng, &mut steps) {
-                    panic_msg(format!("action {i} ({}) rejected: {error}", action.op()));
+                    failure = Some((i, action, error));
+                    break;
                 }
             }
         }
-        // Out-of-turn sales by a waiting seat do not extend the current player's deadline.
-        let reset = before == Some(s) || current_seat(&m.game) != before;
-        self.after_moves(id, m, "play", s, caller, steps, reset);
+        let rejected = failure.map(|(i, action, error)| {
+            keep_or_revert(
+                m.draws != draws_before,
+                format!("action {i} ({}) rejected: {error}", action.op()),
+                json!({ "index": i, "action": action, "error": error.to_string() }),
+            )
+        });
+        let reset = restarts_clock(&m.game, s, seat_before, rolls_before);
+        let outcome = json!({ "applied": steps.len(), "rejected": rejected });
+        self.after_moves(id, m, "play", s, caller, steps, rejected, reset);
+        outcome
     }
 
     /// One transaction per agent turn: rolls, applies `plan` deterministically, rolls again after doubles and ends the
     /// turn (see [`autoplay::play_turn`]). `seat` must be the current player.
     pub fn turn(&mut self, id: String, seat: u8, plan: Plan) {
+        require_move_gas();
         require!(plan.build.len() <= MAX_PLAN_LIST && plan.liquidate.len() <= MAX_PLAN_LIST, "plan lists hold at most 40 squares");
         let mut m = self.load_playing(&id);
         let s = m.seat_index(seat);
         let caller = m.authorize(s);
-        require!(current_seat(&m.game) == Some(s), "it is not this seat's turn");
+        let seat_before = current_seat(&m.game);
+        require!(seat_before == Some(s), "it is not this seat's turn");
+        let rolls_before = m.game.rolls;
+        let draws_before = m.draws;
         let mut steps = Vec::new();
-        {
+        let played = {
             let mut rng = ChainRng::new(env::random_seed_array(), &id, &mut m.draws, near_sha256);
-            if let Err(error) = play_turn(&mut m.game, SEAT_IDS[s], &plan, &mut rng, &mut steps) {
-                panic_msg(format!("turn failed: {error}"));
-            }
-        }
-        self.after_moves(id, m, "turn", s, caller, steps, true);
+            play_turn(&mut m.game, SEAT_IDS[s], &plan, &mut rng, &mut steps)
+        };
+        // The driver checks every optional action first, so no error is expected after the roll; the rule of `play`
+        // applies all the same.
+        let rejected = played.err().map(|error| {
+            keep_or_revert(m.draws != draws_before, format!("turn failed: {error}"), json!({ "error": error.to_string() }))
+        });
+        let reset = restarts_clock(&m.game, s, seat_before, rolls_before);
+        self.after_moves(id, m, "turn", s, caller, steps, rejected, reset);
     }
 
     /// Anyone, once the turn deadline has passed: one engine `Auto` step for the current player (roll, skip buying, or
@@ -493,21 +584,24 @@ impl Contract {
     /// While the timed-out player still holds the turn the deadline stays expired, so the next step can be forced at
     /// once; when the turn passes, the next player gets a fresh deadline.
     pub fn timeout(&mut self, id: String) {
+        require_move_gas();
         let mut m = self.load_playing(&id);
         if env::block_timestamp() <= m.turn_deadline {
             panic_msg(format!("the turn deadline ({}) has not passed", m.turn_deadline));
         }
         let before = current_seat(&m.game);
         let s = before.unwrap_or_else(|| env::panic_str("no current player"));
+        let draws_before = m.draws;
         let mut steps = Vec::new();
-        {
+        let stepped = {
             let mut rng = ChainRng::new(env::random_seed_array(), &id, &mut m.draws, near_sha256);
-            if let Err(error) = timeout_step(&mut m.game, &mut rng, &mut steps) {
-                panic_msg(format!("timeout failed: {error}"));
-            }
-        }
+            timeout_step(&mut m.game, &mut rng, &mut steps)
+        };
+        let rejected = stepped.err().map(|error| {
+            keep_or_revert(m.draws != draws_before, format!("timeout failed: {error}"), json!({ "error": error.to_string() }))
+        });
         let reset = current_seat(&m.game) != before;
-        self.after_moves(id, m, "timeout", s, env::predecessor_account_id(), steps, reset);
+        self.after_moves(id, m, "timeout", s, env::predecessor_account_id(), steps, rejected, reset);
     }
 
     /// Anyone, if the match is still in the lobby 15 minutes after creation: refunds every stake and the storage
@@ -606,6 +700,8 @@ impl Contract {
             "storage_reserve_bytes": STORAGE_RESERVE_BYTES,
             "default_turn_seconds": DEFAULT_TURN_SECONDS,
             "abandon_after_ns": u64_json(ABANDON_AFTER_NS),
+            "max_stake": yocto_json(self.max_stake),
+            "min_move_gas": u64_json(MIN_MOVE_GAS.as_gas()),
         })
     }
 }
@@ -627,9 +723,20 @@ impl Contract {
         m
     }
 
-    /// Common tail of `play`, `turn` and `timeout`: bookkeeping, the event, then settlement or saving.
+    /// Common tail of `play`, `turn` and `timeout`: bookkeeping, the event, then settlement or saving. `rejected` is
+    /// the engine error that cut the call short after randomness was drawn (see [`keep_or_revert`]).
     #[allow(clippy::too_many_arguments)]
-    fn after_moves(&mut self, id: String, mut m: Match, kind: &str, s: usize, by: AccountId, steps: Vec<Step>, reset_deadline: bool) {
+    fn after_moves(
+        &mut self,
+        id: String,
+        mut m: Match,
+        kind: &str,
+        s: usize,
+        by: AccountId,
+        steps: Vec<Step>,
+        rejected: Option<Value>,
+        reset_deadline: bool,
+    ) {
         let now = env::block_timestamp();
         m.last_activity = now;
         if reset_deadline {
@@ -646,6 +753,9 @@ impl Contract {
             "current_seat": current_seat(&m.game),
             "turn_deadline": u64_json(m.turn_deadline),
         });
+        if let Some(rejected) = rejected {
+            data["rejected"] = rejected;
+        }
         if serde_json::to_string(&data).map_or(0, |s| s.len()) > MAX_EVENT_BYTES {
             data["steps"] = json!(steps.iter().map(|step| step.action).collect::<Vec<_>>());
             data["events_omitted"] = json!(true);

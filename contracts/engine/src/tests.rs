@@ -320,7 +320,10 @@ fn snapshot_has_exactly_the_engine_rules_fields() {
     assert_eq!(snap["debt"], json!([{ "id": null, "amount": 50 }]));
     assert_eq!(snap["card"], json!({ "deck": "chest", "index": 6 }));
     assert_eq!(snap["stage"], json!("debt"));
-    let keys: Vec<&str> = snap.as_object().unwrap().keys().map(String::as_str).collect();
+    // Sorted on both sides: the key order of a serde_json map depends on the `preserve_order` feature, which another
+    // workspace member's dependencies can switch on.
+    let mut keys: Vec<&str> = snap.as_object().unwrap().keys().map(String::as_str).collect();
+    keys.sort();
     let mut expected = vec![
         "phase",
         "order",

@@ -7,8 +7,10 @@
 // Set NEAR_SANDBOX_BIN_PATH to reuse an already downloaded near-sandbox 2.14 binary.
 //
 // Scenarios: (a) solo Blitz, player + house backing 3 seats, every turn through turn(); (b) 2-player classic match
-// through play(); (c) timeout called by a third account after the deadline; (d) abandon refunds after 15 minutes.
-// Prints gas per join/turn/play, the wasm size and storage bytes per match.
+// through play(); (c) timeout called by a third account after the deadline; (d) abandon refunds after 15 minutes;
+// (e) the stake cap, the gas floor of every call that may roll, the turn clock under free moves, and a whole match
+// played with exactly the floor attached and the largest plan the contract accepts.
+// Prints gas per join/turn/play, the heaviest calls against the gas floor, the wasm size and storage bytes per match.
 
 const fs = require("fs");
 const assert = require("assert/strict");
@@ -21,12 +23,15 @@ const NEAR = (n) => (BigInt(Math.round(n * 1000)) * Y) / 1000n;
 const fmt = (yocto) => `${(Number(BigInt(yocto) / 10n ** 18n) / 1e6).toFixed(6)} NEAR`;
 const TGAS = 10n ** 12n;
 const GAS = 300n * TGAS;
+/// Stake cap this test deployment is initialised with.
+const MAX_STAKE = 10n * Y;
 const SEC = 1_000_000_000n;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let near, keyStore, provider, contractId;
 const gas = { join: [], turn: [], play: [], timeout: [], create_match: [] };
 const storage = {};
+const floorReport = [];
 
 // ----- chain helpers -----------------------------------------------------------------------------------------------
 
@@ -67,10 +72,16 @@ function eventsOf(outcome) {
   return out;
 }
 
-async function call(account, method, args, deposit = 0n) {
-  const outcome = await account.functionCall({ contractId, methodName: method, args, gas: GAS, attachedDeposit: deposit });
+async function call(account, method, args, deposit = 0n, gasLimit = GAS) {
+  const outcome = await account.functionCall({ contractId, methodName: method, args, gas: gasLimit, attachedDeposit: deposit });
   if (gas[method]) gas[method].push(gasOf(outcome));
   return outcome;
+}
+
+/// The JSON value a successful call returned (null for a method without one).
+function returned(outcome) {
+  const text = Buffer.from(outcome.status.SuccessValue ?? "", "base64").toString();
+  return text ? JSON.parse(text) : null;
 }
 
 async function expectFail(promise, needle) {
@@ -151,9 +162,14 @@ async function scenarioSoloBlitz(acc) {
   await createMatch(acc.alice, id, { seats: 4, stake, split, rules: { salary: 200, cash: 2000, blitz: true, max_rounds: 3 }, solo: acc.alice.accountId, turnSeconds: 120 });
   sampleStorage("lobby match (bytes)", (await storageUsage(contractId)) - s0);
   await expectFail(call(acc.bob, "join", { id, seat: 0 }, stake), "solo match: only the solo player or the house");
+  // One seat for the solo player, every other seat for the house: neither can play the match against itself.
+  await call(acc.alice, "join", { id, seat: 2 }, stake);
+  await expectFail(call(acc.alice, "join", { id, seat: 0 }, stake), "the solo player backs exactly one seat");
+  await call(acc.alice, "leave", { id, seat: 2 });
   await call(acc.house, "join", { id, seat: 1 }, stake);
   await call(acc.house, "join", { id, seat: 2 }, stake);
   await call(acc.house, "join", { id, seat: 3 }, stake);
+  await expectFail(call(acc.house, "join", { id, seat: 0 }, stake), "the last free seat is the solo player's");
   await call(acc.alice, "join", { id, seat: 0 }, stake); // last seat: starts the game
   let m = await view("get_match", { id });
   assert.equal(m.meta.status, "playing");
@@ -239,11 +255,23 @@ async function scenarioClassicPlay(acc) {
   const firstSigner = byAccount[m.meta.seats[first].backer];
   const otherSigner = firstSigner === acc.alice ? acc.bob : acc.alice;
 
-  // Authorization and whole-call rejection.
+  // Authorization, and what a rejected action does to the call.
   await expectFail(call(otherSigner, "play", { id, seat: first, actions: ["Roll"] }), "only the backer or the driver");
-  await expectFail(call(firstSigner, "play", { id, seat: first, actions: ["Roll", "Bankrupt"] }), "action 1 (bankrupt) rejected");
-  assert.equal((await view("get_match", { id })).game.rolls, 0, "the rejected call left no roll behind");
   await expectFail(call(firstSigner, "play", { id, seat: first, actions: ["Auto"] }), "not playable");
+  // Rejected before any die was rolled: the whole call is rejected. (Square 0 is the start square: never buildable.)
+  await expectFail(call(firstSigner, "play", { id, seat: first, actions: [{ Build: 0 }, "Roll"] }), "action 0 (build) rejected");
+  assert.equal((await view("get_match", { id })).game.rolls, 0, "the rejected call left no roll behind");
+  // Rejected after a roll: the roll stands and the rejection is reported, so a failing action is not a free re-roll.
+  const kept = await call(firstSigner, "play", { id, seat: first, actions: ["Roll", { Build: 0 }, "End"] });
+  const verdict = returned(kept);
+  assert.equal(verdict.applied, 1);
+  assert.equal(verdict.rejected.index, 1);
+  assert.deepEqual(verdict.rejected.action, { Build: 0 });
+  const keptEvent = eventsOf(kept).find((e) => e.event === "actions").data;
+  assert.equal(keptEvent.steps.length, 1);
+  assert.deepEqual(keptEvent.rejected, verdict.rejected);
+  assert.equal((await view("get_match", { id })).game.rolls, 1, "the roll is kept");
+  console.log(`  play([Roll, Build 0, End]): roll kept, then "${verdict.rejected.error}" reported in the return value and the event`);
 
   let last = null;
   let calls = 0;
@@ -296,7 +324,7 @@ async function scenarioTimeout(acc) {
   console.log("\n(c) timeout by a third account after the deadline");
   const id = "timeout-1";
   const stake = NEAR(0.1);
-  await createMatch(acc.alice, id, { seats: 2, stake, split: [10000], rules: { salary: 200, cash: 1500, blitz: false, max_rounds: 0 }, turnSeconds: 10 });
+  await createMatch(acc.alice, id, { seats: 2, stake, split: [10000], rules: { salary: 200, cash: 1500, blitz: false, max_rounds: 30 }, turnSeconds: 10 });
   await call(acc.alice, "join", { id, seat: 0 }, stake);
   await call(acc.bob, "join", { id, seat: 1 }, stake);
   let m = await view("get_match", { id });
@@ -332,7 +360,7 @@ async function scenarioAbandon(acc) {
   const stake = NEAR(0.2);
   const deposit = NEAR(0.06);
   const s0 = await storageUsage(contractId);
-  await createMatch(acc.carol, id, { seats: 3, stake, split: [10000], rules: { salary: 200, cash: 1500, blitz: false, max_rounds: 0 }, storage: deposit });
+  await createMatch(acc.carol, id, { seats: 3, stake, split: [10000], rules: { salary: 200, cash: 1500, blitz: false, max_rounds: 30 }, storage: deposit });
   await call(acc.alice, "join", { id, seat: 0 }, stake);
   await call(acc.bob, "join", { id, seat: 2 }, stake);
   const created = BigInt((await view("get_match", { id })).meta.created_at);
@@ -352,6 +380,104 @@ async function scenarioAbandon(acc) {
   assert.equal(await view("get_match", { id }), null);
   assert.equal(await storageUsage(contractId), s0, "an abandoned match leaves no storage behind");
   console.log(`  refunded ${fmt(stake)} to alice and bob, ${fmt(deposit)} storage deposit to carol; storage back to the pre-match size`);
+}
+
+async function scenarioGasFloor(acc) {
+  console.log("\n(e) stake cap, gas floor, turn clock under free moves, and a whole match at exactly the floor");
+  const config = await view("get_config");
+  const floor = BigInt(config.min_move_gas);
+  const below = floor - TGAS;
+  assert.equal(BigInt(config.max_stake), MAX_STAKE);
+  const rules = { salary: 200, cash: 2000, blitz: true, max_rounds: 4 };
+  await expectFail(createMatch(acc.alice, "too-rich", { seats: 2, stake: MAX_STAKE + 1n, split: [10000], rules }), "stake too large");
+  await expectFail(createMatch(acc.alice, "endless", { seats: 2, stake: 0n, split: [10000], rules: { ...rules, max_rounds: 0 } }), "rules.max_rounds must be 1..=255");
+  await expectFail(createMatch(acc.alice, "house-solo", { seats: 2, stake: 0n, split: [10000], rules, solo: acc.house.accountId }), "the house cannot be the solo player");
+
+  const id = "floor-1";
+  const stake = NEAR(0.1);
+  await createMatch(acc.alice, id, { seats: 3, stake, split: [6000, 3000, 1000], rules, turnSeconds: 60 });
+  const players = [acc.alice, acc.bob, acc.carol];
+  const needle = `attach at least ${floor / TGAS} Tgas`;
+  await expectFail(call(acc.alice, "join", { id, seat: 0 }, stake, below), needle);
+  const heavy = [];
+  const measure = (label, outcome) => {
+    const g = gasOf(outcome);
+    const steps = eventsOf(outcome).find((e) => e.event === "actions")?.data.steps.length ?? 0;
+    heavy.push({ label, steps, ...g });
+    return outcome;
+  };
+  // Every move from here on is sent with exactly the floor attached.
+  for (const [seat, who] of players.entries()) measure(seat === 2 ? "join (last seat: deals, starts)" : "join", await call(who, "join", { id, seat }, stake, floor));
+  let m = await view("get_match", { id });
+  assert.equal(m.meta.status, "playing");
+  const byId = Object.fromEntries(players.map((x) => [x.accountId, x]));
+  const seat = m.meta.current_seat;
+  const signer = byId[m.meta.seats[seat].backer];
+  const outsider = acc.owner;
+  await expectFail(call(signer, "play", { id, seat, actions: ["Roll"] }, 0n, below), needle);
+  await expectFail(call(signer, "turn", { id, seat, plan: {} }, 0n, below), needle);
+  await expectFail(call(outsider, "timeout", { id }, 0n, below), needle);
+  assert.equal((await view("get_match", { id })).game.rolls, 0);
+  console.log(`  join, play, turn and timeout with ${below / TGAS} Tgas attached: all refused ("${needle}")`);
+
+  // The seat to move makes 32 free moves (the most one call takes): they change the board, never its deadline.
+  const deadline = BigInt(m.meta.turn_deadline);
+  const mine = Object.entries(m.game.props).filter(([, o]) => o.owner === `s${seat}`).map(([sq]) => Number(sq));
+  const stall = Array.from({ length: 16 }, () => [{ Mortgage: mine[0] }, { Redeem: mine[0] }]).flat();
+  for (let k = 0; k < 2; k++) {
+    await waitBlocks(4);
+    const outcome = measure("play, 32 actions (mortgage/redeem)", await call(signer, "play", { id, seat, actions: stall }, 0n, floor));
+    assert.equal(returned(outcome).applied, 32);
+    m = await view("get_match", { id });
+    assert.equal(BigInt(m.meta.turn_deadline), deadline, "free moves do not restart the turn clock");
+  }
+  assert.equal(m.meta.current_seat, seat);
+  await expectFail(call(outsider, "timeout", { id }, 0n, floor), "has not passed");
+  await passTime(deadline);
+  measure("timeout", await call(outsider, "timeout", { id }, 0n, floor));
+  m = await view("get_match", { id });
+  assert.equal(m.game.rolls, 1, "the stalling seat was rolled for at its first deadline");
+  console.log(`  64 mortgage/redeem moves by seat ${seat} left its deadline where it was; a third account's timeout() rolled for it`);
+  while (m !== null && m.meta.current_seat === seat) {
+    measure("timeout", await call(outsider, "timeout", { id }, 0n, floor));
+    m = await view("get_match", { id });
+  }
+
+  // The rest of the match through turn() with the largest plan accepted: 40 build squares, 40 liquidation squares.
+  const forty = Array.from({ length: 40 }, (_, k) => ALL_CITIES[k % ALL_CITIES.length]);
+  const plan = { buy_reserve: 0, build: forty, keep_reserve: 0, bail: true, liquidate: forty };
+  await expectFail(call(byId[m.meta.seats[m.meta.current_seat].backer], "turn", { id, seat: m.meta.current_seat, plan: { ...plan, build: [...forty, 1] } }, 0n, floor), "at most 40 squares");
+  let turns = 0;
+  for (; turns < 200; turns++) {
+    m = await view("get_match", { id });
+    if (m === null) break;
+    const s = m.meta.current_seat;
+    const outcome = await call(byId[m.meta.seats[s].backer], "turn", { id, seat: s, plan }, 0n, floor);
+    measure(eventsOf(outcome).some((e) => e.event === "settle") ? "turn that settles the match" : "turn, 40+40 plan", outcome);
+  }
+  assert.ok(turns > 0 && turns < 200, "the match settled");
+  const result = await view("get_result", { id });
+  assert.equal(result.payouts.map(BigInt).reduce((a, b) => a + b, 0n), stake * 3n, "the whole pot is paid out");
+  console.log(`  the match settled after ${turns} turn() calls (${result.reason}), every call with exactly ${floor / TGAS} Tgas attached`);
+
+  const labels = [...new Set(heavy.map((h) => h.label))];
+  for (const label of labels) {
+    const list = heavy.filter((h) => h.label === label);
+    const top = list.reduce((a, b) => (b.burnt > a.burnt ? b : a));
+    floorReport.push(`${label.padEnd(36)} n=${String(list.length).padStart(3)}  heaviest: ${(Number(top.burnt) / 1e12).toFixed(2)} Tgas whole transaction, ${(Number(top.contract) / 1e12).toFixed(2)} Tgas contract receipt, ${top.steps} steps`);
+  }
+  const worst = heavy.reduce((a, b) => (b.burnt > a.burnt ? b : a));
+  // Gas per engine step, from the turn() calls: least squares of contract gas on steps.
+  const pts = heavy.filter((h) => h.label === "turn, 40+40 plan").map((h) => [h.steps, Number(h.contract) / 1e12]);
+  if (pts.length > 2) {
+    const mx = pts.reduce((a, p) => a + p[0], 0) / pts.length;
+    const my = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+    const slope = pts.reduce((a, p) => a + (p[0] - mx) * (p[1] - my), 0) / (pts.reduce((a, p) => a + (p[0] - mx) ** 2, 0) || 1);
+    const settleExtra = Math.max(0, ...heavy.filter((h) => h.label === "turn that settles the match").map((h) => Number(h.burnt) / 1e12 - (my + slope * (h.steps - mx))));
+    const bound = my + slope * (64 - mx) + settleExtra;
+    floorReport.push(`turn(): ${slope.toFixed(3)} Tgas per engine step (max ${Math.max(...pts.map((p) => p[0]))} steps seen); a 64-step turn (the driver's cap) that also settles: about ${bound.toFixed(1)} Tgas`);
+  }
+  floorReport.push(`gas floor ${floor / TGAS} Tgas = ${(Number(floor) / Number(worst.burnt)).toFixed(1)} x the heaviest call seen (${(Number(worst.burnt) / 1e12).toFixed(2)} Tgas, "${worst.label}")`);
 }
 
 // ----- main --------------------------------------------------------------------------------------------------------
@@ -413,11 +539,11 @@ async function stopSandbox(sandbox) {
     };
     const empty = await storageUsage(contractId);
     await game.deployContract(wasm);
-    await game.functionCall({ contractId, methodName: "new", args: { owner: acc.owner.accountId, house: acc.house.accountId }, gas: GAS });
+    await game.functionCall({ contractId, methodName: "new", args: { owner: acc.owner.accountId, house: acc.house.accountId, max_stake: MAX_STAKE.toString() }, gas: GAS });
     console.log(`deployed to ${contractId}: contract storage ${await storageUsage(contractId) - empty} bytes (code + state)`);
-    await expectFail(acc.alice.functionCall({ contractId, methodName: "new", args: { owner: acc.alice.accountId, house: acc.alice.accountId }, gas: GAS }), "");
+    await expectFail(acc.alice.functionCall({ contractId, methodName: "new", args: { owner: acc.alice.accountId, house: acc.alice.accountId, max_stake: "0" }, gas: GAS }), "");
 
-    for (const [name, run] of [["a", scenarioSoloBlitz], ["b", scenarioClassicPlay], ["c", scenarioTimeout], ["d", scenarioAbandon]]) {
+    for (const [name, run] of [["a", scenarioSoloBlitz], ["b", scenarioClassicPlay], ["c", scenarioTimeout], ["d", scenarioAbandon], ["e", scenarioGasFloor]]) {
       try {
         await run(acc);
         console.log(`  PASS (${name})`);
@@ -433,7 +559,9 @@ async function stopSandbox(sandbox) {
       console.log(`gas ${method.padEnd(13)} tx total ${stat(gas[method], (g) => g.burnt)} | contract receipt ${stat(gas[method], (g) => g.contract)}`);
     }
     for (const [k, v] of Object.entries(storage)) console.log(`storage ${k}: ${v}`);
-    console.log(failed ? "\nRESULT: FAIL" : "\nRESULT: all 4 scenarios passed");
+    console.log("heaviest calls of scenario (e), each sent with exactly the gas floor:");
+    for (const line of floorReport) console.log(`  ${line}`);
+    console.log(failed ? "\nRESULT: FAIL" : "\nRESULT: all 5 scenarios passed");
   } finally {
     clearTimeout(watchdog);
     await stopSandbox(sandbox);
