@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "chain",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:chain", "--prefix", "contracts/sandbox"],
+      "port": 8791
+    },
+    {
+      "name": "web-chain",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:chain"],
+      "port": 3000
+    }
+  ]
+}

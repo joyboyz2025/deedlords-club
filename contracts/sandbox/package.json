@@ -6,6 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "test": "node run.js ../target/wasm32-unknown-unknown/release/deedlords.wasm",
+    "dev:chain": "node dev.js",
+    "capture": "node dev.js --capture",
     "testnet:dry": "node testnet.js --sandbox",
     "testnet:dry-recover": "node testnet.js --sandbox-recover",
     "testnet:plan": "node testnet.js plan",

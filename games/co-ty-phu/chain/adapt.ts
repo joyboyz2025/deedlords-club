@@ -1,0 +1,266 @@
+// Between the contract and the game screen. The contract keeps the engine's snapshot and who backs each seat; the
+// screen wants the `Game` of the reference engine (names, colours, a readable log). This file builds one from the
+// other, maps the screen's messages to contract actions, and applies the actions that need no dice with the reference
+// engine, which replays the Rust engine step for step (tools/diff), so a move shows at once instead of after a block.
+
+import { lookFromSeat } from "../../ma-soi/look.ts";
+import { BOARD_SIZE, CARDS, DECK_NAMES, JAIL, JAIL_FINE, SQUARES } from "../board.ts";
+import {
+  build,
+  buy,
+  currentPlayer,
+  declareBankruptcy,
+  endTurn,
+  mortgage,
+  newPlayer,
+  payBail,
+  payDebt,
+  redeem,
+  sellHouse,
+  skipBuying,
+  useFreeCard,
+  type Game,
+  type Player,
+  type Rng,
+} from "../engine.ts";
+import type { ClientMessage } from "../protocol.ts";
+import { viewFor, type View } from "../view.ts";
+import type { ChainEvent, ChainMatch, ChainMeta, ChainResult, ContractAction } from "./types.ts";
+
+/** The id of somebody who only watches: the contract has no such player, the screen needs a "you". */
+export const WATCHER_ID = "watcher";
+
+const JAIL_NAME = SQUARES[JAIL].name;
+const START_NAME = SQUARES[0].name;
+
+/** `alice.near` is shown as `alice`; an implicit account (64 hex digits) by its two ends. */
+export function shortAccount(accountId: string): string {
+  if (/^[0-9a-f]{64}$/.test(accountId)) return `${accountId.slice(0, 6)}…${accountId.slice(-4)}`;
+  const first = accountId.split(".")[0];
+  return first.length > 16 ? `${first.slice(0, 15)}…` : first;
+}
+
+/** A name per seat, by seat. Seats that would share a name are numbered. */
+export function seatNames(meta: ChainMeta): string[] {
+  const names = meta.seats.map((seat) => (seat.house ? "House" : seat.backer ? shortAccount(seat.backer) : `Seat ${seat.seat + 1}`));
+  return names.map((name, i) => {
+    const same = names.filter((other) => other === name).length;
+    return same > 1 ? `${name} ${names.slice(0, i + 1).filter((other) => other === name).length}` : name;
+  });
+}
+
+/** The seat this account moves for: the first one it backs or drives. `null`: it only watches. */
+export function seatOf(meta: ChainMeta, accountId: string | null): number | null {
+  if (!accountId) return null;
+  const seat = meta.seats.find((s) => s.backer === accountId || s.driver === accountId);
+  return seat ? seat.seat : null;
+}
+
+/** When the current turn times out, on this machine's clock, in ms. `null` when no turn is running. */
+export function deadlineMs(meta: ChainMeta): number | null {
+  if (meta.status !== "playing") return null;
+  const ns = BigInt(meta.turn_deadline);
+  return ns > 0n ? Number(ns / 1_000_000n) : null;
+}
+
+/** One line of the game log, in the words the reference engine uses. */
+export function logLine(event: ChainEvent, nameOf: (playerId: string) => string): string {
+  const squareName = (index: number) => SQUARES[index]?.name ?? `square ${index}`;
+  switch (event.kind) {
+    case "start":
+      return `${nameOf(event.first)} goes first.`;
+    case "roll":
+      return `${nameOf(event.player)} rolls ${event.dice[0]}-${event.dice[1]}.`;
+    case "salary":
+      return `${nameOf(event.player)} passes ${START_NAME} and collects ${event.amount}.`;
+    case "buy":
+      return `${nameOf(event.player)} buys ${squareName(event.square)} for ${event.price}.`;
+    case "skip":
+      return `${nameOf(event.player)} does not buy ${squareName(event.square)}.`;
+    case "rent":
+      return `${nameOf(event.player)} pays ${nameOf(event.owner)} ${event.amount} rent at ${squareName(event.square)}.`;
+    case "tax": {
+      const square = SQUARES[event.square];
+      return `${nameOf(event.player)} ${square?.kind === "tax" ? square.verb : "pays"} ${event.amount}.`;
+    }
+    case "card":
+      return `${nameOf(event.player)} draws ${DECK_NAMES[event.deck]}: ${CARDS[event.deck][event.index]?.text ?? `card ${event.index}`}`;
+    case "jailed":
+      return `${nameOf(event.player)} goes to ${JAIL_NAME}.`;
+    case "released":
+      if (event.by === "doubles") return `${nameOf(event.player)} rolls a double and leaves ${JAIL_NAME}.`;
+      if (event.by === "bail") return `${nameOf(event.player)} pays ${JAIL_FINE} to leave ${JAIL_NAME}.`;
+      if (event.by === "card") return `${nameOf(event.player)} uses a card to leave ${JAIL_NAME}.`;
+      return `${nameOf(event.player)} fails a third time, pays ${JAIL_FINE} and leaves ${JAIL_NAME}.`;
+    case "build":
+      return `${nameOf(event.player)} builds ${event.houses === 5 ? "a hotel" : `house ${event.houses}`} in ${squareName(event.square)}.`;
+    case "sell":
+      return `${nameOf(event.player)} sells a house in ${squareName(event.square)}.`;
+    case "mortgage":
+      return `${nameOf(event.player)} mortgages ${squareName(event.square)} for ${event.amount}.`;
+    case "redeem":
+      return `${nameOf(event.player)} redeems ${squareName(event.square)}.`;
+    case "paidDebt":
+      return `${nameOf(event.player)} pays off a debt of ${event.amount}.`;
+    case "bankrupt":
+      return `${nameOf(event.player)} goes bankrupt.`;
+    case "auto":
+      return `${nameOf(event.player)} timed out; the game moves for them.`;
+    case "end":
+      return event.reason === "time" ? "Time is up: net worth decides." : "Only one player is left.";
+  }
+}
+
+/** The contract's answer as a `Game` of the reference engine. A new object every time, free to change. */
+export function toGame(match: ChainMatch): Game {
+  const { meta } = match;
+  const game = structuredClone(match.game);
+  const names = seatNames(meta);
+  const playing = game.phase !== "lobby";
+  const players: Player[] = game.players.map((player) => {
+    const seat = meta.seats.find((s) => s.player === player.id)?.seat ?? 0;
+    return { ...player, secret: "", name: names[seat] ?? player.id, isHost: false, wantsToPlay: true, color: playing ? seat : null, look: lookFromSeat(seat) };
+  });
+  const nameOf = (id: string) => players.find((p) => p.id === id)?.name ?? id;
+  const { salary, cash, blitz, maxRounds } = meta.rules;
+  return {
+    phase: game.phase,
+    // The chain has no clock for the whole game: it ends after `maxRounds` rounds. Its turn clock is `turn_seconds`.
+    settings: { limitMinutes: 0, salary, cash, autoSeconds: meta.turn_seconds, maxRounds, blitz },
+    players,
+    order: game.order,
+    turn: game.turn,
+    stage: game.stage,
+    dice: game.dice,
+    doubles: game.doubles,
+    again: game.again,
+    round: game.round,
+    props: game.props,
+    debt: game.debt,
+    pendingMove: game.pendingMove,
+    card: game.card,
+    buildAt: game.buildAt,
+    builtThisTurn: game.builtThisTurn,
+    log: match.log.map((event) => logLine(event, nameOf)),
+    trade: null,
+    endsAt: null,
+    lastRound: game.phase === "playing" && maxRounds > 0 && game.round >= maxRounds - 1,
+    minted: game.minted,
+    rolls: game.rolls,
+    result: game.result,
+  };
+}
+
+/**
+ * The last board seen of a match that is now settled. The contract drops the board when it pays out, so the final
+ * moves made by somebody else may be missing here; who won and what was paid comes from `get_result` alone.
+ */
+export function settledGame(game: Game, meta: ChainMeta, result: ChainResult): Game {
+  if (game.phase === "ended" && game.result) return game;
+  const ranking = result.ranking.map((seat) => meta.seats[seat]?.player).filter((id): id is string => typeof id === "string");
+  return { ...game, phase: "ended", debt: null, result: { reason: result.reason, ranking } };
+}
+
+/** What this account sees. Somebody without a seat is added as a watcher: the contract has no such player. */
+export function chainView(game: Game, meta: ChainMeta, accountId: string | null, now: number, autoAt: number | null): View {
+  const seat = seatOf(meta, accountId);
+  if (seat !== null) return viewFor(game, meta.seats[seat].player, { code: meta.id, online: new Set(game.players.map((p) => p.id)), now, autoAt });
+  const watcher: Player = { ...newPlayer(WATCHER_ID, "", accountId ? shortAccount(accountId) : "Guest"), wantsToPlay: false };
+  const shown: Game = { ...game, players: [...game.players, watcher] };
+  return viewFor(shown, WATCHER_ID, { code: meta.id, online: new Set(shown.players.map((p) => p.id)), now, autoAt });
+}
+
+const isSquare = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0 && (value as number) < BOARD_SIZE;
+
+/** The contract action a message of the screen stands for. `null`: the contract has nothing like it (trades, lobby settings). */
+export function toAction(message: ClientMessage): ContractAction | null {
+  switch (message.t) {
+    case "roll":
+      return "Roll";
+    case "buy":
+      return "Buy";
+    case "skip":
+      return "Skip";
+    case "end":
+      return "End";
+    case "bail":
+      return "Bail";
+    case "card":
+      return "Card";
+    case "pay":
+      return "Pay";
+    case "bankrupt":
+      return "Bankrupt";
+    case "build":
+      return isSquare(message.square) ? { Build: message.square } : null;
+    case "sell":
+      return isSquare(message.square) ? { Sell: message.square } : null;
+    case "mortgage":
+      return isSquare(message.square) ? { Mortgage: message.square } : null;
+    case "redeem":
+      return isSquare(message.square) ? { Redeem: message.square } : null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Whether the chain's randomness decides what this action does: a roll, or paying the debt of a third failed jail
+ * roll (the held-back move follows and may draw a card). Such an action is never applied here first.
+ */
+export function needsDice(game: Game, action: ContractAction): boolean {
+  return action === "Roll" || (action === "Pay" && game.pendingMove !== null);
+}
+
+/** Whether the rules allow `playerId` an action that needs dice right now. */
+export function diceAllowed(game: Game, playerId: string, action: ContractAction): boolean {
+  const player = currentPlayer(game);
+  if (!player || player.id !== playerId) return false;
+  if (action === "Roll") return game.stage === "roll" || (game.stage === "end" && game.again);
+  if (action === "Pay") return game.stage === "debt" && !!game.debt && player.cash >= game.debt.reduce((sum, payee) => sum + payee.amount, 0);
+  return false;
+}
+
+const NO_DICE: Rng = {
+  die() {
+    throw new Error("only the chain rolls dice");
+  },
+  below() {
+    throw new Error("only the chain draws cards");
+  },
+};
+
+/**
+ * Applies an action that needs no dice, exactly as the contract will. Returns `false`, with the game untouched, when
+ * the rules refuse it (the engine ignores an illegal action) or when it needs dice.
+ */
+export function applyAction(game: Game, playerId: string, action: ContractAction): boolean {
+  if (needsDice(game, action)) return false;
+  const before = JSON.stringify(game);
+  if (action === "Buy") buy(game, playerId);
+  else if (action === "Skip") skipBuying(game, playerId);
+  else if (action === "End") endTurn(game, playerId);
+  else if (action === "Bail") payBail(game, playerId);
+  else if (action === "Card") useFreeCard(game, playerId);
+  else if (action === "Pay") payDebt(game, playerId, NO_DICE);
+  else if (action === "Bankrupt") declareBankruptcy(game, playerId);
+  else if (typeof action === "string") return false;
+  else if ("Build" in action) build(game, playerId, action.Build);
+  else if ("Sell" in action) sellHouse(game, playerId, action.Sell);
+  else if ("Mortgage" in action) mortgage(game, playerId, action.Mortgage);
+  else if ("Redeem" in action) redeem(game, playerId, action.Redeem);
+  return JSON.stringify(game) !== before;
+}
+
+/** Basis points as a percentage: `250` is `2.5%`. */
+export function formatBps(basisPoints: number): string {
+  return `${basisPoints / 100}%`;
+}
+
+/** yoctoNEAR as a plain NEAR amount: `"1400000000000000000000000"` is `1.4`. Cut, not rounded, after `digits` decimals. */
+export function formatNear(yocto: string, digits = 4): string {
+  const value = BigInt(yocto);
+  const one = 10n ** 24n;
+  const decimals = ((value % one) / 10n ** BigInt(24 - digits)).toString().padStart(digits, "0").replace(/0+$/, "");
+  return decimals ? `${value / one}.${decimals}` : `${value / one}`;
+}

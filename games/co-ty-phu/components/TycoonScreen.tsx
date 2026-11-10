@@ -219,7 +219,15 @@ function useStageEffects(view: View, holding: boolean) {
   }, []);
 }
 
-function Stage({ view, offline, send }: { view: View; offline: boolean; send: Send }) {
+/** What differs when the game runs on the contract instead of the room server (see `ChainScreen`): no trades, no "new game". */
+export type ChainStage = {
+  /** A roll is on its way to the chain: the turn buttons rest until it lands. */
+  busy: boolean;
+  /** The payout card of a settled match, shown in place of the room server's result card. */
+  result: (onClose: () => void) => ReactNode;
+};
+
+export function Stage({ view, offline, send, chain }: { view: View; offline: boolean; send: Send; chain?: ChainStage }) {
   // Máy không vẽ được 3D thì dùng bàn cờ 2D.
   const [has3D, setHas3D] = useState(true);
   const { holding, arrived } = useRollHold(view, has3D);
@@ -242,7 +250,11 @@ function Stage({ view, offline, send }: { view: View; offline: boolean; send: Se
           <SoundToggle />
         </header>
       )}
-      {view.phase === "lobby" ? <Lobby view={view} send={send} /> : <Game view={view} send={send} has3D={has3D} holding={holding} onArrive={arrived} onBroken={() => setHas3D(false)} />}
+      {view.phase === "lobby" ? (
+        <Lobby view={view} send={send} />
+      ) : (
+        <Game view={view} send={send} chain={chain} has3D={has3D} holding={holding} onArrive={arrived} onBroken={() => setHas3D(false)} />
+      )}
     </main>
   );
 }
@@ -474,6 +486,7 @@ type Sheet = { kind: "assets"; playerId: string } | { kind: "trade" } | { kind: 
 function Game({
   view,
   send,
+  chain,
   has3D,
   holding,
   onArrive,
@@ -481,6 +494,7 @@ function Game({
 }: {
   view: View;
   send: Send;
+  chain?: ChainStage;
   has3D: boolean;
   holding: boolean;
   onArrive: (rolls: number) => void;
@@ -516,7 +530,8 @@ function Game({
   }, [myTurn]);
 
   const pick = (index: number) => setSelected(selected === index ? null : index);
-  const result = view.phase === "ended" && showResult && <ResultCard view={view} send={send} onClose={() => setShowResult(false)} />;
+  const closeResult = () => setShowResult(false);
+  const result = view.phase === "ended" && showResult && (chain ? chain.result(closeResult) : <ResultCard view={view} send={send} onClose={closeResult} />);
 
   // Bán nhà, cầm cố ngay trên bàn 3D: đang nợ thì tự bật, không nợ thì chọn "Cầm cố, bán nhà" trong bảng thêm. Bàn tối các ô khác,
   // chỉ sáng đất bán hay cầm cố được kèm số tiền nhận; chạm ô sáng là bán một nhà (ô có nhà) hay cầm cố (ô không nhà) luôn.
@@ -538,6 +553,8 @@ function Game({
   const crowded = view.order.length > SEATS_IN_CORNERS;
   const insets = landscape ? { x: SIDE_COLUMN_PX, y: crowded ? CROWDED_ROW_PX : 0 } : { x: 0, y: BAND_PX };
   const canTrade = active && view.phase === "playing" && !paused && view.trade === null && partners.length > 0;
+  // The contract has no trades between players.
+  const trades = active && view.phase === "playing" && !chain;
 
   if (has3D) {
     const close = () => setSheet(null);
@@ -565,7 +582,15 @@ function Game({
             </button>
           </div>
           {view.phase === "playing" && (
-            <TurnControls view={view} send={send} holding={holding} raising={raising && !debt} offers={offers.size} onStopRaising={() => setRaising(false)} />
+            <TurnControls
+              view={view}
+              send={send}
+              holding={holding}
+              busy={chain?.busy ?? false}
+              raising={raising && !debt}
+              offers={offers.size}
+              onStopRaising={() => setRaising(false)}
+            />
           )}
           <CardPopup view={view} holding={holding} />
           {result}
@@ -594,7 +619,7 @@ function Game({
                 <span className="tp-switch">{locked ? "bật" : "tắt"}</span>
               </button>
               <div className="tp-more__buttons">
-                {active && view.phase === "playing" && (
+                {trades && (
                   <button type="button" className="tp-btn" disabled={!canTrade} onClick={() => setSheet({ kind: "trade" })}>
                     Đổi đất
                   </button>
@@ -655,7 +680,7 @@ function Game({
               Tài sản
             </button>
           )}
-          {active && view.phase === "playing" && (
+          {trades && (
             <button type="button" className="tp-btn" disabled={!canTrade} onClick={() => setSheet({ kind: "trade" })}>
               Đổi đất
             </button>
@@ -701,6 +726,7 @@ function TurnControls({
   view,
   send,
   holding,
+  busy,
   raising,
   offers,
   onStopRaising,
@@ -708,12 +734,14 @@ function TurnControls({
   view: View;
   send: Send;
   holding: boolean;
+  /** On chain: the roll just made has not landed yet. */
+  busy: boolean;
   raising: boolean;
   offers: number;
   onStopRaising: () => void;
 }) {
   const mine = me(view);
-  const myTurn = view.current === mine.id && !view.pause && !holding;
+  const myTurn = view.current === mine.id && !view.pause && !holding && !busy;
   const square = SQUARES[mine.position];
   const autoLeft = useAutoLeft(view);
   const center: ReactNode[] = [];
@@ -802,6 +830,14 @@ function TurnControls({
             </span>
           )}
         </button>
+      </div>
+    );
+  } else if (busy && view.current === mine.id) {
+    corner = (
+      <div className="tp-turn">
+        <span className="tp-turn__note" aria-live="polite">
+          Rolling on NEAR…
+        </span>
       </div>
     );
   }

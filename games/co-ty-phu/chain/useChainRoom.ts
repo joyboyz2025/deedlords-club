@@ -1,0 +1,35 @@
+"use client";
+
+import { useEffect, useMemo, useSyncExternalStore } from "react";
+import type { Session } from "@/lib/chain/client";
+import { CHAIN } from "@/lib/chain/config";
+import { chainClient } from "@/lib/chain/shared";
+import type { Send } from "../useRoom";
+import { ChainRoom, type RoomState } from "./room";
+
+/**
+ * An on-chain match in React: what `useRoom` is for a room on the room server. `session` is the viewer's function-call
+ * key for the game contract, `null` to only watch. Every state is the whole of what the viewer sees.
+ */
+export function useChainRoom(id: string, session: Session | null): RoomState & { send: Send; retry: () => void; refresh: () => Promise<void> } {
+  const room = useMemo(
+    () => new ChainRoom({ id, reader: chainClient, caller: session, pollMs: CHAIN.pollMs, isVisible: () => document.visibilityState !== "hidden" }),
+    [id, session],
+  );
+
+  useEffect(() => {
+    room.start();
+    // Back on the tab: read at once instead of at the next poll.
+    const wake = () => {
+      if (document.visibilityState !== "hidden") void room.refresh();
+    };
+    document.addEventListener("visibilitychange", wake);
+    return () => {
+      document.removeEventListener("visibilitychange", wake);
+      room.stop();
+    };
+  }, [room]);
+
+  const state = useSyncExternalStore(room.subscribe, room.getState, room.getState);
+  return { ...state, send: room.send, retry: room.retry, refresh: room.refresh };
+}

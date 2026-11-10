@@ -1,0 +1,4970 @@
+{
+  "note": "Real answers of the Deedlords contract on a local near-sandbox, written by contracts/sandbox/dev.js --capture.",
+  "contractId": "game.sandbox",
+  "lobby": {
+    "meta": {
+      "id": "dev-mwb1g1p5-1",
+      "status": "lobby",
+      "seats": [
+        {
+          "seat": 0,
+          "player": "s0",
+          "backer": "alice.sandbox",
+          "driver": null,
+          "house": false
+        },
+        {
+          "seat": 1,
+          "player": "s1",
+          "backer": null,
+          "driver": null,
+          "house": false
+        }
+      ],
+      "stake": "1000000000000000000000000",
+      "split": [
+        7000,
+        3000
+      ],
+      "fee_bps": 250,
+      "rules": {
+        "salary": 200,
+        "cash": 1500,
+        "blitz": false,
+        "maxRounds": 3
+      },
+      "solo_player": null,
+      "creator": "alice.sandbox",
+      "storage_deposit": "60000000000000000000000",
+      "created_at": "1794336201365377000",
+      "last_activity": "1794336202247387000",
+      "turn_seconds": 120,
+      "turn_deadline": "0",
+      "draws": 0,
+      "current_seat": null
+    },
+    "game": {
+      "phase": "lobby",
+      "order": [],
+      "turn": 0,
+      "stage": "roll",
+      "dice": null,
+      "doubles": 0,
+      "again": false,
+      "round": 0,
+      "props": {},
+      "debt": null,
+      "pendingMove": null,
+      "card": null,
+      "buildAt": null,
+      "builtThisTurn": [],
+      "minted": 0,
+      "rolls": 0,
+      "result": null,
+      "players": [
+        {
+          "id": "s0",
+          "cash": 0,
+          "position": 0,
+          "jail": null,
+          "freeCards": [],
+          "bankrupt": false,
+          "outAt": null
+        },
+        {
+          "id": "s1",
+          "cash": 0,
+          "position": 0,
+          "jail": null,
+          "freeCards": [],
+          "bankrupt": false,
+          "outAt": null
+        }
+      ]
+    },
+    "log": []
+  },
+  "listed": [
+    {
+      "id": "dev-mwb1g1p5-1",
+      "status": "lobby",
+      "seats": [
+        {
+          "seat": 0,
+          "player": "s0",
+          "backer": "alice.sandbox",
+          "driver": null,
+          "house": false
+        },
+        {
+          "seat": 1,
+          "player": "s1",
+          "backer": null,
+          "driver": null,
+          "house": false
+        }
+      ],
+      "stake": "1000000000000000000000000",
+      "split": [
+        7000,
+        3000
+      ],
+      "fee_bps": 250,
+      "rules": {
+        "salary": 200,
+        "cash": 1500,
+        "blitz": false,
+        "maxRounds": 3
+      },
+      "solo_player": null,
+      "creator": "alice.sandbox",
+      "storage_deposit": "60000000000000000000000",
+      "created_at": "1794336201365377000",
+      "last_activity": "1794336202247387000",
+      "turn_seconds": 120,
+      "turn_deadline": "0",
+      "draws": 0,
+      "current_seat": null,
+      "round": 0,
+      "phase": "lobby"
+    }
+  ],
+  "started": {
+    "meta": {
+      "id": "dev-mwb1g1p5-1",
+      "status": "playing",
+      "seats": [
+        {
+          "seat": 0,
+          "player": "s0",
+          "backer": "alice.sandbox",
+          "driver": null,
+          "house": false
+        },
+        {
+          "seat": 1,
+          "player": "s1",
+          "backer": "bob.sandbox",
+          "driver": null,
+          "house": false
+        }
+      ],
+      "stake": "1000000000000000000000000",
+      "split": [
+        7000,
+        3000
+      ],
+      "fee_bps": 250,
+      "rules": {
+        "salary": 200,
+        "cash": 1500,
+        "blitz": false,
+        "maxRounds": 3
+      },
+      "solo_player": null,
+      "creator": "alice.sandbox",
+      "storage_deposit": "60000000000000000000000",
+      "created_at": "1794336201365377000",
+      "last_activity": "1794336203018889000",
+      "turn_seconds": 120,
+      "turn_deadline": "1794336323018889000",
+      "draws": 1,
+      "current_seat": 0
+    },
+    "game": {
+      "phase": "playing",
+      "order": [
+        "s0",
+        "s1"
+      ],
+      "turn": 0,
+      "stage": "roll",
+      "dice": null,
+      "doubles": 0,
+      "again": false,
+      "round": 0,
+      "props": {},
+      "debt": null,
+      "pendingMove": null,
+      "card": null,
+      "buildAt": null,
+      "builtThisTurn": [],
+      "minted": 3000,
+      "rolls": 0,
+      "result": null,
+      "players": [
+        {
+          "id": "s0",
+          "cash": 1500,
+          "position": 0,
+          "jail": null,
+          "freeCards": [],
+          "bankrupt": false,
+          "outAt": null
+        },
+        {
+          "id": "s1",
+          "cash": 1500,
+          "position": 0,
+          "jail": null,
+          "freeCards": [],
+          "bankrupt": false,
+          "outAt": null
+        }
+      ]
+    },
+    "log": [
+      {
+        "kind": "start",
+        "first": "s0"
+      }
+    ]
+  },
+  "samples": {
+    "buy": {
+      "meta": {
+        "id": "dev-mwb1g1p5-1",
+        "status": "playing",
+        "seats": [
+          {
+            "seat": 0,
+            "player": "s0",
+            "backer": "alice.sandbox",
+            "driver": null,
+            "house": false
+          },
+          {
+            "seat": 1,
+            "player": "s1",
+            "backer": "bob.sandbox",
+            "driver": null,
+            "house": false
+          }
+        ],
+        "stake": "1000000000000000000000000",
+        "split": [
+          7000,
+          3000
+        ],
+        "fee_bps": 250,
+        "rules": {
+          "salary": 200,
+          "cash": 1500,
+          "blitz": false,
+          "maxRounds": 3
+        },
+        "solo_player": null,
+        "creator": "alice.sandbox",
+        "storage_deposit": "60000000000000000000000",
+        "created_at": "1794336201365377000",
+        "last_activity": "1794336205640105000",
+        "turn_seconds": 120,
+        "turn_deadline": "1794336325640105000",
+        "draws": 3,
+        "current_seat": 1
+      },
+      "game": {
+        "phase": "playing",
+        "order": [
+          "s0",
+          "s1"
+        ],
+        "turn": 1,
+        "stage": "buy",
+        "dice": [
+          6,
+          5
+        ],
+        "doubles": 0,
+        "again": false,
+        "round": 0,
+        "props": {},
+        "debt": null,
+        "pendingMove": null,
+        "card": null,
+        "buildAt": null,
+        "builtThisTurn": [],
+        "minted": 3000,
+        "rolls": 2,
+        "result": null,
+        "players": [
+          {
+            "id": "s0",
+            "cash": 1500,
+            "position": 10,
+            "jail": null,
+            "freeCards": [],
+            "bankrupt": false,
+            "outAt": null
+          },
+          {
+            "id": "s1",
+            "cash": 1500,
+            "position": 11,
+            "jail": null,
+            "freeCards": [],
+            "bankrupt": false,
+            "outAt": null
+          }
+        ]
+      },
+      "log": [
+        {
+          "kind": "start",
+          "first": "s0"
+        },
+        {
+          "kind": "roll",
+          "player": "s0",
+          "dice": [
+            4,
+            6
+          ]
+        },
+        {
+          "kind": "roll",
+          "player": "s1",
+          "dice": [
+            6,
+            5
+          ]
+        }
+      ]
+    }
+  },
+  "calls": [
+    {
+      "seat": 0,
+      "actions": [
+        "Roll"
+      ],
+      "returned": {
+        "applied": 1,
+        "rejected": null
+      },
+      "events": [
+        {
+          "standard": "deedlords",
+          "version": "1.0.0",
+          "event": "actions",
+          "data": {
+            "id": "dev-mwb1g1p5-1",
+            "kind": "play",
+            "seat": 0,
+            "by": "alice.sandbox",
+            "steps": [
+              {
+                "action": "Roll",
+                "events": [
+                  {
+                    "kind": "roll",
+                    "player": "s0",
+                    "dice": [
+                      4,
+                      6
+                    ]
+                  }
+                ]
+              }
+            ],
+            "phase": "playing",
+            "stage": "end",
+            "current_seat": 0,
+            "turn_deadline": "1794336323842351000"
+          }
+        }
+      ],
+      "before": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336203018889000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336323018889000",
+          "draws": 1,
+          "current_seat": 0
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 0,
+          "stage": "roll",
+          "dice": null,
+          "doubles": 0,
+          "again": false,
+          "round": 0,
+          "props": {},
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 3000,
+          "rolls": 0,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1500,
+              "position": 0,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1500,
+              "position": 0,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          }
+        ]
+      },
+      "after": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336203842351000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336323842351000",
+          "draws": 2,
+          "current_seat": 0
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 0,
+          "stage": "end",
+          "dice": [
+            4,
+            6
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 0,
+          "props": {},
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 3000,
+          "rolls": 1,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1500,
+              "position": 10,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1500,
+              "position": 0,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "seat": 0,
+      "actions": [
+        "End"
+      ],
+      "returned": {
+        "applied": 1,
+        "rejected": null
+      },
+      "events": [
+        {
+          "standard": "deedlords",
+          "version": "1.0.0",
+          "event": "actions",
+          "data": {
+            "id": "dev-mwb1g1p5-1",
+            "kind": "play",
+            "seat": 0,
+            "by": "alice.sandbox",
+            "steps": [
+              {
+                "action": "End",
+                "events": []
+              }
+            ],
+            "phase": "playing",
+            "stage": "roll",
+            "current_seat": 1,
+            "turn_deadline": "1794336324724466000"
+          }
+        }
+      ],
+      "before": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336203842351000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336323842351000",
+          "draws": 2,
+          "current_seat": 0
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 0,
+          "stage": "end",
+          "dice": [
+            4,
+            6
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 0,
+          "props": {},
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 3000,
+          "rolls": 1,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1500,
+              "position": 10,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1500,
+              "position": 0,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          }
+        ]
+      },
+      "after": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336204724466000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336324724466000",
+          "draws": 2,
+          "current_seat": 1
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 1,
+          "stage": "roll",
+          "dice": [
+            4,
+            6
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 0,
+          "props": {},
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 3000,
+          "rolls": 1,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1500,
+              "position": 10,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1500,
+              "position": 0,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "seat": 1,
+      "actions": [
+        "Roll"
+      ],
+      "returned": {
+        "applied": 1,
+        "rejected": null
+      },
+      "events": [
+        {
+          "standard": "deedlords",
+          "version": "1.0.0",
+          "event": "actions",
+          "data": {
+            "id": "dev-mwb1g1p5-1",
+            "kind": "play",
+            "seat": 1,
+            "by": "bob.sandbox",
+            "steps": [
+              {
+                "action": "Roll",
+                "events": [
+                  {
+                    "kind": "roll",
+                    "player": "s1",
+                    "dice": [
+                      6,
+                      5
+                    ]
+                  }
+                ]
+              }
+            ],
+            "phase": "playing",
+            "stage": "buy",
+            "current_seat": 1,
+            "turn_deadline": "1794336325640105000"
+          }
+        }
+      ],
+      "before": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336204724466000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336324724466000",
+          "draws": 2,
+          "current_seat": 1
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 1,
+          "stage": "roll",
+          "dice": [
+            4,
+            6
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 0,
+          "props": {},
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 3000,
+          "rolls": 1,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1500,
+              "position": 10,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1500,
+              "position": 0,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          }
+        ]
+      },
+      "after": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336205640105000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336325640105000",
+          "draws": 3,
+          "current_seat": 1
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 1,
+          "stage": "buy",
+          "dice": [
+            6,
+            5
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 0,
+          "props": {},
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 3000,
+          "rolls": 2,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1500,
+              "position": 10,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1500,
+              "position": 11,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "seat": 1,
+      "actions": [
+        "Buy"
+      ],
+      "returned": {
+        "applied": 1,
+        "rejected": null
+      },
+      "events": [
+        {
+          "standard": "deedlords",
+          "version": "1.0.0",
+          "event": "actions",
+          "data": {
+            "id": "dev-mwb1g1p5-1",
+            "kind": "play",
+            "seat": 1,
+            "by": "bob.sandbox",
+            "steps": [
+              {
+                "action": "Buy",
+                "events": [
+                  {
+                    "kind": "buy",
+                    "player": "s1",
+                    "square": 11,
+                    "price": 140
+                  }
+                ]
+              }
+            ],
+            "phase": "playing",
+            "stage": "end",
+            "current_seat": 1,
+            "turn_deadline": "1794336325640105000"
+          }
+        }
+      ],
+      "before": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336205640105000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336325640105000",
+          "draws": 3,
+          "current_seat": 1
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 1,
+          "stage": "buy",
+          "dice": [
+            6,
+            5
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 0,
+          "props": {},
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 3000,
+          "rolls": 2,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1500,
+              "position": 10,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1500,
+              "position": 11,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          }
+        ]
+      },
+      "after": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336206510339000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336325640105000",
+          "draws": 3,
+          "current_seat": 1
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 1,
+          "stage": "end",
+          "dice": [
+            6,
+            5
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 0,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2860,
+          "rolls": 2,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1500,
+              "position": 10,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1360,
+              "position": 11,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          }
+        ]
+      }
+    },
+    {
+      "seat": 1,
+      "actions": [
+        "End"
+      ],
+      "returned": {
+        "applied": 1,
+        "rejected": null
+      },
+      "events": [
+        {
+          "standard": "deedlords",
+          "version": "1.0.0",
+          "event": "actions",
+          "data": {
+            "id": "dev-mwb1g1p5-1",
+            "kind": "play",
+            "seat": 1,
+            "by": "bob.sandbox",
+            "steps": [
+              {
+                "action": "End",
+                "events": []
+              }
+            ],
+            "phase": "playing",
+            "stage": "roll",
+            "current_seat": 0,
+            "turn_deadline": "1794336327429159000"
+          }
+        }
+      ],
+      "before": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336206510339000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336325640105000",
+          "draws": 3,
+          "current_seat": 1
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 1,
+          "stage": "end",
+          "dice": [
+            6,
+            5
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 0,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2860,
+          "rolls": 2,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1500,
+              "position": 10,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1360,
+              "position": 11,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          }
+        ]
+      },
+      "after": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336207429159000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336327429159000",
+          "draws": 3,
+          "current_seat": 0
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 0,
+          "stage": "roll",
+          "dice": [
+            6,
+            5
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 1,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2860,
+          "rolls": 2,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1500,
+              "position": 10,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1360,
+              "position": 11,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          }
+        ]
+      }
+    },
+    {
+      "seat": 0,
+      "actions": [
+        "Roll"
+      ],
+      "returned": {
+        "applied": 1,
+        "rejected": null
+      },
+      "events": [
+        {
+          "standard": "deedlords",
+          "version": "1.0.0",
+          "event": "actions",
+          "data": {
+            "id": "dev-mwb1g1p5-1",
+            "kind": "play",
+            "seat": 0,
+            "by": "alice.sandbox",
+            "steps": [
+              {
+                "action": "Roll",
+                "events": [
+                  {
+                    "kind": "roll",
+                    "player": "s0",
+                    "dice": [
+                      1,
+                      3
+                    ]
+                  }
+                ]
+              }
+            ],
+            "phase": "playing",
+            "stage": "buy",
+            "current_seat": 0,
+            "turn_deadline": "1794336328301772000"
+          }
+        }
+      ],
+      "before": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336207429159000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336327429159000",
+          "draws": 3,
+          "current_seat": 0
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 0,
+          "stage": "roll",
+          "dice": [
+            6,
+            5
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 1,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2860,
+          "rolls": 2,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1500,
+              "position": 10,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1360,
+              "position": 11,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          }
+        ]
+      },
+      "after": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336208301772000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336328301772000",
+          "draws": 4,
+          "current_seat": 0
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 0,
+          "stage": "buy",
+          "dice": [
+            1,
+            3
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 1,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2860,
+          "rolls": 3,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1500,
+              "position": 14,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1360,
+              "position": 11,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              1,
+              3
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "seat": 0,
+      "actions": [
+        "Buy"
+      ],
+      "returned": {
+        "applied": 1,
+        "rejected": null
+      },
+      "events": [
+        {
+          "standard": "deedlords",
+          "version": "1.0.0",
+          "event": "actions",
+          "data": {
+            "id": "dev-mwb1g1p5-1",
+            "kind": "play",
+            "seat": 0,
+            "by": "alice.sandbox",
+            "steps": [
+              {
+                "action": "Buy",
+                "events": [
+                  {
+                    "kind": "buy",
+                    "player": "s0",
+                    "square": 14,
+                    "price": 160
+                  }
+                ]
+              }
+            ],
+            "phase": "playing",
+            "stage": "end",
+            "current_seat": 0,
+            "turn_deadline": "1794336328301772000"
+          }
+        }
+      ],
+      "before": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336208301772000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336328301772000",
+          "draws": 4,
+          "current_seat": 0
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 0,
+          "stage": "buy",
+          "dice": [
+            1,
+            3
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 1,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2860,
+          "rolls": 3,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1500,
+              "position": 14,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1360,
+              "position": 11,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              1,
+              3
+            ]
+          }
+        ]
+      },
+      "after": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336209187822000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336328301772000",
+          "draws": 4,
+          "current_seat": 0
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 0,
+          "stage": "end",
+          "dice": [
+            1,
+            3
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 1,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "14": {
+              "owner": "s0",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2700,
+          "rolls": 3,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1340,
+              "position": 14,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1360,
+              "position": 11,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              1,
+              3
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s0",
+            "square": 14,
+            "price": 160
+          }
+        ]
+      }
+    },
+    {
+      "seat": 0,
+      "actions": [
+        "End"
+      ],
+      "returned": {
+        "applied": 1,
+        "rejected": null
+      },
+      "events": [
+        {
+          "standard": "deedlords",
+          "version": "1.0.0",
+          "event": "actions",
+          "data": {
+            "id": "dev-mwb1g1p5-1",
+            "kind": "play",
+            "seat": 0,
+            "by": "alice.sandbox",
+            "steps": [
+              {
+                "action": "End",
+                "events": []
+              }
+            ],
+            "phase": "playing",
+            "stage": "roll",
+            "current_seat": 1,
+            "turn_deadline": "1794336330052844000"
+          }
+        }
+      ],
+      "before": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336209187822000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336328301772000",
+          "draws": 4,
+          "current_seat": 0
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 0,
+          "stage": "end",
+          "dice": [
+            1,
+            3
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 1,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "14": {
+              "owner": "s0",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2700,
+          "rolls": 3,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1340,
+              "position": 14,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1360,
+              "position": 11,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              1,
+              3
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s0",
+            "square": 14,
+            "price": 160
+          }
+        ]
+      },
+      "after": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336210052844000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336330052844000",
+          "draws": 4,
+          "current_seat": 1
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 1,
+          "stage": "roll",
+          "dice": [
+            1,
+            3
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 1,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "14": {
+              "owner": "s0",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2700,
+          "rolls": 3,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1340,
+              "position": 14,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1360,
+              "position": 11,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              1,
+              3
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s0",
+            "square": 14,
+            "price": 160
+          }
+        ]
+      }
+    },
+    {
+      "seat": 1,
+      "actions": [
+        "Roll"
+      ],
+      "returned": {
+        "applied": 1,
+        "rejected": null
+      },
+      "events": [
+        {
+          "standard": "deedlords",
+          "version": "1.0.0",
+          "event": "actions",
+          "data": {
+            "id": "dev-mwb1g1p5-1",
+            "kind": "play",
+            "seat": 1,
+            "by": "bob.sandbox",
+            "steps": [
+              {
+                "action": "Roll",
+                "events": [
+                  {
+                    "kind": "roll",
+                    "player": "s1",
+                    "dice": [
+                      5,
+                      2
+                    ]
+                  }
+                ]
+              }
+            ],
+            "phase": "playing",
+            "stage": "buy",
+            "current_seat": 1,
+            "turn_deadline": "1794336330929493000"
+          }
+        }
+      ],
+      "before": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336210052844000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336330052844000",
+          "draws": 4,
+          "current_seat": 1
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 1,
+          "stage": "roll",
+          "dice": [
+            1,
+            3
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 1,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "14": {
+              "owner": "s0",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2700,
+          "rolls": 3,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1340,
+              "position": 14,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1360,
+              "position": 11,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              1,
+              3
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s0",
+            "square": 14,
+            "price": 160
+          }
+        ]
+      },
+      "after": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336210929493000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336330929493000",
+          "draws": 5,
+          "current_seat": 1
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 1,
+          "stage": "buy",
+          "dice": [
+            5,
+            2
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 1,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "14": {
+              "owner": "s0",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2700,
+          "rolls": 4,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1340,
+              "position": 14,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1360,
+              "position": 18,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              1,
+              3
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s0",
+            "square": 14,
+            "price": 160
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              5,
+              2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "seat": 1,
+      "actions": [
+        "Buy"
+      ],
+      "returned": {
+        "applied": 1,
+        "rejected": null
+      },
+      "events": [
+        {
+          "standard": "deedlords",
+          "version": "1.0.0",
+          "event": "actions",
+          "data": {
+            "id": "dev-mwb1g1p5-1",
+            "kind": "play",
+            "seat": 1,
+            "by": "bob.sandbox",
+            "steps": [
+              {
+                "action": "Buy",
+                "events": [
+                  {
+                    "kind": "buy",
+                    "player": "s1",
+                    "square": 18,
+                    "price": 180
+                  }
+                ]
+              }
+            ],
+            "phase": "playing",
+            "stage": "end",
+            "current_seat": 1,
+            "turn_deadline": "1794336330929493000"
+          }
+        }
+      ],
+      "before": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336210929493000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336330929493000",
+          "draws": 5,
+          "current_seat": 1
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 1,
+          "stage": "buy",
+          "dice": [
+            5,
+            2
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 1,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "14": {
+              "owner": "s0",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2700,
+          "rolls": 4,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1340,
+              "position": 14,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1360,
+              "position": 18,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              1,
+              3
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s0",
+            "square": 14,
+            "price": 160
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              5,
+              2
+            ]
+          }
+        ]
+      },
+      "after": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336211828748000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336330929493000",
+          "draws": 5,
+          "current_seat": 1
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 1,
+          "stage": "end",
+          "dice": [
+            5,
+            2
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 1,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "14": {
+              "owner": "s0",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "18": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2520,
+          "rolls": 4,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1340,
+              "position": 14,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1180,
+              "position": 18,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              1,
+              3
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s0",
+            "square": 14,
+            "price": 160
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              5,
+              2
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 18,
+            "price": 180
+          }
+        ]
+      }
+    },
+    {
+      "seat": 1,
+      "actions": [
+        "End"
+      ],
+      "returned": {
+        "applied": 1,
+        "rejected": null
+      },
+      "events": [
+        {
+          "standard": "deedlords",
+          "version": "1.0.0",
+          "event": "actions",
+          "data": {
+            "id": "dev-mwb1g1p5-1",
+            "kind": "play",
+            "seat": 1,
+            "by": "bob.sandbox",
+            "steps": [
+              {
+                "action": "End",
+                "events": []
+              }
+            ],
+            "phase": "playing",
+            "stage": "roll",
+            "current_seat": 0,
+            "turn_deadline": "1794336332698889000"
+          }
+        }
+      ],
+      "before": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336211828748000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336330929493000",
+          "draws": 5,
+          "current_seat": 1
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 1,
+          "stage": "end",
+          "dice": [
+            5,
+            2
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 1,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "14": {
+              "owner": "s0",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "18": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2520,
+          "rolls": 4,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1340,
+              "position": 14,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1180,
+              "position": 18,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              1,
+              3
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s0",
+            "square": 14,
+            "price": 160
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              5,
+              2
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 18,
+            "price": 180
+          }
+        ]
+      },
+      "after": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336212698889000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336332698889000",
+          "draws": 5,
+          "current_seat": 0
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 0,
+          "stage": "roll",
+          "dice": [
+            5,
+            2
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 2,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "14": {
+              "owner": "s0",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "18": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2520,
+          "rolls": 4,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1340,
+              "position": 14,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1180,
+              "position": 18,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              1,
+              3
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s0",
+            "square": 14,
+            "price": 160
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              5,
+              2
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 18,
+            "price": 180
+          }
+        ]
+      }
+    },
+    {
+      "seat": 0,
+      "actions": [
+        "Roll"
+      ],
+      "returned": {
+        "applied": 1,
+        "rejected": null
+      },
+      "events": [
+        {
+          "standard": "deedlords",
+          "version": "1.0.0",
+          "event": "actions",
+          "data": {
+            "id": "dev-mwb1g1p5-1",
+            "kind": "play",
+            "seat": 0,
+            "by": "alice.sandbox",
+            "steps": [
+              {
+                "action": "Roll",
+                "events": [
+                  {
+                    "kind": "roll",
+                    "player": "s0",
+                    "dice": [
+                      3,
+                      6
+                    ]
+                  }
+                ]
+              }
+            ],
+            "phase": "playing",
+            "stage": "buy",
+            "current_seat": 0,
+            "turn_deadline": "1794336333561950000"
+          }
+        }
+      ],
+      "before": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336212698889000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336332698889000",
+          "draws": 5,
+          "current_seat": 0
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 0,
+          "stage": "roll",
+          "dice": [
+            5,
+            2
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 2,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "14": {
+              "owner": "s0",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "18": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2520,
+          "rolls": 4,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1340,
+              "position": 14,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1180,
+              "position": 18,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              1,
+              3
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s0",
+            "square": 14,
+            "price": 160
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              5,
+              2
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 18,
+            "price": 180
+          }
+        ]
+      },
+      "after": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336213561950000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336333561950000",
+          "draws": 6,
+          "current_seat": 0
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 0,
+          "stage": "buy",
+          "dice": [
+            3,
+            6
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 2,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "14": {
+              "owner": "s0",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "18": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2520,
+          "rolls": 5,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1340,
+              "position": 23,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1180,
+              "position": 18,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              1,
+              3
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s0",
+            "square": 14,
+            "price": 160
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              5,
+              2
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 18,
+            "price": 180
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              3,
+              6
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "seat": 0,
+      "actions": [
+        "Buy"
+      ],
+      "returned": {
+        "applied": 1,
+        "rejected": null
+      },
+      "events": [
+        {
+          "standard": "deedlords",
+          "version": "1.0.0",
+          "event": "actions",
+          "data": {
+            "id": "dev-mwb1g1p5-1",
+            "kind": "play",
+            "seat": 0,
+            "by": "alice.sandbox",
+            "steps": [
+              {
+                "action": "Buy",
+                "events": [
+                  {
+                    "kind": "buy",
+                    "player": "s0",
+                    "square": 23,
+                    "price": 220
+                  }
+                ]
+              }
+            ],
+            "phase": "playing",
+            "stage": "end",
+            "current_seat": 0,
+            "turn_deadline": "1794336333561950000"
+          }
+        }
+      ],
+      "before": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336213561950000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336333561950000",
+          "draws": 6,
+          "current_seat": 0
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 0,
+          "stage": "buy",
+          "dice": [
+            3,
+            6
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 2,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "14": {
+              "owner": "s0",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "18": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2520,
+          "rolls": 5,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1340,
+              "position": 23,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1180,
+              "position": 18,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              1,
+              3
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s0",
+            "square": 14,
+            "price": 160
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              5,
+              2
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 18,
+            "price": 180
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              3,
+              6
+            ]
+          }
+        ]
+      },
+      "after": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336214442421000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336333561950000",
+          "draws": 6,
+          "current_seat": 0
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 0,
+          "stage": "end",
+          "dice": [
+            3,
+            6
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 2,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "14": {
+              "owner": "s0",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "18": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "23": {
+              "owner": "s0",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2300,
+          "rolls": 5,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1120,
+              "position": 23,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1180,
+              "position": 18,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              1,
+              3
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s0",
+            "square": 14,
+            "price": 160
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              5,
+              2
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 18,
+            "price": 180
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              3,
+              6
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s0",
+            "square": 23,
+            "price": 220
+          }
+        ]
+      }
+    },
+    {
+      "seat": 0,
+      "actions": [
+        "End"
+      ],
+      "returned": {
+        "applied": 1,
+        "rejected": null
+      },
+      "events": [
+        {
+          "standard": "deedlords",
+          "version": "1.0.0",
+          "event": "actions",
+          "data": {
+            "id": "dev-mwb1g1p5-1",
+            "kind": "play",
+            "seat": 0,
+            "by": "alice.sandbox",
+            "steps": [
+              {
+                "action": "End",
+                "events": []
+              }
+            ],
+            "phase": "playing",
+            "stage": "roll",
+            "current_seat": 1,
+            "turn_deadline": "1794336335385569000"
+          }
+        }
+      ],
+      "before": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336214442421000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336333561950000",
+          "draws": 6,
+          "current_seat": 0
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 0,
+          "stage": "end",
+          "dice": [
+            3,
+            6
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 2,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "14": {
+              "owner": "s0",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "18": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "23": {
+              "owner": "s0",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2300,
+          "rolls": 5,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1120,
+              "position": 23,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1180,
+              "position": 18,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              1,
+              3
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s0",
+            "square": 14,
+            "price": 160
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              5,
+              2
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 18,
+            "price": 180
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              3,
+              6
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s0",
+            "square": 23,
+            "price": 220
+          }
+        ]
+      },
+      "after": {
+        "meta": {
+          "id": "dev-mwb1g1p5-1",
+          "status": "playing",
+          "seats": [
+            {
+              "seat": 0,
+              "player": "s0",
+              "backer": "alice.sandbox",
+              "driver": null,
+              "house": false
+            },
+            {
+              "seat": 1,
+              "player": "s1",
+              "backer": "bob.sandbox",
+              "driver": null,
+              "house": false
+            }
+          ],
+          "stake": "1000000000000000000000000",
+          "split": [
+            7000,
+            3000
+          ],
+          "fee_bps": 250,
+          "rules": {
+            "salary": 200,
+            "cash": 1500,
+            "blitz": false,
+            "maxRounds": 3
+          },
+          "solo_player": null,
+          "creator": "alice.sandbox",
+          "storage_deposit": "60000000000000000000000",
+          "created_at": "1794336201365377000",
+          "last_activity": "1794336215385569000",
+          "turn_seconds": 120,
+          "turn_deadline": "1794336335385569000",
+          "draws": 6,
+          "current_seat": 1
+        },
+        "game": {
+          "phase": "playing",
+          "order": [
+            "s0",
+            "s1"
+          ],
+          "turn": 1,
+          "stage": "roll",
+          "dice": [
+            3,
+            6
+          ],
+          "doubles": 0,
+          "again": false,
+          "round": 2,
+          "props": {
+            "11": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "14": {
+              "owner": "s0",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "18": {
+              "owner": "s1",
+              "houses": 0,
+              "mortgaged": false
+            },
+            "23": {
+              "owner": "s0",
+              "houses": 0,
+              "mortgaged": false
+            }
+          },
+          "debt": null,
+          "pendingMove": null,
+          "card": null,
+          "buildAt": null,
+          "builtThisTurn": [],
+          "minted": 2300,
+          "rolls": 5,
+          "result": null,
+          "players": [
+            {
+              "id": "s0",
+              "cash": 1120,
+              "position": 23,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            },
+            {
+              "id": "s1",
+              "cash": 1180,
+              "position": 18,
+              "jail": null,
+              "freeCards": [],
+              "bankrupt": false,
+              "outAt": null
+            }
+          ]
+        },
+        "log": [
+          {
+            "kind": "start",
+            "first": "s0"
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              4,
+              6
+            ]
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              6,
+              5
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 11,
+            "price": 140
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              1,
+              3
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s0",
+            "square": 14,
+            "price": 160
+          },
+          {
+            "kind": "roll",
+            "player": "s1",
+            "dice": [
+              5,
+              2
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s1",
+            "square": 18,
+            "price": 180
+          },
+          {
+            "kind": "roll",
+            "player": "s0",
+            "dice": [
+              3,
+              6
+            ]
+          },
+          {
+            "kind": "buy",
+            "player": "s0",
+            "square": 23,
+            "price": 220
+          }
+        ]
+      }
+    }
+  ],
+  "mid": {
+    "meta": {
+      "id": "dev-mwb1g1p5-1",
+      "status": "playing",
+      "seats": [
+        {
+          "seat": 0,
+          "player": "s0",
+          "backer": "alice.sandbox",
+          "driver": null,
+          "house": false
+        },
+        {
+          "seat": 1,
+          "player": "s1",
+          "backer": "bob.sandbox",
+          "driver": null,
+          "house": false
+        }
+      ],
+      "stake": "1000000000000000000000000",
+      "split": [
+        7000,
+        3000
+      ],
+      "fee_bps": 250,
+      "rules": {
+        "salary": 200,
+        "cash": 1500,
+        "blitz": false,
+        "maxRounds": 3
+      },
+      "solo_player": null,
+      "creator": "alice.sandbox",
+      "storage_deposit": "60000000000000000000000",
+      "created_at": "1794336201365377000",
+      "last_activity": "1794336210052844000",
+      "turn_seconds": 120,
+      "turn_deadline": "1794336330052844000",
+      "draws": 4,
+      "current_seat": 1
+    },
+    "game": {
+      "phase": "playing",
+      "order": [
+        "s0",
+        "s1"
+      ],
+      "turn": 1,
+      "stage": "roll",
+      "dice": [
+        1,
+        3
+      ],
+      "doubles": 0,
+      "again": false,
+      "round": 1,
+      "props": {
+        "11": {
+          "owner": "s1",
+          "houses": 0,
+          "mortgaged": false
+        },
+        "14": {
+          "owner": "s0",
+          "houses": 0,
+          "mortgaged": false
+        }
+      },
+      "debt": null,
+      "pendingMove": null,
+      "card": null,
+      "buildAt": null,
+      "builtThisTurn": [],
+      "minted": 2700,
+      "rolls": 3,
+      "result": null,
+      "players": [
+        {
+          "id": "s0",
+          "cash": 1340,
+          "position": 14,
+          "jail": null,
+          "freeCards": [],
+          "bankrupt": false,
+          "outAt": null
+        },
+        {
+          "id": "s1",
+          "cash": 1360,
+          "position": 11,
+          "jail": null,
+          "freeCards": [],
+          "bankrupt": false,
+          "outAt": null
+        }
+      ]
+    },
+    "log": [
+      {
+        "kind": "start",
+        "first": "s0"
+      },
+      {
+        "kind": "roll",
+        "player": "s0",
+        "dice": [
+          4,
+          6
+        ]
+      },
+      {
+        "kind": "roll",
+        "player": "s1",
+        "dice": [
+          6,
+          5
+        ]
+      },
+      {
+        "kind": "buy",
+        "player": "s1",
+        "square": 11,
+        "price": 140
+      },
+      {
+        "kind": "roll",
+        "player": "s0",
+        "dice": [
+          1,
+          3
+        ]
+      },
+      {
+        "kind": "buy",
+        "player": "s0",
+        "square": 14,
+        "price": 160
+      }
+    ]
+  },
+  "settleEvents": [
+    {
+      "standard": "deedlords",
+      "version": "1.0.0",
+      "event": "actions",
+      "data": {
+        "id": "dev-mwb1g1p5-1",
+        "kind": "play",
+        "seat": 1,
+        "by": "bob.sandbox",
+        "steps": [
+          {
+            "action": "End",
+            "events": [
+              {
+                "kind": "end",
+                "reason": "time"
+              }
+            ]
+          }
+        ],
+        "phase": "ended",
+        "stage": "end",
+        "current_seat": null,
+        "turn_deadline": "1794336337968061000"
+      }
+    },
+    {
+      "standard": "nep171",
+      "version": "1.0.0",
+      "event": "nft_mint",
+      "data": [
+        {
+          "owner_id": "alice.sandbox",
+          "token_ids": [
+            "dev-mwb1g1p5-1"
+          ]
+        }
+      ]
+    },
+    {
+      "standard": "deedlords",
+      "version": "1.0.0",
+      "event": "settle",
+      "data": {
+        "id": "dev-mwb1g1p5-1",
+        "status": "ended",
+        "reason": "time",
+        "pot": "2000000000000000000000000",
+        "fee": "50000000000000000000000",
+        "fee_bps": 250,
+        "ranks": [
+          {
+            "rank": 0,
+            "seat": 0,
+            "backer": "alice.sandbox",
+            "share": "1365000000000000000000000",
+            "forfeited": false
+          },
+          {
+            "rank": 1,
+            "seat": 1,
+            "backer": "bob.sandbox",
+            "share": "585000000000000000000000",
+            "forfeited": false
+          }
+        ],
+        "forfeited": "0",
+        "deed": "alice.sandbox",
+        "block_height": "165",
+        "record_bytes": 1251,
+        "storage_refund": "47490000000000000000000"
+      }
+    }
+  ],
+  "afterSettle": null,
+  "result": {
+    "id": "dev-mwb1g1p5-1",
+    "stake": "1000000000000000000000000",
+    "pot": "2000000000000000000000000",
+    "fee": "50000000000000000000000",
+    "seats": [
+      "alice.sandbox",
+      "bob.sandbox"
+    ],
+    "ranking": [
+      0,
+      1
+    ],
+    "backers": [
+      "alice.sandbox",
+      "bob.sandbox"
+    ],
+    "payouts": [
+      "1365000000000000000000000",
+      "585000000000000000000000"
+    ],
+    "forfeited": "0",
+    "reason": "time",
+    "block_height": "165",
+    "ended_at": "1794336217968061000",
+    "deed": "alice.sandbox"
+  },
+  "config": {
+    "owner": "owner.sandbox",
+    "house": "house.sandbox",
+    "matches": 0,
+    "storage_reserve_bytes": 4500,
+    "default_turn_seconds": 20,
+    "abandon_after_ns": "900000000000",
+    "max_stake": "10000000000000000000000000",
+    "fee_bps": 250,
+    "max_fee_bps": 500,
+    "min_move_gas": "100000000000000"
+  }
+}
