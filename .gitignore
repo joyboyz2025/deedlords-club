@@ -1,0 +1,26 @@
+node_modules/
+.next/
+out/
+target/
+.env*
+!.env.example
+*.log
+.DS_Store
+.wrangler/
+.server-data/
+traces/
+# private planning notes and files copied from the planning session
+_notes/
+.arena/
+.gstack/
+money-blocks/
+qua-co-phieu/
+near-tycoon/
+crashtest-findings.md
+y-tuong-hackathon.md
+# generated
+next-env.d.ts
+*.tsbuildinfo
+.dev.vars
+AGENTS.md
+public/town/chibi-v1.js

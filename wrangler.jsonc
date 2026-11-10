@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "deedlords-room",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "vars": { "SERVER_NUMBER": "1" },
+  "durable_objects": {
+    "bindings": [{ "name": "TYCOON", "class_name": "TycoonRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TycoonRoom"] }],
+  "observability": { "enabled": true }
+}
