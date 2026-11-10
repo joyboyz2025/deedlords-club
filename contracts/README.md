@@ -6,7 +6,7 @@ Two crates in one Cargo workspace:
 |---|---|
 | `engine/` (`deedlords-engine`) | The game rules: a pure, deterministic, integer-only Rust port of the TS engine. No NEAR dependency. Contract with the TS engine: `docs/ENGINE-RULES.md`. |
 | `deedlords/` (`deedlords`) | The NEAR contract around the engine: matches, stakes, on-chain dice, turn deadlines, payouts, Deed NFTs (NEP-171), stats. |
-| `sandbox/` | Integration test on a local `near-sandbox` (never testnet or mainnet). |
+| `sandbox/` | `run.js`: integration test on a local `near-sandbox` (never leaves this machine). `testnet.js`: testnet deploy + latency check (refuses mainnet). |
 
 ## Build
 
@@ -34,7 +34,18 @@ cargo clippy -p deedlords --all-targets
 
 cd sandbox && npm install && npm test    # local near-sandbox 2.14: 5 scenarios + gas/size/storage numbers
 # NEAR_SANDBOX_BIN_PATH=/path/to/near-sandbox reuses an already downloaded 2.14 binary
+
+# Testnet deploy + latency check (sandbox/testnet.js; it refuses mainnet and reads keys from ~/.near-credentials/testnet)
+npm run testnet:dry                                   # the same flow on a local sandbox, nothing leaves this machine
+npm run testnet:dry-recover                           # sandbox again: a run cut off mid-match, then a second run that recovers (about 3 min)
+DEEDLORDS_PARENT=<you>.testnet npm run testnet:plan   # read-only: balances and the transactions `run` would sign
+DEEDLORDS_PARENT=<you>.testnet npm run testnet:run    # creates game./house./p1./p2.<you>.testnet, deploys, plays 3 matches
 ```
+
+`testnet:run` can be repeated: it skips the accounts and the deploy that already exist, deletes session keys left by an
+interrupted run and finishes its unfinished matches before starting new ones. It paces its RPC requests
+(`DEEDLORDS_RPC_GAP_MS`, default 350) and retries with backoff, because the free public RPC answers HTTP 429 when asked
+too often.
 
 ## Model
 
@@ -74,7 +85,9 @@ Clients must set the gas explicitly: near-api-js attaches 30 Tgas by default, wh
 floor costs an honest player nothing today: unspent gas is refunded in full (the gas-refund fee of NEP-536 exists in
 nearcore but its parameters are 0, see nearcore `docs/architecture/how/gas.md`; on the sandbox the same call cost the
 same 0.239 mNEAR with 10, 30, 100 and 300 Tgas attached, measured on `set_driver`). If that fee is switched on as
-proposed (5% of the unspent gas), a move would cost about 5 Tgas more. None of this was measured on testnet or mainnet.
+proposed (5% of the unspent gas), a move would cost about 5 Tgas more. Testnet (protocol 88, 2026-11-10) refunds in
+full too: eight moves with 100 Tgas attached to each took 0.0031 NEAR in total from the signing key's allowance, the
+fees they burnt and nothing more. Not measured on mainnet.
 
 ### Settlement
 
@@ -165,6 +178,26 @@ Every state change logs `EVENT_JSON:{"standard":"deedlords","version":"1.0.0","e
 
 The Deed mint also logs the standard NEP-171 `nft_mint` event.
 
+## Session keys (no wallet prompt per move)
+
+`play`, `turn`, `timeout`, `set_driver` and `leave` take no deposit, so a seat can be played with a **function-call
+access key**: receiver = the game contract, methods = those five, plus an allowance for fees. The app holds that key
+and signs every move itself. The wallet is asked only for what carries a deposit, `create_match` (storage) and `join`
+(the stake), and once to add the key.
+
+Checked by `sandbox/testnet.js` with a 0.25 NEAR allowance, on the local sandbox and on NEAR testnet (2026-11-10, two
+runs against `game.deedlords.testnet`):
+
+- Testnet: 28 moves (`play` and `turn`) signed by session keys with exactly 100 Tgas attached, all accepted.
+- The protocol refuses the same key, before execution and at no cost, when it attaches a deposit
+  (`DepositWithFunctionCall`), calls a method outside its list (`MethodNameMismatch`) or sends a transfer
+  (`RequiresFullAccess`). Same three answers on the sandbox and on testnet.
+- The allowance pays only the fee actually burnt. On testnet 8 moves took 0.003105 NEAR from it (0.250000 →
+  0.246894), although 100 Tgas was attached to each (0.08 NEAR in total at that gas price). That is about 0.0004 NEAR
+  per move, so 0.25 NEAR lasts about 640 moves. (Sandbox: 8 moves took 0.00233 NEAR.)
+- The script deletes its session keys at the end. A run that is cut off leaves them on the accounts; the next run
+  deletes them first.
+
 ## Measurements (local near-sandbox 2.14, 2026-11-10)
 
 | | |
@@ -180,6 +213,50 @@ The Deed mint also logs the standard NEP-171 `nft_mint` event.
 | storage, 4-seat match | 435 B in the lobby, 714 B once started, ~1.1 KB at its peak, 0 B after settlement except the permanent records (about 0.4–1.3 KB: summary, stats, and the Deed when a non-house seat wins) |
 
 Every call of scenario (e) was sent with exactly 100 Tgas attached, a whole match included.
+
+## Measurements (NEAR testnet, 2026-11-10)
+
+Test deployment: `game.deedlords.testnet` (code hash `CWgLMPL61iCd8VN2mTSUC3FNvMXq74TPXixXcsXHSesi`, owner
+`deedlords.testnet`, house `house.deedlords.testnet`, `max_stake` 1 NEAR). Its full-access key still exists, so the
+code can be replaced ("Known limits").
+
+Measured by `sandbox/testnet.js run` through the free public RPC `https://test.rpc.fastnear.com` (one RPC round trip:
+about 0.25 s). Protocol 88, block time 0.60 s, gas price 10^8 yoctoNEAR per gas unit, 100 Tgas attached to every
+call. Stakes 0.05 NEAR per seat. Times run from sending the transaction until the RPC reports it:
+
+- **result**: status `EXECUTED_OPTIMISTIC`, the call and the receipts it produced (payouts included, gas refunds
+  excluded) have run;
+- **final**: status `FINAL`.
+
+| call | n | result, s: median (min–max) | final, s: median (min–max) | gas burnt, Tgas: median / max | fee, mNEAR: median / max |
+|---|---|---|---|---|---|
+| `create_match` | 3 | 2.04 (1.92–2.17) | 3.76 (3.34–4.07) | 3.41 / 3.43 | 0.319 / 0.321 |
+| `join` | 3 | 2.08 (1.65–2.13) | 3.79 (3.32–4.19) | 2.67 / 2.67 | 0.244 / 0.245 |
+| `join` (last seat: starts the game) | 3 | 2.29 (2.16–2.35) | 3.96 (3.32–4.09) | 2.94 / 3.56 | 0.272 / 0.334 |
+| `play` | 7 | 1.76 (1.68–2.15) | 3.51 (3.31–3.91) | 2.98 / 3.05 | 0.276 / 0.282 |
+| `play` that settles and pays out | 1 | 2.46 | 4.22 | 8.21 | 0.754 |
+| `turn` | 6 | 2.06 (1.36–2.44) | 3.90 (3.12–4.11) | 3.69 / 3.85 | 0.347 / 0.363 |
+| `turn` that settles and pays out | 2 | 2.71 (2.27–3.14) | 4.27 (3.80–4.74) | 7.20 / 7.38 | 0.676 / 0.693 |
+| `timeout` | 3 | 1.74 (1.71–2.19) | 3.50 (3.24–4.02) | 2.99 / 3.01 | 0.277 / 0.278 |
+| `timeout` that settles and pays out | 1 | 2.68 | 4.70 | 8.28 | 0.784 |
+| add or delete a session key | 9 | 1.17–1.72 | 2.82–3.43 | 0.64 | 0.042 |
+| deploy the wasm (517,560 bytes) | 1 | 2.72 | 4.53 | 37.76 | 3.753 |
+| `new` | 1 | 1.58 | 3.34 | 3.96 | 0.374 |
+| `get_match` (view, no transaction) | 24 | 0.25 (0.24–0.29) | | | |
+
+- In blocks: a transaction was included 3 blocks (2–4) after the chain head seen when it was sent, the contract's
+  result came 1 block later, and the last receipt (the gas refund) 2 blocks after inclusion, 3 when the call settles
+  (the payouts are one more hop). On the local sandbox the same counts are 2, +1, +2 and +3.
+- So a move shows its result after about 2 s and is final after about 3.5–4 s. On the sandbox (126 ms blocks) the same
+  move takes about 0.37 s and 0.75 s: the difference is block time and the RPC round trips.
+- Five matches were played to settlement (two through `play`, two solo through `turn`, one forced entirely by
+  `timeout` from a third account). The contract account then held 523,392 bytes of storage, against 517,964 right
+  after deploy + `new`: about 1.1 KB of permanent records per match.
+- The table is the second run. The first run was cut off by the RPC's rate limit (HTTP 429) in the middle of a match;
+  its samples agree (`play`, n = 8: 1.98 s / 3.82 s; `turn`, n = 3: 1.84 s / 3.56 s). Deploy and `new` are from that
+  first run. The second run deleted the session keys the first one left and finished its match.
+- Small samples from one machine and one RPC provider: read the times as an order of magnitude. Nothing here was
+  measured on mainnet.
 
 ## Known limits
 
@@ -202,3 +279,7 @@ Every call of scenario (e) was sent with exactly 100 Tgas attached, a whole matc
 - `Sandbox.tearDown()` of near-sandbox 0.3.5 waits forever because the 2.14 node ignores SIGTERM. `run.js` stops the
   node itself (SIGTERM, then SIGKILL after 5 s), and has a 20-minute watchdog and a Ctrl-C handler, so no node is left
   running.
+- The sandbox node forgets a block about a minute after producing it (`UNKNOWN_BLOCK` on a later lookup), and a
+  transaction's block hash is valid there for 100 blocks only (about 12 s). `testnet.js --sandbox` therefore reads
+  block heights right after each transaction and refreshes its block hash every 4 s; on testnet it reads the heights
+  once at the end, to spare the public RPC.

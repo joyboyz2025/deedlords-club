@@ -2,10 +2,14 @@
   "name": "deedlords-sandbox",
   "version": "0.1.0",
   "private": true,
-  "description": "Local near-sandbox integration test for the Deedlords contract. Never touches testnet or mainnet.",
+  "description": "Local near-sandbox integration test for the Deedlords contract (run.js, never leaves this machine) and a testnet deploy + latency check (testnet.js, refuses mainnet).",
   "type": "commonjs",
   "scripts": {
-    "test": "node run.js ../target/wasm32-unknown-unknown/release/deedlords.wasm"
+    "test": "node run.js ../target/wasm32-unknown-unknown/release/deedlords.wasm",
+    "testnet:dry": "node testnet.js --sandbox",
+    "testnet:dry-recover": "node testnet.js --sandbox-recover",
+    "testnet:plan": "node testnet.js plan",
+    "testnet:run": "node testnet.js run"
   },
   "dependencies": {
     "near-api-js": "5.1.1",
