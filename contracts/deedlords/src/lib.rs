@@ -9,9 +9,11 @@
 //!   is reported), and every call that may draw needs [`MIN_MOVE_GAS`] attached so it cannot be made to run out of gas.
 //! * Each turn has a deadline, renewed only when the seat to move changes or the current seat rolls; after it anyone
 //!   may call `timeout`, so no one can stall a match.
-//! * When the engine reports the end, the contract settles once: pays the pot by rank, locks the house's shares
-//!   forever (`forfeited`), mints a Deed NFT (NEP-171) to a non-house winner, records stats and a summary, deletes the
-//!   match and refunds the creator's storage deposit (minus the bytes the permanent records occupy).
+//! * When the engine reports the end, the contract settles once: takes the fee off the pot (`fee_bps`, fixed at
+//!   deployment, at most 5%), pays the rest by rank, locks the house's shares forever (`forfeited`), mints a Deed NFT
+//!   (NEP-171) to a non-house winner, records stats and a summary, deletes the match and refunds the creator's storage
+//!   deposit (minus the bytes the permanent records occupy). The fees add up in a counter; the owner can withdraw
+//!   exactly that and nothing else.
 //!
 //! Every successful state change logs `EVENT_JSON:{"standard":"deedlords","version":"1.0.0","event":..,"data":..}`.
 //! The engine `Game` is stored with borsh; JSON is only produced for views and events.
@@ -30,11 +32,12 @@ use near_contract_standards::non_fungible_token::metadata::{
     NFTContractMetadata, NonFungibleTokenMetadataProvider, TokenMetadata, NFT_METADATA_SPEC,
 };
 use near_contract_standards::non_fungible_token::{NonFungibleToken, NonFungibleTokenEnumeration, Token, TokenId};
+use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::json_types::{U128, U64};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::serde_json::{self, json, Value};
 use near_sdk::store::{IterableMap, LookupMap};
-use near_sdk::{env, near, require, AccountId, Gas, NearToken, PanicOnDefault, Promise, PromiseOrValue};
+use near_sdk::{assert_one_yocto, env, near, require, AccountId, Gas, NearToken, PanicOnDefault, Promise, PromiseOrValue};
 
 pub use autoplay::{Plan, Step};
 use autoplay::{apply_logged, play_turn, timeout_step, MAX_PLAN_LIST};
@@ -57,6 +60,8 @@ pub const SPLIT_TOTAL: u32 = 10_000;
 /// Upper bound of a deployment's stake cap (1,000,000 NEAR), so `pot * basis points` always fits in a u128. The cap
 /// that matches are checked against is `max_stake`, set once in `new`.
 pub const MAX_STAKE: u128 = 1_000_000 * 10u128.pow(24);
+/// The most a deployment may take from a pot: 500 basis points, 5%. `fee_bps` is set once, in `new`.
+pub const MAX_FEE_BPS: u16 = 500;
 pub const MAX_ID_LEN: usize = 32;
 pub const MAX_ACTIONS_PER_CALL: usize = 32;
 /// Gas that `join`, `play`, `turn` and `timeout` require to be attached. These calls may draw dice or cards, and a call
@@ -172,6 +177,25 @@ pub struct Contract {
     tokens: NonFungibleToken,
     /// Largest stake per seat a match may ask for. Set in `new`; no method changes it.
     max_stake: NearToken,
+    /// Basis points of every pot kept as the fee when a match is settled. Set in `new`; no method changes it.
+    fee_bps: u16,
+    /// Fees collected and not yet withdrawn. Only `withdraw_fees` moves them, and only this much.
+    fees: NearToken,
+}
+
+/// The contract state before the fee existed: the layout of the first testnet deployment (2026-11-10). Read once by
+/// [`Contract::migrate`].
+#[derive(BorshDeserialize, BorshSerialize)]
+#[borsh(crate = "near_sdk::borsh")]
+pub struct ContractV1 {
+    owner: AccountId,
+    house: AccountId,
+    matches: IterableMap<String, Match>,
+    results: LookupMap<String, MatchResult>,
+    stats: LookupMap<AccountId, Stats>,
+    forfeited: NearToken,
+    tokens: NonFungibleToken,
+    max_stake: NearToken,
 }
 
 // ----- Helpers ---------------------------------------------------------------------------------------------------------
@@ -232,6 +256,15 @@ fn validate_rules(rules: RulesArg) -> Rules {
     // Without a round limit a match could be kept alive forever with the stakes locked in it.
     require!(rules.max_rounds >= 1, "rules.max_rounds must be 1..=255");
     Rules { salary: rules.salary, cash: rules.cash, blitz: rules.blitz, max_rounds: rules.max_rounds }
+}
+
+fn validate_fee(fee_bps: u16) {
+    require!(fee_bps <= MAX_FEE_BPS, "fee_bps must be at most 500 (5%)");
+}
+
+/// The fee on a pot: `pot * fee_bps / 10000`, rounded down.
+pub fn fee_of(pot: u128, fee_bps: u16) -> u128 {
+    pot * u128::from(fee_bps) / u128::from(SPLIT_TOTAL)
 }
 
 /// Shares of the pot per rank: `pot * split[i] / 10000`, the integer remainder going to rank 0. Ranks beyond the
@@ -296,7 +329,7 @@ impl Match {
         caller
     }
 
-    fn meta_json(&self, id: &str, house: &AccountId) -> Value {
+    fn meta_json(&self, id: &str, house: &AccountId, fee_bps: u16) -> Value {
         let seats: Vec<Value> = self
             .seats
             .iter()
@@ -317,6 +350,7 @@ impl Match {
             "seats": seats,
             "stake": yocto_json(self.stake),
             "split": self.split,
+            "fee_bps": fee_bps,
             "rules": self.rules,
             "solo_player": self.solo_player,
             "creator": self.creator,
@@ -335,13 +369,17 @@ impl Match {
 
 #[near]
 impl Contract {
-    /// `max_stake` (yoctoNEAR) is the largest stake per seat any match of this deployment may ask for.
+    /// `max_stake` (yoctoNEAR) is the largest stake per seat any match of this deployment may ask for. `fee_bps` is
+    /// the part of every pot kept as the fee, in basis points (250 is 2.5%), at most [`MAX_FEE_BPS`].
     #[init]
     #[private]
-    pub fn new(owner: AccountId, house: AccountId, max_stake: U128) -> Self {
+    pub fn new(owner: AccountId, house: AccountId, max_stake: U128, fee_bps: u16) -> Self {
         require!(max_stake.0 <= MAX_STAKE, "max_stake must be at most 1,000,000 NEAR");
+        validate_fee(fee_bps);
         Self {
             max_stake: NearToken::from_yoctonear(max_stake.0),
+            fee_bps,
+            fees: NearToken::from_yoctonear(0),
             owner: owner.clone(),
             house,
             matches: IterableMap::new(b"m".to_vec()),
@@ -349,6 +387,28 @@ impl Contract {
             stats: LookupMap::new(b"s".to_vec()),
             forfeited: NearToken::from_yoctonear(0),
             tokens: NonFungibleToken::new(b"o".to_vec(), owner, Some(b"t".to_vec()), Some(b"e".to_vec()), None::<Vec<u8>>),
+        }
+    }
+
+    /// Upgrades a deployment made before the fee existed ([`ContractV1`]), in the transaction that deploys this code.
+    /// Refused while any match is open: its players staked when there was no fee.
+    #[init(ignore_state)]
+    #[private]
+    pub fn migrate(fee_bps: u16) -> Self {
+        let old: ContractV1 = env::state_read().unwrap_or_else(|| env::panic_str("no state of the first layout to migrate"));
+        validate_fee(fee_bps);
+        require!(old.matches.is_empty(), "finish or abandon every open match first: they were opened without a fee");
+        Self {
+            owner: old.owner,
+            house: old.house,
+            matches: old.matches,
+            results: old.results,
+            stats: old.stats,
+            forfeited: old.forfeited,
+            tokens: old.tokens,
+            max_stake: old.max_stake,
+            fee_bps,
+            fees: NearToken::from_yoctonear(0),
         }
     }
 
@@ -402,7 +462,7 @@ impl Contract {
             draws: 0,
             game: Game::new(rules, players),
         };
-        let data = json!({ "id": id, "meta": new_match.meta_json(&id, &self.house) });
+        let data = json!({ "id": id, "meta": new_match.meta_json(&id, &self.house, self.fee_bps) });
 
         let before = env::storage_usage();
         let id_for_error = id.clone();
@@ -635,13 +695,28 @@ impl Contract {
         );
     }
 
+    /// Owner only, with exactly 1 yoctoNEAR attached (so a full-access key has to sign): sends the fees collected so
+    /// far to the owner and returns the amount. Stakes of open matches, storage deposits and the house's forfeited
+    /// shares are not fees: this method cannot reach them.
+    #[payable]
+    pub fn withdraw_fees(&mut self) -> U128 {
+        assert_one_yocto();
+        require!(env::predecessor_account_id() == self.owner, "only the owner may withdraw the fees");
+        let amount = self.fees;
+        require!(amount.as_yoctonear() > 0, "there are no fees to withdraw");
+        self.fees = NearToken::from_yoctonear(0);
+        Promise::new(self.owner.clone()).transfer(amount).detach();
+        emit("withdraw_fees", json!({ "to": self.owner, "amount": yocto_json(amount) }));
+        U128(amount.as_yoctonear())
+    }
+
     // ----- Views ---------------------------------------------------------------------------------------------------
 
     /// `{ meta, game, log }`: seats, backers, drivers, stake, split, status, deadline and rules; the engine snapshot
     /// (ENGINE-RULES §8, same field names as the TS `Game`); the last 30 structured engine events. `null` when the
     /// match does not exist or is finished (see `get_result`).
     pub fn get_match(&self, id: String) -> Option<Value> {
-        self.matches.get(&id).map(|m| json!({ "meta": m.meta_json(&id, &self.house), "game": m.game.snapshot(), "log": m.game.log }))
+        self.matches.get(&id).map(|m| json!({ "meta": m.meta_json(&id, &self.house, self.fee_bps), "game": m.game.snapshot(), "log": m.game.log }))
     }
 
     /// Unfinished matches (lobby or playing), `limit` defaults to 20 (at most 50).
@@ -653,7 +728,7 @@ impl Contract {
             .skip(from)
             .take(limit)
             .map(|(id, m)| {
-                let mut meta = m.meta_json(id, &self.house);
+                let mut meta = m.meta_json(id, &self.house, self.fee_bps);
                 meta["round"] = json!(m.game.round);
                 meta["phase"] = json!(m.game.phase);
                 meta
@@ -667,9 +742,16 @@ impl Contract {
             for (rank, &seat) in r.ranking.iter().enumerate() {
                 seats[usize::from(seat)] = r.backers[rank].clone();
             }
+            // The fee is what is left of the pot after the payouts and the house's locked shares: the stored summary
+            // keeps the layout it had before the fee existed, and a match settled back then shows a fee of 0.
+            let pot = r.stake.as_yoctonear() * r.backers.len() as u128;
+            let paid: u128 = r.payouts.iter().map(|p| p.as_yoctonear()).sum();
+            let fee = pot.saturating_sub(paid).saturating_sub(r.forfeited.as_yoctonear());
             json!({
                 "id": id,
                 "stake": yocto_json(r.stake),
+                "pot": json!(U128(pot)),
+                "fee": json!(U128(fee)),
                 "seats": seats,
                 "ranking": r.ranking,
                 "backers": r.backers,
@@ -692,6 +774,11 @@ impl Contract {
         U128(self.forfeited.as_yoctonear())
     }
 
+    /// Fees collected and not yet withdrawn.
+    pub fn get_fees(&self) -> U128 {
+        U128(self.fees.as_yoctonear())
+    }
+
     pub fn get_config(&self) -> Value {
         json!({
             "owner": self.owner,
@@ -701,6 +788,8 @@ impl Contract {
             "default_turn_seconds": DEFAULT_TURN_SECONDS,
             "abandon_after_ns": u64_json(ABANDON_AFTER_NS),
             "max_stake": yocto_json(self.max_stake),
+            "fee_bps": self.fee_bps,
+            "max_fee_bps": MAX_FEE_BPS,
             "min_move_gas": u64_json(MIN_MOVE_GAS.as_gas()),
         })
     }
@@ -778,7 +867,9 @@ impl Contract {
         let ranking: Vec<usize> = result.ranking.iter().map(|p| seat_of(p)).collect();
         require!(ranking.len() == m.seats.len(), "the ranking covers every seat");
         let pot = m.stake.as_yoctonear() * m.seats.len() as u128;
-        let shares = split_pot(pot, &m.split, ranking.len());
+        // The fee comes off the whole pot first; the ranks share what is left, so fee + shares == pot to the yocto.
+        let fee = fee_of(pot, self.fee_bps);
+        let shares = split_pot(pot - fee, &m.split, ranking.len());
         let backers: Vec<AccountId> = ranking
             .iter()
             .map(|&s| m.seats[s].backer.clone().unwrap_or_else(|| env::panic_str("every seat is backed while playing")))
@@ -806,6 +897,7 @@ impl Contract {
             }));
         }
         self.forfeited = self.forfeited.saturating_add(NearToken::from_yoctonear(forfeited));
+        self.fees = self.fees.saturating_add(NearToken::from_yoctonear(fee));
 
         // Free the match first, so the bytes measured below are only the permanent records.
         self.matches.remove(&id);
@@ -883,6 +975,8 @@ impl Contract {
                 "status": m.status,
                 "reason": result.reason,
                 "pot": json!(U128(pot)),
+                "fee": json!(U128(fee)),
+                "fee_bps": self.fee_bps,
                 "ranks": ranks_json,
                 "forfeited": json!(U128(forfeited)),
                 "deed": deed,

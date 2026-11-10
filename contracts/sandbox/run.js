@@ -9,12 +9,15 @@
 // Scenarios: (a) solo Blitz, player + house backing 3 seats, every turn through turn(); (b) 2-player classic match
 // through play(); (c) timeout called by a third account after the deadline; (d) abandon refunds after 15 minutes;
 // (e) the stake cap, the gas floor of every call that may roll, the turn clock under free moves, and a whole match
-// played with exactly the floor attached and the largest plan the contract accepts.
+// played with exactly the floor attached and the largest plan the contract accepts; (f) the fee: 2.5% of every settled
+// pot adds up in the contract and only the owner can withdraw it, and nothing but it.
+// With DEEDLORDS_V1_WASM=<wasm built before the fee existed> also (g): that wasm is deployed to a second account, a
+// match is settled on it, then the new wasm is deployed over it with migrate() in the same transaction.
 // Prints gas per join/turn/play, the heaviest calls against the gas floor, the wasm size and storage bytes per match.
 
 const fs = require("fs");
 const assert = require("assert/strict");
-const { connect, keyStores, KeyPair } = require("near-api-js");
+const { connect, keyStores, KeyPair, transactions } = require("near-api-js");
 const { Sandbox, DEFAULT_ACCOUNT_ID, DEFAULT_PRIVATE_KEY } = require("near-sandbox");
 
 const NET = "sandbox";
@@ -25,6 +28,11 @@ const TGAS = 10n ** 12n;
 const GAS = 300n * TGAS;
 /// Stake cap this test deployment is initialised with.
 const MAX_STAKE = 10n * Y;
+/// Fee this test deployment is initialised with: 2.5% of every pot, in basis points.
+const FEE_BPS = 250;
+const feeOf = (pot) => (pot * BigInt(FEE_BPS)) / 10000n;
+/// Matches settled by the scenarios, for (f) to add their fees up.
+const settledIds = [];
 const SEC = 1_000_000_000n;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -203,7 +211,10 @@ async function scenarioSoloBlitz(acc) {
   const pot = stake * 4n;
   const payouts = result.payouts.map(BigInt);
   const forfeited = BigInt(result.forfeited);
-  assert.equal(payouts.reduce((a, b) => a + b, 0n) + forfeited, pot, "payouts + forfeited == pot");
+  assert.equal(BigInt(result.fee), feeOf(pot), "the fee is 2.5% of the pot");
+  assert.equal(BigInt(settle.fee), feeOf(pot));
+  assert.equal(payouts.reduce((a, b) => a + b, 0n) + forfeited + feeOf(pot), pot, "payouts + forfeited + fee == pot");
+  settledIds.push(id);
   assert.equal(BigInt(await view("get_forfeited")) - forfeitedBefore, forfeited, "contract forfeited counter");
   const aliceRank = result.backers.indexOf(acc.alice.accountId);
   const alicePayout = payouts[aliceRank];
@@ -307,9 +318,12 @@ async function scenarioClassicPlay(acc) {
   const settle = eventsOf(last.outcome).find((e) => e.event === "settle").data;
   const pot = stake * 2n;
   const payouts = result.payouts.map(BigInt);
-  assert.equal(payouts[0], (pot * 7000n) / 10000n);
-  assert.equal(payouts[0] + payouts[1], pot);
+  const fee = feeOf(pot);
+  assert.equal(BigInt(result.fee), fee);
+  assert.equal(payouts[0], ((pot - fee) * 7000n) / 10000n, "the ranks share the pot less the fee");
+  assert.equal(payouts[0] + payouts[1], pot - fee);
   assert.equal(BigInt(result.forfeited), 0n);
+  settledIds.push(id);
   const sent = await transfersOf(last.outcome, last.signer.accountId);
   for (const [rank, backer] of result.backers.entries()) {
     const refund = backer === acc.bob.accountId ? BigInt(settle.storage_refund) : 0n;
@@ -317,7 +331,7 @@ async function scenarioClassicPlay(acc) {
   }
   const token = await view("nft_token", { token_id: id });
   assert.equal(token.owner_id, result.backers[0], "the winner's backer owns the Deed");
-  console.log(`  settled after ${calls} play() calls (${result.reason}); winner ${result.backers[0]} got ${fmt(payouts[0])} and the Deed; runner-up ${fmt(payouts[1])}`);
+  console.log(`  settled after ${calls} play() calls (${result.reason}); winner ${result.backers[0]} got ${fmt(payouts[0])} and the Deed; runner-up ${fmt(payouts[1])}; fee ${fmt(fee)}`);
 }
 
 async function scenarioTimeout(acc) {
@@ -388,6 +402,8 @@ async function scenarioGasFloor(acc) {
   const floor = BigInt(config.min_move_gas);
   const below = floor - TGAS;
   assert.equal(BigInt(config.max_stake), MAX_STAKE);
+  assert.equal(config.fee_bps, FEE_BPS);
+  assert.equal(config.max_fee_bps, 500);
   const rules = { salary: 200, cash: 2000, blitz: true, max_rounds: 4 };
   await expectFail(createMatch(acc.alice, "too-rich", { seats: 2, stake: MAX_STAKE + 1n, split: [10000], rules }), "stake too large");
   await expectFail(createMatch(acc.alice, "endless", { seats: 2, stake: 0n, split: [10000], rules: { ...rules, max_rounds: 0 } }), "rules.max_rounds must be 1..=255");
@@ -457,7 +473,8 @@ async function scenarioGasFloor(acc) {
   }
   assert.ok(turns > 0 && turns < 200, "the match settled");
   const result = await view("get_result", { id });
-  assert.equal(result.payouts.map(BigInt).reduce((a, b) => a + b, 0n), stake * 3n, "the whole pot is paid out");
+  assert.equal(result.payouts.map(BigInt).reduce((a, b) => a + b, 0n), stake * 3n - feeOf(stake * 3n), "the whole pot less the fee is paid out");
+  settledIds.push(id);
   console.log(`  the match settled after ${turns} turn() calls (${result.reason}), every call with exactly ${floor / TGAS} Tgas attached`);
 
   const labels = [...new Set(heavy.map((h) => h.label))];
@@ -478,6 +495,128 @@ async function scenarioGasFloor(acc) {
     floorReport.push(`turn(): ${slope.toFixed(3)} Tgas per engine step (max ${Math.max(...pts.map((p) => p[0]))} steps seen); a 64-step turn (the driver's cap) that also settles: about ${bound.toFixed(1)} Tgas`);
   }
   floorReport.push(`gas floor ${floor / TGAS} Tgas = ${(Number(floor) / Number(worst.burnt)).toFixed(1)} x the heaviest call seen (${(Number(worst.burnt) / 1e12).toFixed(2)} Tgas, "${worst.label}")`);
+}
+
+async function scenarioFees(acc) {
+  console.log("\n(f) the fee: collected at every settlement, withdrawn by the owner only");
+  // Every match the scenarios above settled, plus any other that left a result (the timeout scenario's).
+  let expected = 0n;
+  for (const id of [...settledIds, "timeout-1"]) {
+    const result = await view("get_result", { id });
+    if (!result) continue;
+    assert.equal(BigInt(result.fee), feeOf(BigInt(result.pot)), `${id}: fee is 2.5% of its pot`);
+    expected += BigInt(result.fee);
+  }
+  const fees = BigInt(await view("get_fees"));
+  assert.ok(fees > 0n, "fees were collected");
+  assert.equal(fees, expected, "the counter is the sum of the fees of the settled matches");
+  const forfeited = BigInt(await view("get_forfeited"));
+
+  await expectFail(call(acc.alice, "withdraw_fees", {}, 1n), "only the owner may withdraw the fees");
+  await expectFail(call(acc.house, "withdraw_fees", {}, 1n), "only the owner may withdraw the fees");
+  await expectFail(call(acc.owner, "withdraw_fees", {}), "exactly 1 yoctoNEAR");
+  assert.equal(BigInt(await view("get_fees")), fees, "refused calls moved nothing");
+
+  // An open match with real stakes in the contract while the owner withdraws.
+  const id = "fees-open-1";
+  const stake = NEAR(2);
+  await createMatch(acc.alice, id, { seats: 2, stake, split: [10000], rules: { salary: 200, cash: 1500, blitz: false, max_rounds: 30 }, turnSeconds: 600 });
+  await call(acc.alice, "join", { id, seat: 0 }, stake);
+  await call(acc.bob, "join", { id, seat: 1 }, stake);
+
+  const ownerBefore = await balance(acc.owner.accountId);
+  const outcome = await call(acc.owner, "withdraw_fees", {}, 1n);
+  assert.equal(BigInt(returned(outcome)), fees, "withdraw_fees returns what it sent");
+  const sent = await transfersOf(outcome, acc.owner.accountId);
+  assert.deepEqual(sent, { [acc.owner.accountId]: fees }, "one transfer, to the owner, of exactly the fees");
+  const event = eventsOf(outcome).find((e) => e.event === "withdraw_fees").data;
+  assert.equal(BigInt(event.amount), fees);
+  await waitBlocks(3);
+  const gained = (await balance(acc.owner.accountId)) - ownerBefore;
+  assert.ok(gained <= fees && fees - gained < NEAR(0.02), `the owner's balance grew by the fees minus gas (${fmt(gained)} of ${fmt(fees)})`);
+  assert.equal(BigInt(await view("get_fees")), 0n);
+  assert.equal(BigInt(await view("get_forfeited")), forfeited, "the house's locked shares stay locked");
+  assert.equal((await view("get_match", { id })).meta.status, "playing", "the open match is untouched");
+  await expectFail(call(acc.owner, "withdraw_fees", {}, 1n), "there are no fees to withdraw");
+  console.log(`  ${fmt(fees)} collected from ${settledIds.length}+ settled matches; alice, the house and a call without the yocto were refused; the owner received ${fmt(fees)} (balance +${fmt(gained)} after gas)`);
+}
+
+/// (g) Upgrade in place: the wasm from before the fee on a second account, then deploy + migrate in one transaction.
+async function scenarioUpgrade(acc, wasm, v1Path) {
+  console.log(`\n(g) upgrade: ${v1Path} deployed first, then the new wasm with migrate()`);
+  const main = contractId;
+  const old = await makeAccount("old", 30);
+  contractId = old.accountId;
+  try {
+    await old.deployContract(fs.readFileSync(v1Path));
+    await old.functionCall({ contractId, methodName: "new", args: { owner: acc.owner.accountId, house: acc.house.accountId, max_stake: MAX_STAKE.toString() }, gas: GAS });
+    const before = await view("get_config");
+    assert.equal(before.fee_bps, undefined, "the first layout has no fee");
+
+    // A match settled before the upgrade: no fee was taken.
+    const stake = NEAR(1);
+    const plan = { buy_reserve: 0, build: [], keep_reserve: 0, bail: true, liquidate: [] };
+    const playOut = async (id) => {
+      const byId = { [acc.alice.accountId]: acc.alice, [acc.bob.accountId]: acc.bob };
+      for (let i = 0; i < 50; i++) {
+        const m = await view("get_match", { id });
+        if (m === null) return;
+        const seat = m.meta.current_seat;
+        await call(byId[m.meta.seats[seat].backer], "turn", { id, seat, plan });
+      }
+      assert.fail(`${id} did not settle`);
+    };
+    const duel = async (id) => {
+      await createMatch(acc.alice, id, { seats: 2, stake, split: [7000, 3000], rules: { salary: 200, cash: 1500, blitz: false, max_rounds: 1 }, turnSeconds: 120 });
+      await call(acc.alice, "join", { id, seat: 0 }, stake);
+      await call(acc.bob, "join", { id, seat: 1 }, stake);
+      await playOut(id);
+      return view("get_result", { id });
+    };
+    const oldResult = await duel("before-1");
+    assert.deepEqual(oldResult.payouts.map(BigInt), [NEAR(1.4), NEAR(0.6)], "before the fee the whole pot was paid");
+    const oldStats = await view("get_stats", { account_id: acc.alice.accountId });
+    const oldDeed = await view("nft_token", { token_id: "before-1" });
+
+    // While a match is open the upgrade is refused, and the refusal undoes the deploy made in the same transaction.
+    await createMatch(acc.carol, "lobby-1", { seats: 2, stake, split: [10000], rules: { salary: 200, cash: 1500, blitz: false, max_rounds: 1 } });
+    const created = BigInt((await view("get_match", { id: "lobby-1" })).meta.created_at);
+    const upgrade = () => old.signAndSendTransaction({ receiverId: old.accountId, actions: [transactions.deployContract(wasm), transactions.functionCall("migrate", { fee_bps: FEE_BPS }, GAS, 0n)] });
+    await expectFail(upgrade(), "finish or abandon every open match first");
+    assert.equal((await view("get_config")).fee_bps, undefined, "still the first code and state");
+    await passTime(created + 15n * 60n * SEC);
+    await call(acc.bob, "abandon", { id: "lobby-1" });
+
+    await upgrade();
+    const config = await view("get_config");
+    assert.equal(config.fee_bps, FEE_BPS);
+    assert.equal(config.owner, before.owner);
+    assert.equal(config.house, before.house);
+    assert.equal(config.max_stake, before.max_stake);
+    assert.equal(BigInt(await view("get_fees")), 0n);
+    // What was settled before is still there, and shows that it paid no fee.
+    const kept = await view("get_result", { id: "before-1" });
+    assert.deepEqual({ ...kept, pot: undefined, fee: undefined }, { ...oldResult, pot: undefined, fee: undefined });
+    assert.equal(BigInt(kept.fee), 0n);
+    assert.equal(BigInt(kept.pot), stake * 2n);
+    assert.deepEqual(await view("get_stats", { account_id: acc.alice.accountId }), oldStats);
+    assert.deepEqual(await view("nft_token", { token_id: "before-1" }), oldDeed);
+    await expectFail(createMatch(acc.alice, "before-1", { seats: 2, stake, split: [10000], rules: { salary: 200, cash: 1500, blitz: false, max_rounds: 1 } }), "match id already used");
+
+    // A match after the upgrade pays the fee, and the owner can withdraw it.
+    const newResult = await duel("after-1");
+    const fee = feeOf(stake * 2n);
+    assert.equal(BigInt(newResult.fee), fee);
+    assert.deepEqual(newResult.payouts.map(BigInt), [((stake * 2n - fee) * 7000n) / 10000n, ((stake * 2n - fee) * 3000n) / 10000n]);
+    assert.equal(BigInt(await view("get_fees")), fee);
+    assert.equal(BigInt(returned(await call(acc.owner, "withdraw_fees", {}, 1n))), fee);
+    // Only the contract account may call migrate, and the new state is not the first layout.
+    await expectFail(call(acc.owner, "migrate", { fee_bps: 0 }), "Method migrate is private");
+    await expectFail(call(old, "migrate", { fee_bps: 0 }), "Cannot deserialize the contract state");
+    console.log(`  before: payouts ${oldResult.payouts.map(fmt).join(", ")}, no fee; open lobby: upgrade refused; after: fee_bps ${config.fee_bps}, old result, stats and Deed kept, payouts ${newResult.payouts.map(fmt).join(", ")}, fee ${fmt(fee)} withdrawn by the owner`);
+  } finally {
+    contractId = main;
+  }
 }
 
 // ----- main --------------------------------------------------------------------------------------------------------
@@ -539,11 +678,16 @@ async function stopSandbox(sandbox) {
     };
     const empty = await storageUsage(contractId);
     await game.deployContract(wasm);
-    await game.functionCall({ contractId, methodName: "new", args: { owner: acc.owner.accountId, house: acc.house.accountId, max_stake: MAX_STAKE.toString() }, gas: GAS });
+    await expectFail(game.functionCall({ contractId, methodName: "new", args: { owner: acc.owner.accountId, house: acc.house.accountId, max_stake: MAX_STAKE.toString(), fee_bps: 501 }, gas: GAS }), "fee_bps must be at most 500");
+    await game.functionCall({ contractId, methodName: "new", args: { owner: acc.owner.accountId, house: acc.house.accountId, max_stake: MAX_STAKE.toString(), fee_bps: FEE_BPS }, gas: GAS });
     console.log(`deployed to ${contractId}: contract storage ${await storageUsage(contractId) - empty} bytes (code + state)`);
-    await expectFail(acc.alice.functionCall({ contractId, methodName: "new", args: { owner: acc.alice.accountId, house: acc.alice.accountId, max_stake: "0" }, gas: GAS }), "");
+    await expectFail(acc.alice.functionCall({ contractId, methodName: "new", args: { owner: acc.alice.accountId, house: acc.alice.accountId, max_stake: "0", fee_bps: 0 }, gas: GAS }), "");
 
-    for (const [name, run] of [["a", scenarioSoloBlitz], ["b", scenarioClassicPlay], ["c", scenarioTimeout], ["d", scenarioAbandon], ["e", scenarioGasFloor]]) {
+    const scenarios = [["a", scenarioSoloBlitz], ["b", scenarioClassicPlay], ["c", scenarioTimeout], ["d", scenarioAbandon], ["e", scenarioGasFloor], ["f", scenarioFees]];
+    const v1Path = process.env.DEEDLORDS_V1_WASM;
+    if (v1Path) scenarios.push(["g", (a) => scenarioUpgrade(a, wasm, v1Path)]);
+    else console.log("(g) upgrade from the first layout: skipped, set DEEDLORDS_V1_WASM to a wasm built before the fee existed");
+    for (const [name, run] of scenarios) {
       try {
         await run(acc);
         console.log(`  PASS (${name})`);
@@ -561,7 +705,7 @@ async function stopSandbox(sandbox) {
     for (const [k, v] of Object.entries(storage)) console.log(`storage ${k}: ${v}`);
     console.log("heaviest calls of scenario (e), each sent with exactly the gas floor:");
     for (const line of floorReport) console.log(`  ${line}`);
-    console.log(failed ? "\nRESULT: FAIL" : "\nRESULT: all 5 scenarios passed");
+    console.log(failed ? "\nRESULT: FAIL" : `\nRESULT: all ${scenarios.length} scenarios passed`);
   } finally {
     clearTimeout(watchdog);
     await stopSandbox(sandbox);

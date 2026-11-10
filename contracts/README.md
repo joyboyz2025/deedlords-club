@@ -32,7 +32,7 @@ cargo test -p deedlords                  # contract unit tests (testing_env!, va
 cargo test -p deedlords-engine           # engine tests
 cargo clippy -p deedlords --all-targets
 
-cd sandbox && npm install && npm test    # local near-sandbox 2.14: 5 scenarios + gas/size/storage numbers
+cd sandbox && npm install && npm test    # local near-sandbox 2.14: 6 scenarios + gas/size/storage numbers
 # NEAR_SANDBOX_BIN_PATH=/path/to/near-sandbox reuses an already downloaded 2.14 binary
 
 # Testnet deploy + latency check (sandbox/testnet.js; it refuses mainnet and reads keys from ~/.near-credentials/testnet)
@@ -91,11 +91,34 @@ fees they burnt and nothing more. Not measured on mainnet.
 
 ### Settlement
 
-`pot = stake × seats`; rank `i` gets `pot × split[i] / 10000`, the integer remainder goes to rank 0. Shares of seats
-backed by the **house** are added to `forfeited` and never paid out (no method moves them). Other shares are transferred
-to the backers. A **Deed** NFT (token id = match id) is minted to the winner's backer unless the winner is a house seat.
+`pot = stake × seats`. The contract first keeps its **fee**, `pot × fee_bps / 10000` rounded down; rank `i` then gets
+`(pot − fee) × split[i] / 10000`, the integer remainder going to rank 0, so fee + shares = pot to the yocto. Shares of
+seats backed by the **house** are added to `forfeited` and never paid out (no method moves them). Other shares are
+transferred to the backers. A **Deed** NFT (token id = match id) is minted to the winner's backer unless the winner is a house seat.
 Stats and a summary are stored, the match state is deleted, and the creator's storage deposit is refunded minus the
 bytes of the permanent records (summary, stats, Deed), so finished matches never eat the contract's own balance.
+
+### Fee
+
+`fee_bps` is given to `new` (or to `migrate`), at most 500 (5%, `MAX_FEE_BPS`), and no method changes it afterwards:
+every match of a deployment pays the same rate, shown in `get_config` and in each match's `meta`. The test and dev
+deployments use 250 (2.5%). The fee is taken only when a match is settled: `leave` and `abandon` return stakes whole.
+Collected fees add up in a counter (`get_fees`); `withdraw_fees` sends exactly that amount to the owner and resets it.
+It needs 1 yoctoNEAR attached, so only a full-access key of the owner can sign it. Stakes of open matches, storage
+deposits and the house's forfeited shares are not in the counter and cannot be withdrawn.
+
+Whoever holds a full-access key of the contract account can still deploy other code. Keep that in mind when reading
+"no method changes it": it describes this code, not the account.
+
+### Upgrading a deployment made before the fee
+
+The first testnet deployment (2026-11-10) has no `fee_bps` and `fees` in its state. `migrate(fee_bps)` reads that
+layout and writes the new one; it must be called by the contract account **in the same transaction as the deploy**
+(`[DeployContract, FunctionCall migrate]`), because the new code cannot read the old state. It is refused while any
+match is open (its players staked when there was no fee). Matches, results, stats and Deeds keep their layout: a match
+settled before the upgrade stays readable and reports a fee of 0. `sandbox/testnet.js run` does this by itself when it
+finds the old contract; `DEEDLORDS_V1_WASM=<old wasm> npm test` and `DEEDLORDS_V1_WASM=<old wasm> npm run testnet:dry`
+rehearse it on a local sandbox.
 
 ### Storage deposit
 
@@ -121,7 +144,8 @@ Change methods (all panic with a readable message on invalid input):
 
 | Method | Who | What |
 |---|---|---|
-| `new(owner, house, max_stake: U128)` | contract account (init) | `max_stake`: the most yoctoNEAR one seat may stake in this deployment, at most 1,000,000 NEAR. Fixed for the life of the contract. |
+| `new(owner, house, max_stake: U128, fee_bps: u16)` | contract account (init) | `max_stake`: the most yoctoNEAR one seat may stake in this deployment, at most 1,000,000 NEAR. `fee_bps`: the contract's fee on every pot in basis points, at most 500. Both fixed for the life of the contract. |
+| `migrate(fee_bps: u16)` | contract account, together with the deploy | upgrades a deployment made before the fee (above) |
 | `create_match(id, seats, stake: U128, split: Vec<u16>, rules, solo_player: Option<AccountId>, turn_seconds: Option<u32>)` | anyone, payable (storage) | `id`: 1–32 chars `[A-Za-z0-9_-]`, unique forever once settled. `seats` 2..=4. `stake` ≤ `max_stake`. `split`: 1..=seats basis points per rank, sum 10000. `rules`: `{ salary, cash, blitz, max_rounds }` (`maxRounds` also accepted); `max_rounds` is required, 1..=255, so every match ends; Blitz needs `cash >= 1670`. `solo_player` may not be the house. |
 | `join(id, seat)` | anyone, payable exactly `stake`. Solo match: the solo player (one seat) and the house (all the others; it cannot take the last free seat while the solo player is not seated) | backs a free seat; the last one starts the game |
 | `leave(id, seat)` | the seat's backer, lobby only | refunds the stake |
@@ -130,6 +154,7 @@ Change methods (all panic with a readable message on invalid input):
 | `turn(id, seat, plan)` | backer or driver of the current seat | whole agent turn in one transaction (below) |
 | `timeout(id)` | anyone, after the deadline | engine `Auto` for the current player; in debt, the deterministic liquidation |
 | `abandon(id)` | anyone, lobby only, 15 min after creation | refunds every stake and the storage deposit |
+| `withdraw_fees()` | the owner, payable exactly 1 yoctoNEAR | sends the collected fees to the owner, returns the amount |
 | `nft_transfer`, `nft_transfer_call`, `nft_resolve_transfer` | NEP-171 | Deeds |
 
 `join`, `play`, `turn` and `timeout` need **at least 100 Tgas attached** ("No re-rolls"); with less they fail with
@@ -155,12 +180,13 @@ Views:
 
 | View | Returns |
 |---|---|
-| `get_match(id)` | `{ meta, game, log }` or `null`: `meta` has seats (backer, driver, house flag), stake, split, status, rules, deadline, current seat; `game` is the engine snapshot (ENGINE-RULES §8, same field names as the TS `Game`); `log` the last 30 structured engine events |
+| `get_match(id)` | `{ meta, game, log }` or `null`: `meta` has seats (backer, driver, house flag), stake, split, `fee_bps`, status, rules, deadline, current seat; `game` is the engine snapshot (ENGINE-RULES §8, same field names as the TS `Game`); `log` the last 30 structured engine events |
 | `list_matches(from_index, limit)` | unfinished matches (lobby/playing), `limit` ≤ 50 |
-| `get_result(id)` | settled summary: ranking (seats), backers and payouts per rank, forfeited, reason, block height, Deed owner |
+| `get_result(id)` | settled summary: `pot`, `fee`, ranking (seats), backers and payouts per rank, forfeited, reason, block height, Deed owner |
 | `get_stats(account_id)` | `{ played, wins, earned }` |
 | `get_forfeited()` | total house shares locked |
-| `get_config()` | owner, house, `max_stake` (yoctoNEAR, string), `min_move_gas` (gas units, string), constants |
+| `get_fees()` | fees collected and not yet withdrawn |
+| `get_config()` | owner, house, `max_stake` (yoctoNEAR, string), `fee_bps`, `max_fee_bps`, `min_move_gas` (gas units, string), constants |
 | `nft_token`, `nft_tokens`, `nft_tokens_for_owner`, `nft_supply_for_owner`, `nft_total_supply`, `nft_metadata` | NEP-171/177/181 |
 
 ## Events
@@ -173,7 +199,8 @@ Every state change logs `EVENT_JSON:{"standard":"deedlords","version":"1.0.0","e
 | `join` / `leave` / `set_driver` | `{ id, seat, backer, ... }` |
 | `start` | `{ id, order (seats), props (Blitz deal), steps, turn_deadline }` |
 | `actions` | `{ id, kind: play\|turn\|timeout, seat, by, steps: [{ action, events: [engine events] }], phase, stage, current_seat, turn_deadline }` (dice are in `roll` events, cards in `card` events). `rejected: { index, action, error }` is added only when an action was refused after a draw; `steps` holds what was kept. |
-| `settle` | `{ id, reason, pot, ranks: [{ rank, seat, backer, share, forfeited }], forfeited, deed, block_height, record_bytes, storage_refund }` |
+| `settle` | `{ id, reason, pot, fee, fee_bps, ranks: [{ rank, seat, backer, share, forfeited }], forfeited, deed, block_height, record_bytes, storage_refund }` (`share` is after the fee) |
+| `withdraw_fees` | `{ to, amount }` |
 | `abandon` | `{ id, refunds, creator, storage_refund }` |
 
 The Deed mint also logs the standard NEP-171 `nft_mint` event.
@@ -202,7 +229,7 @@ runs against `game.deedlords.testnet`):
 
 | | |
 |---|---|
-| wasm (release, stripped, no wasm-opt) | 517,560 bytes |
+| wasm (release, stripped, no wasm-opt) | 517,560 bytes (525,921 with the fee, built 2026-11-10; the rows below were measured before it) |
 | `create_match` | 3.1–3.3 Tgas per transaction |
 | `join` | 2.4–3.9 Tgas (the last join also starts the game) |
 | `turn` | 3.1–8.9 Tgas, avg 3.9. Ordinary turns with a 40 + 40 square plan: at most 3.9; the 8.9 is the turn that settles a 3-seat match (three payouts and the Deed mint) |

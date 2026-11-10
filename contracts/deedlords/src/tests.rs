@@ -7,18 +7,19 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use deedlords_engine::board::OWNABLE;
 use deedlords_engine::{Action, Game, Owned, Payee, Phase, Rng, Rules, Stage};
 use near_contract_standards::non_fungible_token::core::NonFungibleTokenCore;
-use near_contract_standards::non_fungible_token::NonFungibleTokenEnumeration;
+use near_contract_standards::non_fungible_token::{NonFungibleToken, NonFungibleTokenEnumeration};
 use near_sdk::json_types::U128;
 use near_sdk::mock::MockAction;
 use near_sdk::serde_json::Value;
+use near_sdk::store::{IterableMap, LookupMap};
 use near_sdk::test_utils::{get_created_receipts, get_logs, VMContextBuilder};
 use near_sdk::{env, testing_env, AccountId, Gas, NearToken};
 
 use crate::autoplay::{apply_logged, liquidation_step, play_turn, resolve_debt, timeout_step, Plan, Step};
 use crate::rng::{below_from_u32, below_limit, die_from_byte, near_sha256, ChainRng};
 use crate::{
-    current_seat, split_pot, Contract, Match, RulesArg, Status, ABANDON_AFTER_NS, DEFAULT_TURN_SECONDS, MAX_STAKE, MIN_MOVE_GAS,
-    STORAGE_RESERVE_BYTES,
+    current_seat, fee_of, split_pot, Contract, ContractV1, Match, RulesArg, Status, ABANDON_AFTER_NS, DEFAULT_TURN_SECONDS,
+    MAX_FEE_BPS, MAX_STAKE, MIN_MOVE_GAS, STORAGE_RESERVE_BYTES,
 };
 
 // ----- Environment helpers -------------------------------------------------------------------------------------------
@@ -36,6 +37,8 @@ const STAKE: u128 = NEAR;
 const STORAGE: u128 = NEAR / 10;
 /// Stake cap of the test deployment.
 const CAP: u128 = 100 * NEAR;
+/// Fee of the test deployment: 2.5% of every pot.
+const FEE_BPS: u16 = 250;
 /// The longest match the contract accepts, for tests where the round limit plays no part.
 const MANY_ROUNDS: u8 = 255;
 
@@ -82,8 +85,12 @@ impl T {
     }
 
     fn with_seed(base: u64) -> Self {
+        Self::with_fee(base, FEE_BPS)
+    }
+
+    fn with_fee(base: u64, fee_bps: u16) -> Self {
         context(CONTRACT, 0, NOW0, seed(base));
-        T { c: Contract::new(acc(OWNER), acc(HOUSE), U128(CAP)), now: NOW0, calls: 0, base }
+        T { c: Contract::new(acc(OWNER), acc(HOUSE), U128(CAP), fee_bps), now: NOW0, calls: 0, base }
     }
 
     fn call(&mut self, who: &str, deposit: u128) {
@@ -636,7 +643,8 @@ fn timeout_in_hopeless_debt_declares_bankruptcy_and_settles() {
     assert_eq!(result["ranking"], near_sdk::serde_json::json!([1 - s, s]));
     let (winner, loser) = if s == 0 { (BOB, ALICE) } else { (ALICE, BOB) };
     assert_eq!(result["deed"], winner);
-    let pot = 2 * STAKE;
+    // The ranks share the pot less the 2.5% fee.
+    let pot = 2 * STAKE - fee_of(2 * STAKE, FEE_BPS);
     let paid = transfers();
     // Alice is also the creator: her transfer adds the storage refund.
     let refund: u128 = event("settle")["data"]["storage_refund"].as_str().unwrap().parse().unwrap();
@@ -730,15 +738,26 @@ fn settlement_pays_backers_forfeits_house_shares_records_stats_and_settles_once(
     let result = t.c.get_result("s".into()).unwrap();
     assert_eq!(result["reason"], "time");
     let pot = 3 * STAKE;
-    let shares = split_pot(pot, &[5000, 3333, 1667], 3);
+    let fee = pot * 250 / 10_000;
+    assert_eq!(fee, 75 * NEAR / 1000, "2.5% of 3 NEAR");
+    let shares = split_pot(pot - fee, &[5000, 3333, 1667], 3);
     let backers: Vec<String> = result["backers"].as_array().unwrap().iter().map(|b| b.as_str().unwrap().to_string()).collect();
     let payouts: Vec<u128> = result["payouts"].as_array().unwrap().iter().map(|p| p.as_str().unwrap().parse().unwrap()).collect();
     let forfeited: u128 = result["forfeited"].as_str().unwrap().parse().unwrap();
     let house_rank = backers.iter().position(|b| b == HOUSE).unwrap();
     assert_eq!(payouts[house_rank], 0);
     assert_eq!(forfeited, shares[house_rank]);
-    assert_eq!(payouts.iter().sum::<u128>() + forfeited, pot, "every yocto of the pot is paid or forfeited");
+    assert_eq!(payouts.iter().sum::<u128>() + forfeited + fee, pot, "every yocto of the pot is paid, forfeited or the fee");
     assert_eq!(t.c.get_forfeited().0, forfeited);
+    assert_eq!(t.c.get_fees().0, fee);
+    assert_eq!(settle["pot"], pot.to_string());
+    assert_eq!(settle["fee"], fee.to_string());
+    assert_eq!(settle["fee_bps"], 250);
+    assert_eq!(result["pot"], pot.to_string());
+    assert_eq!(result["fee"], fee.to_string());
+    for (rank, share) in shares.iter().enumerate() {
+        assert_eq!(settle["ranks"][rank]["share"], share.to_string());
+    }
     // Real transfers: each non-house backer gets their share (alice, the creator, gets the storage refund).
     let paid = transfers();
     for (rank, backer) in backers.iter().enumerate() {
@@ -776,6 +795,7 @@ fn settlement_pays_backers_forfeits_house_shares_records_stats_and_settles_once(
     t.call(CAROL, 0);
     expect_panic(|| t.c.settle("s".into(), stale), "already settled");
     assert_eq!(t.c.get_forfeited().0, forfeited);
+    assert_eq!(t.c.get_fees().0, fee, "a refused second settlement takes no second fee");
     t.call(ALICE, STORAGE);
     expect_panic(|| t.c.create_match("s".into(), 2, U128(STAKE), vec![10000], classic(1), None, None), "already used");
 }
@@ -809,8 +829,9 @@ fn a_deed_is_minted_only_for_a_non_house_winner() {
     assert_eq!(extra["seats"], near_sdk::serde_json::json!([ALICE, HOUSE]));
     assert!(get_logs().iter().any(|l| l.contains("\"nft_mint\"")));
     assert_eq!(t.c.tokens.nft_tokens_for_owner(acc(ALICE), None, None).len(), 1);
-    // The house's share (rank 1 gets 0 bps here) and the winner's payout.
-    assert_eq!(transfers()[ALICE], 2 * STAKE + event("settle")["data"]["storage_refund"].as_str().unwrap().parse::<u128>().unwrap());
+    // The house's share (rank 1 gets 0 bps here) and the winner's payout: the pot less the fee.
+    let after_fee = 2 * STAKE - fee_of(2 * STAKE, FEE_BPS);
+    assert_eq!(transfers()[ALICE], after_fee + event("settle")["data"]["storage_refund"].as_str().unwrap().parse::<u128>().unwrap());
 
     decided_match(&mut t, "lose", [ALICE, HOUSE], 1);
     let result = t.c.get_result("lose".into()).unwrap();
@@ -818,7 +839,8 @@ fn a_deed_is_minted_only_for_a_non_house_winner() {
     assert!(result["deed"].is_null());
     assert!(t.c.tokens.nft_token("lose".into()).is_none(), "no deed for a house win");
     assert!(!get_logs().iter().any(|l| l.contains("\"nft_mint\"")));
-    assert_eq!(t.c.get_forfeited().0, 2 * STAKE, "the house's winning share is locked");
+    assert_eq!(t.c.get_forfeited().0, after_fee, "the house's winning share is locked");
+    assert_eq!(t.c.get_fees().0, 2 * fee_of(2 * STAKE, FEE_BPS), "both matches paid the fee");
     assert_eq!(t.c.get_stats(acc(HOUSE))["wins"], 1);
     assert_eq!(t.c.get_stats(acc(HOUSE))["earned"], "0");
     assert_eq!(t.c.tokens.nft_total_supply().0, 1);
@@ -860,6 +882,169 @@ fn storage_reserve_covers_a_full_match() {
     assert!(growth + record <= STORAGE_RESERVE_BYTES, "reserve {STORAGE_RESERVE_BYTES} < growth {growth} + records {record}");
 }
 
+// ----- Fee -------------------------------------------------------------------------------------------------------------
+
+#[test]
+fn the_fee_is_a_floor_of_the_pot_and_the_shares_take_the_rest() {
+    assert_eq!(fee_of(20 * NEAR, 250), NEAR / 2, "2.5% of a 20 NEAR pot is 0.5 NEAR");
+    assert_eq!(fee_of(0, 250), 0);
+    assert_eq!(fee_of(39, 250), 0, "rounded down: 39 * 250 / 10000");
+    assert_eq!(fee_of(40, 250), 1);
+    assert_eq!(fee_of(4 * MAX_STAKE, MAX_FEE_BPS), MAX_STAKE / 5, "the largest pot there can be does not overflow");
+    let mut x: u64 = 0x51ed_270b;
+    for _ in 0..2_000 {
+        x = x.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+        let pot = u128::from(x >> 5) * 999_983;
+        let fee_bps = (x % (u64::from(MAX_FEE_BPS) + 1)) as u16;
+        let fee = fee_of(pot, fee_bps);
+        assert!(fee <= pot / 20, "never more than 5%");
+        assert!(pot * u128::from(fee_bps) - fee * 10_000 < 10_000, "the floor of pot * bps / 10000");
+        let shares = split_pot(pot - fee, &[5500, 2500, 1500, 500], 4);
+        assert_eq!(shares.iter().sum::<u128>() + fee, pot);
+    }
+}
+
+#[test]
+fn the_fee_is_fixed_at_deployment_and_capped_at_five_percent() {
+    context(CONTRACT, 0, NOW0, seed(0));
+    expect_panic(|| Contract::new(acc(OWNER), acc(HOUSE), U128(CAP), MAX_FEE_BPS + 1), "fee_bps must be at most 500");
+    assert_eq!(Contract::new(acc(OWNER), acc(HOUSE), U128(CAP), MAX_FEE_BPS).get_config()["fee_bps"], 500);
+
+    // A deployment without a fee pays the whole pot, as before the fee existed.
+    let mut t = T::with_fee(0, 0);
+    decided_match(&mut t, "free", [ALICE, BOB], 0);
+    let result = t.c.get_result("free".into()).unwrap();
+    assert_eq!(result["fee"], "0");
+    assert_eq!(result["payouts"][0], (2 * STAKE).to_string());
+    assert_eq!(t.c.get_fees().0, 0);
+    t.call(OWNER, 1);
+    expect_panic(|| t.c.withdraw_fees(), "there are no fees to withdraw");
+}
+
+#[test]
+fn a_lobby_that_never_starts_pays_no_fee() {
+    let mut t = T::new();
+    t.create("gone", 2, vec![7000, 3000], classic(2), None);
+    t.join("gone", ALICE, 0);
+    t.call(ALICE, 0);
+    t.c.leave("gone".into(), 0);
+    assert_eq!(transfers()[ALICE], STAKE, "leaving returns the whole stake");
+    t.join("gone", BOB, 1);
+    t.now += ABANDON_AFTER_NS;
+    t.call(CAROL, 0);
+    t.c.abandon("gone".into());
+    let paid = transfers();
+    assert_eq!(paid[BOB], STAKE, "abandoning returns the whole stake");
+    assert_eq!(paid[ALICE], STORAGE, "and the whole storage deposit");
+    assert_eq!(t.c.get_fees().0, 0);
+}
+
+#[test]
+fn only_the_owner_withdraws_and_only_the_fees() {
+    let mut t = T::new();
+    decided_match(&mut t, "one", [ALICE, BOB], 0);
+    decided_match(&mut t, "two", [ALICE, HOUSE], 1);
+    let fee = fee_of(2 * STAKE, FEE_BPS);
+    assert_eq!(fee, NEAR / 20, "2.5% of a 2 NEAR pot");
+    assert_eq!(t.c.get_fees().0, 2 * fee);
+    let forfeited = t.c.get_forfeited().0;
+    assert_eq!(forfeited, 2 * STAKE - fee);
+    // A match still being played: its stakes are not fees.
+    started_pair(&mut t, MANY_ROUNDS);
+
+    t.call(ALICE, 1);
+    expect_panic(|| t.c.withdraw_fees(), "only the owner may withdraw the fees");
+    t.call(HOUSE, 1);
+    expect_panic(|| t.c.withdraw_fees(), "only the owner may withdraw the fees");
+    // Without the yocto a function-call key could sign it.
+    t.call(OWNER, 0);
+    expect_panic(|| t.c.withdraw_fees(), "Requires attached deposit of exactly 1 yoctoNEAR");
+    assert_eq!(t.c.get_fees().0, 2 * fee);
+
+    t.call(OWNER, 1);
+    assert_eq!(t.c.withdraw_fees().0, 2 * fee);
+    let paid = transfers();
+    assert_eq!(paid.len(), 1, "one transfer: {paid:?}");
+    assert_eq!(paid[OWNER], 2 * fee);
+    assert_eq!(event("withdraw_fees")["data"]["amount"], (2 * fee).to_string());
+    assert_eq!(event("withdraw_fees")["data"]["to"], OWNER);
+    assert_eq!(t.c.get_fees().0, 0);
+    assert_eq!(t.c.get_forfeited().0, forfeited, "the house's locked shares stay locked");
+    assert_eq!(t.m("m").status, Status::Playing);
+
+    t.call(OWNER, 1);
+    expect_panic(|| t.c.withdraw_fees(), "there are no fees to withdraw");
+    // The next match fills the counter again.
+    decided_match(&mut t, "three", [BOB, CAROL], 1);
+    assert_eq!(t.c.get_fees().0, fee);
+}
+
+/// The state of the first testnet deployment: the layout without `fee_bps` and `fees`.
+fn first_layout(open_match: bool) -> ContractV1 {
+    // Matches and results in the old layout are made by a contract of today: neither `Match` nor `MatchResult` changed.
+    let mut t = T::new();
+    decided_match(&mut t, "old-1", [ALICE, HOUSE], 1);
+    decided_match(&mut t, "old-2", [ALICE, BOB], 0);
+    if open_match {
+        started_pair(&mut t, MANY_ROUNDS);
+    }
+    t.c.matches.flush();
+    t.c.results.flush();
+    t.c.stats.flush();
+    let v1 = ContractV1 {
+        owner: acc(OWNER),
+        house: acc(HOUSE),
+        matches: IterableMap::new(b"m".to_vec()),
+        results: LookupMap::new(b"r".to_vec()),
+        stats: LookupMap::new(b"s".to_vec()),
+        forfeited: NearToken::from_yoctonear(t.c.get_forfeited().0),
+        tokens: NonFungibleToken::new(b"o".to_vec(), acc(OWNER), Some(b"t".to_vec()), Some(b"e".to_vec()), None::<Vec<u8>>),
+        max_stake: NearToken::from_yoctonear(CAP),
+    };
+    // The collections keep only prefixes and lengths in the root; `matches` also keeps its list of keys.
+    ContractV1 { matches: std::mem::replace(&mut t.c.matches, IterableMap::new(b"x".to_vec())), ..v1 }
+}
+
+#[test]
+fn migrate_adds_the_fee_to_a_deployment_of_the_first_layout() {
+    let old = first_layout(false);
+    let forfeited = old.forfeited;
+    context(CONTRACT, 0, NOW0 + SEC, seed(7));
+    env::state_write(&old);
+    expect_panic(|| Contract::migrate(MAX_FEE_BPS + 1), "fee_bps must be at most 500");
+    let mut c = Contract::migrate(FEE_BPS);
+    let config = c.get_config();
+    assert_eq!(config["owner"], OWNER);
+    assert_eq!(config["house"], HOUSE);
+    assert_eq!(config["max_stake"], CAP.to_string());
+    assert_eq!(config["fee_bps"], 250);
+    assert_eq!(config["matches"], 0);
+    assert_eq!(c.get_fees().0, 0);
+    assert_eq!(c.get_forfeited().0, forfeited.as_yoctonear());
+    // What was settled before stays readable.
+    let result = c.get_result("old-2".into()).expect("an old result");
+    assert_eq!(result["backers"][0], ALICE);
+    assert_eq!(c.get_stats(acc(ALICE))["played"], 2);
+    assert_eq!(c.tokens.nft_token("old-2".into()).expect("an old deed").owner_id, acc(ALICE));
+    // And the upgraded contract works: a used id stays used, a new match can be opened.
+    context(ALICE, STORAGE, NOW0 + 2 * SEC, seed(8));
+    expect_panic(|| c.create_match("old-1".into(), 2, U128(STAKE), vec![10000], classic(1), None, None), "already used");
+    context(ALICE, STORAGE, NOW0 + 2 * SEC, seed(9));
+    c.create_match("new".into(), 2, U128(STAKE), vec![10000], classic(1), None, None);
+    assert_eq!(c.get_match("new".into()).unwrap()["meta"]["fee_bps"], 250);
+    // The new layout is not the first one: migrating twice is refused (near-sdk fails to read the state as `ContractV1`).
+    env::state_write(&c);
+    expect_panic(|| Contract::migrate(FEE_BPS), "Cannot deserialize the contract state");
+}
+
+#[test]
+fn migrate_is_refused_while_a_match_is_open() {
+    let old = first_layout(true);
+    context(CONTRACT, 0, NOW0 + SEC, seed(7));
+    env::state_write(&old);
+    expect_panic(|| Contract::migrate(FEE_BPS), "finish or abandon every open match first");
+}
+
 // ----- Views -------------------------------------------------------------------------------------------------------------
 
 #[test]
@@ -872,6 +1057,7 @@ fn views_expose_meta_snapshot_log_and_lists() {
     assert_eq!(view["meta"]["seats"][0]["backer"], ALICE);
     assert_eq!(view["meta"]["seats"][1]["player"], "s1");
     assert_eq!(view["meta"]["stake"], STAKE.to_string());
+    assert_eq!(view["meta"]["fee_bps"], 250);
     assert_eq!(view["game"]["players"].as_array().unwrap().len(), 2);
     assert_eq!(view["game"], t.m("m").game.snapshot());
     assert_eq!(view["log"][0]["kind"], "start");
@@ -884,18 +1070,21 @@ fn views_expose_meta_snapshot_log_and_lists() {
     let config = t.c.get_config();
     assert_eq!(config["house"], HOUSE);
     assert_eq!(config["max_stake"], CAP.to_string());
+    assert_eq!(config["fee_bps"], 250);
+    assert_eq!(config["max_fee_bps"], 500);
+    assert_eq!(list[0]["fee_bps"], 250);
     assert_eq!(config["min_move_gas"], MIN_MOVE_GAS.as_gas().to_string());
 }
 
 #[test]
 fn the_stake_cap_is_set_once_at_deployment() {
     context(CONTRACT, 0, NOW0, seed(0));
-    expect_panic(|| Contract::new(acc(OWNER), acc(HOUSE), U128(MAX_STAKE + 1)), "max_stake must be at most");
-    let c = Contract::new(acc(OWNER), acc(HOUSE), U128(MAX_STAKE));
+    expect_panic(|| Contract::new(acc(OWNER), acc(HOUSE), U128(MAX_STAKE + 1), FEE_BPS), "max_stake must be at most");
+    let c = Contract::new(acc(OWNER), acc(HOUSE), U128(MAX_STAKE), FEE_BPS);
     assert_eq!(c.get_config()["max_stake"], MAX_STAKE.to_string());
     // A cap of 0 makes a free-play deployment: only stake-0 matches.
     let mut t = T::new();
-    t.c = Contract::new(acc(OWNER), acc(HOUSE), U128(0));
+    t.c = Contract::new(acc(OWNER), acc(HOUSE), U128(0), FEE_BPS);
     t.call(ALICE, STORAGE);
     expect_panic(|| t.c.create_match("paid".into(), 2, U128(1), vec![10000], classic(1), None, None), "stake too large");
     t.call(ALICE, STORAGE);

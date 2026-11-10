@@ -3,6 +3,8 @@
 //
 //   node testnet.js --sandbox                              dry run of the same flow on a local near-sandbox
 //   node testnet.js --sandbox-recover                      dry run of an interrupted run followed by a second run
+//   DEEDLORDS_V1_WASM=<old wasm> node testnet.js --sandbox dry run of the upgrade: a run with the wasm from before the
+//                                                          fee, then a run with the new one (deploy + migrate)
 //   DEEDLORDS_PARENT=<you>.testnet node testnet.js plan    read-only: balances and the transactions `run` would sign
 //   DEEDLORDS_PARENT=<you>.testnet node testnet.js run     signs on testnet
 //
@@ -21,7 +23,8 @@
 //
 // What `run` does, in order:
 //   1. creates game.<parent>, house.<parent>, p1.<parent>, p2.<parent> (skips the ones that exist)
-//   2. deploys the wasm to game.<parent> and calls new(owner, house, max_stake) (skips what is already done)
+//   2. deploys the wasm to game.<parent> and calls new(owner, house, max_stake, fee_bps) (skips what is already done);
+//      over a deployment made before the fee existed: deploy + migrate(fee_bps) in one transaction
 //   3. adds a FUNCTION-CALL access key ("session key") to p1, p2 and house: it can only call the play methods of the
 //      game contract, cannot attach a deposit, and is what a browser would hold so that moves need no wallet prompt
 //   4. plays: (B) a 2-seat classic match through play(), (A) a solo Blitz match against the house through turn(),
@@ -49,6 +52,8 @@ const SESSION_METHODS = ["play", "turn", "timeout", "set_driver", "leave"];
 const SESSION_ALLOWANCE = NEAR(0.25);
 const STAKE = NEAR(0.05);
 const MAX_STAKE = NEAR(1);
+/// The fee of the deployment: 2.5% of every pot, in basis points. Fixed by new() or migrate(); the contract caps it at 500.
+const FEE_BPS = 250;
 const STORAGE_DEPOSIT = NEAR(0.06);
 /// Initial balance of each sub-account. `game` must cover the storage of the wasm (1e19 yocto per byte).
 const FUND = { game: NEAR(5.6), house: NEAR(0.5), p1: NEAR(0.8), p2: NEAR(0.6) };
@@ -423,7 +428,7 @@ const createMatch = (creator, id, o) =>
 
 async function printResult(id) {
   const r = await view("get_result", { id });
-  console.log(`  settled (${r.reason}); backers by rank: ${r.backers.join(" > ")}; payouts ${r.payouts.map(fmt).join(", ")}${BigInt(r.forfeited ?? 0) > 0n ? `; forfeited to the contract ${fmt(r.forfeited)}` : ""}`);
+  console.log(`  settled (${r.reason}); backers by rank: ${r.backers.join(" > ")}; payouts ${r.payouts.map(fmt).join(", ")}${BigInt(r.fee ?? 0) > 0n ? `; fee ${fmt(r.fee)}` : ""}${BigInt(r.forfeited ?? 0) > 0n ? `; forfeited to the contract ${fmt(r.forfeited)}` : ""}`);
 }
 
 /// (B) 2-seat classic match, every move through play() signed by the session key of the seat's backer.
@@ -608,7 +613,8 @@ async function flow(mode, parentId, wasmPath) {
   console.log(`  needs ${fmt(toFund + PARENT_BUFFER)} free on the parent (new accounts ${fmt(toFund)} + ${fmt(PARENT_BUFFER)} for fees); it has ${fmt(parentFree)} free`);
   console.log("\nTRANSACTIONS `run` signs, in order");
   console.log("  1. parent: create each missing sub-account above (create account + transfer + its own full-access key)");
-  console.log(`  2. game: deploy the wasm (skipped when the code hash already matches), then new(owner=${parentId}, house=${planned.house.id}, max_stake=${fmt(MAX_STAKE)})`);
+  console.log(`  2. game: deploy the wasm (skipped when the code hash already matches), then new(owner=${parentId}, house=${planned.house.id}, max_stake=${fmt(MAX_STAKE)}, fee_bps=${FEE_BPS})`);
+  console.log(`     if it runs the contract from before the fee: deploy + migrate(fee_bps=${FEE_BPS}) in ONE transaction instead (refused while a match is open; what was settled is kept)`);
   console.log(`  3. p1, p2, house: add a function-call key each: receiver ${planned.game.id}, methods ${SESSION_METHODS.join("/")}, allowance ${fmt(SESSION_ALLOWANCE)}`);
   console.log(`  4. three matches, stake ${fmt(STAKE)} per seat, storage deposit ${fmt(STORAGE_DEPOSIT)} per match (refunded at settlement):`);
   console.log("     create_match and join signed by full-access keys (they carry a deposit); play/turn signed by session keys;");
@@ -628,14 +634,24 @@ async function flow(mode, parentId, wasmPath) {
 
   // ---- 2. deploy + init ----
   const gameAccount = await viewAccount(game.id);
+  const fresh = gameAccount.code_hash === "11111111111111111111111111111111";
+  let config = fresh ? null : await view("get_config").catch(() => null);
   if (gameAccount.code_hash === wasmHash) console.log(`  ${game.id} already runs this wasm`);
-  else {
-    if (gameAccount.code_hash !== "11111111111111111111111111111111") console.log(`  WARNING: replacing other code on ${game.id} (${gameAccount.code_hash}); its state is kept`);
+  else if (config && config.fee_bps === undefined) {
+    // The contract from before the fee: its state has another layout. New code alone would leave it unreadable, so the
+    // deploy and migrate() go in one transaction: both happen or neither does.
+    if (config.matches > 0) throw new Error(`${game.id} has ${config.matches} open match(es): finish or abandon them before upgrading (migrate() refuses otherwise)`);
+    console.log(`  ${game.id} runs the contract from before the fee (${gameAccount.code_hash}): upgrading in place`);
+    await setupTx(`deploy ${wasm.length} bytes to ${game.id} + migrate(fee_bps=${FEE_BPS})`, game, game.id, [transactions.deployContract(wasm), transactions.functionCall("migrate", { fee_bps: FEE_BPS }, MOVE_GAS, 0n)]);
+    config = await view("get_config");
+    if (config.fee_bps !== FEE_BPS) throw new Error(`after migrate() the contract reports fee_bps ${config.fee_bps}`);
+  } else {
+    if (!fresh) console.log(`  WARNING: replacing other code on ${game.id} (${gameAccount.code_hash}); its state is kept`);
     await setupTx(`deploy ${wasm.length} bytes to ${game.id}`, game, game.id, [transactions.deployContract(wasm)]);
+    config = await view("get_config").catch(() => null);
   }
-  let config = await view("get_config").catch(() => null);
   if (!config) {
-    await setupTx("new(owner, house, max_stake)", game, game.id, [transactions.functionCall("new", { owner: parent.id, house: acc.house.id, max_stake: MAX_STAKE.toString() }, MOVE_GAS, 0n)]);
+    await setupTx("new(owner, house, max_stake, fee_bps)", game, game.id, [transactions.functionCall("new", { owner: parent.id, house: acc.house.id, max_stake: MAX_STAKE.toString(), fee_bps: FEE_BPS }, MOVE_GAS, 0n)]);
     config = await view("get_config");
   }
   console.log(`  config: ${JSON.stringify(config)}`);
@@ -810,6 +826,15 @@ async function dryRun(wasmPath, recover) {
     const root = { id: DEFAULT_ACCOUNT_ID, kp: KeyPair.fromString(DEFAULT_PRIVATE_KEY), nonce: null };
     const made = await measureTx(root, parentId, [transactions.createAccount(), transactions.transfer(NEAR(10)), transactions.addKey(kp.getPublicKey(), transactions.fullAccessKey())]);
     if (!made.ok) throw new Error(`could not create ${parentId}: ${made.error}`);
+    const v1Path = process.env.DEEDLORDS_V1_WASM;
+    if (v1Path) {
+      // What testnet looks like today: a first run deployed the wasm from before the fee and settled its matches.
+      console.log(`\nFIRST RUN with ${v1Path} (the contract from before the fee)`);
+      await flow("run", parentId, v1Path);
+      console.log("\n================ SECOND RUN: the new wasm over it ================");
+      for (const label of Object.keys(samples)) delete samples[label];
+      viewMs.length = 0;
+    }
     if (recover) {
       // First run dies in the middle of the solo match and leaves its session keys; the second one must clean up.
       simulateCrash = true;
