@@ -7,7 +7,7 @@ import { CHAIN } from "@/lib/chain/config";
 import { chainClient } from "@/lib/chain/shared";
 import { readStored, writeStored } from "@/lib/storage";
 import { formatNear, seatNames } from "../chain/adapt";
-import { AS_KEY, devCreateMatch, type NewMatch } from "../chain/devSession";
+import { AS_KEY, devCreateMatch, useDevConfig, type NewMatch } from "../chain/devSession";
 import type { ChainListed } from "../chain/types";
 import { PlayAs } from "./ChainScreen";
 
@@ -21,6 +21,7 @@ export function ChainHome() {
   const [accountId, setAccountId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const helper = useDevConfig();
 
   useEffect(() => {
     if (CHAIN.devUrl) setAccountId(readStored<string>(AS_KEY));
@@ -95,17 +96,29 @@ export function ChainHome() {
         )}
         {CHAIN.devUrl && (
           <section className="tp-section tp-chain-dev">
-            <h2 className="tp-heading">Local sandbox</h2>
-            <PlayAs accountId={accountId} onChange={playAs} />
-            <div className="tp-row">
-              <button type="button" className="tp-btn tp-btn--main" disabled={accountId === null || creating} onClick={() => create({ kind: "solo" })}>
-                Play the house
-              </button>
-              <button type="button" className="tp-btn" disabled={accountId === null || creating} onClick={() => create({ kind: "duel", open: true })}>
-                Open a duel
-              </button>
-            </div>
-            <p className="tp-hint">A dev account stakes 1 test NEAR a seat. Nothing here leaves this machine.</p>
+            <h2 className="tp-heading">{CHAIN.network === "sandbox" ? "Local sandbox" : `Test accounts on ${CHAIN.network}`}</h2>
+            {helper === null ? (
+              <p className="tp-hint">Looking for the helper at {CHAIN.devUrl}…</p>
+            ) : (
+              <>
+                <PlayAs accountId={accountId} onChange={playAs} />
+                <div className="tp-row">
+                  {helper.solo && (
+                    <button type="button" className="tp-btn tp-btn--main" disabled={accountId === null || creating} onClick={() => create({ kind: "solo" })}>
+                      Play the house
+                    </button>
+                  )}
+                  <button type="button" className={helper.solo ? "tp-btn" : "tp-btn tp-btn--main"} disabled={accountId === null || creating} onClick={() => create({ kind: "duel", open: true })}>
+                    {creating ? "Opening…" : "Open a duel"}
+                  </button>
+                </div>
+                <p className="tp-hint">
+                  {CHAIN.network === "sandbox"
+                    ? `A dev account stakes ${formatNear(helper.stake)} test NEAR a seat. Nothing here leaves this machine.`
+                    : `The helper on this machine signs for the test accounts: ${formatNear(helper.stake)} NEAR a seat, on NEAR ${CHAIN.network}.`}
+                </p>
+              </>
+            )}
             {problem && <p className="tp-problem">{problem}</p>}
           </section>
         )}

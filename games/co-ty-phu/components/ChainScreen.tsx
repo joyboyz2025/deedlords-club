@@ -7,7 +7,7 @@ import { CHAIN } from "@/lib/chain/config";
 import { readStored, writeStored } from "@/lib/storage";
 import { TOKEN_COLORS } from "../board";
 import { formatBps, formatNear, seatNames, shortAccount } from "../chain/adapt";
-import { AS_KEY, devConfig, devJoin, openDevSession } from "../chain/devSession";
+import { AS_KEY, devJoin, openDevSession, useDevConfig } from "../chain/devSession";
 import type { ChainMatch, ChainResult } from "../chain/types";
 import { useChainRoom } from "../chain/useChainRoom";
 import { Stage } from "./TycoonScreen";
@@ -120,6 +120,8 @@ function Table({ id, session, problem, onPlayAs }: { id: string; session: Sessio
         offline={link === "offline"}
         send={send}
         chain={{
+          // In the menu, not floating over the table: the corners belong to the players' cards.
+          label: `${CHAIN.network} · ${accountId === null ? "watching" : seat === null ? `${shortAccount(accountId)} (no seat here)` : `${shortAccount(accountId)}, seat ${seat + 1}`}`,
           busy,
           result: (onClose) =>
             result ? (
@@ -134,9 +136,6 @@ function Table({ id, session, problem, onPlayAs }: { id: string; session: Sessio
             ),
         }}
       />
-      <p className="tp-chain-badge">
-        {CHAIN.network} · {accountId === null ? "watching" : seat === null ? `${shortAccount(accountId)} (no seat here)` : `${shortAccount(accountId)}, seat ${seat + 1}`}
-      </p>
       {(notice ?? problem) && (
         <p className="tp-chain-note" role="alert">
           {notice ?? problem}
@@ -228,15 +227,9 @@ function Lobby({
   );
 }
 
-/** Sandbox only: which dev account this browser plays as. */
+/** With a local helper only: which of its test accounts this browser plays as. */
 export function PlayAs({ accountId, onChange }: { accountId: string | null; onChange: (accountId: string | null) => void }) {
-  const [players, setPlayers] = useState<string[]>([]);
-  useEffect(() => {
-    devConfig().then(
-      (config) => setPlayers(config.players),
-      () => setPlayers([]),
-    );
-  }, []);
+  const players = useDevConfig()?.players ?? [];
   const choices = accountId !== null && !players.includes(accountId) ? [accountId, ...players] : players;
   return (
     <label className="tp-chain-as">
@@ -268,7 +261,7 @@ function Payout({ result, names, accountId, onClose }: { result: ChainResult; na
           <li key={seat}>
             <i className="tp-token" style={{ background: TOKEN_COLORS[seat] }} />
             <span>{names[seat] ?? shortAccount(result.backers[rank])}</span>
-            <strong>{formatNear(result.payouts[rank])} NEAR</strong>
+            <strong>{formatNear(result.payouts[rank], 5)} NEAR</strong>
           </li>
         ))}
       </ol>

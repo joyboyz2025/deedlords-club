@@ -12,7 +12,7 @@
 //                                             (create_match and join carry deposits: full-access signatures)
 //   POST /join    { id, seat, accountId }     seats a dev account in an open match
 //   POST /rpc                                 forwards one JSON-RPC request to the sandbox node
-//   GET  /config                              { networkId, contractId, house, players }
+//   GET  /config                              { networkId, contractId, house, players, stake, solo }
 //
 // Only pages served from localhost may call it (CORS), and every POST must be application/json.
 
@@ -241,7 +241,7 @@ function serve() {
       if (req.method === "OPTIONS") return send(204);
       const route = `${req.method} ${new URL(req.url, "http://x").pathname}`;
       if (route === "GET /config") {
-        return send(200, { networkId: NET, contractId, house: acc.house.accountId, players: players().map((a) => a.accountId) });
+        return send(200, { networkId: NET, contractId, house: acc.house.accountId, players: players().map((a) => a.accountId), stake: STAKE.toString(), solo: true });
       }
       if (req.method !== "POST") return send(404, { error: "not found" });
       if (!String(req.headers["content-type"] ?? "").startsWith("application/json")) return send(415, { error: "content-type must be application/json" });

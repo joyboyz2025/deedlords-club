@@ -4,13 +4,43 @@
     {
       "name": "chain",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:chain", "--prefix", "contracts/sandbox"],
+      "runtimeArgs": [
+        "run",
+        "dev:chain",
+        "--prefix",
+        "contracts/sandbox"
+      ],
       "port": 8791
     },
     {
       "name": "web-chain",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:chain"],
+      "runtimeArgs": [
+        "run",
+        "dev:chain"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "testnet-helper",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "DEEDLORDS_PARENT=deedlords.testnet",
+        "npm",
+        "run",
+        "play:testnet",
+        "--prefix",
+        "contracts/sandbox"
+      ],
+      "port": 8792
+    },
+    {
+      "name": "web-testnet",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:testnet"
+      ],
       "port": 3000
     }
   ]

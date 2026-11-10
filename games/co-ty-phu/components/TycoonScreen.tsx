@@ -221,6 +221,8 @@ function useStageEffects(view: View, holding: boolean) {
 
 /** What differs when the game runs on the contract instead of the room server (see `ChainScreen`): no trades, no "new game". */
 export type ChainStage = {
+  /** Shown where a room shows its code: the network and who the viewer plays as. */
+  label: string;
   /** A roll is on its way to the chain: the turn buttons rest until it lands. */
   busy: boolean;
   /** The payout card of a settled match, shown in place of the room server's result card. */
@@ -244,7 +246,7 @@ export function Stage({ view, offline, send, chain }: { view: View; offline: boo
         <header className="tp-top">
           <div className="tp-top__title">
             <span className="tp-top__game">Cờ tỷ phú</span>
-            <strong>Phòng {view.code}</strong>
+            <strong>{chain?.label ?? `Phòng ${view.code}`}</strong>
           </div>
           {view.phase === "playing" && <GameClock view={view} />}
           <SoundToggle />
@@ -606,7 +608,7 @@ function Game({
           <div className="tp-sheet" role="dialog" aria-label="Thêm" onClick={(event) => event.target === event.currentTarget && close()}>
             <div className="tp-sheet__body tp-more">
               <div className="tp-more__head">
-                <strong>Phòng {view.code}</strong>
+                <strong>{chain?.label ?? `Phòng ${view.code}`}</strong>
                 {view.phase === "playing" && <GameClock view={view} />}
               </div>
               <div className="tp-more__row">

@@ -9,6 +9,7 @@
     "dev:web": "next dev -H 0.0.0.0",
     "dev:room": "wrangler dev --ip 0.0.0.0 --port 8787 --var TOWN_DEV_AUTH:1",
     "dev:chain": "npm run build:chibi && NEXT_PUBLIC_NEAR_NETWORK=sandbox next dev",
+    "dev:testnet": "npm run build:chibi && NEXT_PUBLIC_DEEDLORDS_DEV_URL=http://127.0.0.1:8792 next dev",
     "dev:server": "PORT=8790 DATA_DIR=.server-data TOWN_DEV_AUTH=1 node --env-file-if-exists=.env.local --experimental-strip-types --disable-warning=ExperimentalWarning --import ./server/register.mjs server/index.ts",
     "build": "npm run build:chibi && next build",
     "build:chibi": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/build-chibi.ts",

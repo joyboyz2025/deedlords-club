@@ -1,28 +1,63 @@
-// Local sandbox only (`CHAIN.devUrl`): who this browser plays as, and its session key. The stub of
-// contracts/sandbox/dev.js stands in for the wallet: it holds the dev accounts' own keys, adds this browser's session
-// key to one of them and signs what carries a deposit (creating a match, taking a seat). On a real network none of
-// this exists and the page only watches until wallet sign-in is built.
+// With a local helper only (`CHAIN.devUrl`): who this browser plays as, and its session key. The helper stands in for
+// the wallet: it holds the test accounts' own keys, adds this browser's session key to one of them and signs what
+// carries a deposit (creating a match, taking a seat). On the sandbox that is the stub of contracts/sandbox/dev.js, on
+// testnet contracts/sandbox/play-testnet.js. Without a helper the page only watches until wallet sign-in is built.
 
+import { useEffect, useState } from "react";
 import type { Session } from "@/lib/chain/client";
 import { CHAIN } from "@/lib/chain/config";
 import { generateKeyPair, parseSecretKey, publicKeyText, secretKeyText, type KeyPair } from "@/lib/chain/keys";
 import { chainClient } from "@/lib/chain/shared";
 import { readStored, writeStored } from "@/lib/storage";
 
-/** The dev account last played as, so a page opened without `?as=` keeps it. */
-export const AS_KEY = "deedlords:as";
+/** The test account last played as on this network, so a page opened without `?as=` keeps it. */
+export const AS_KEY = `deedlords:as:${CHAIN.network}`;
 
-export type DevConfig = { networkId: string; contractId: string; house: string; players: string[] };
+export type DevConfig = {
+  networkId: string;
+  contractId: string;
+  house: string;
+  /** The accounts the helper signs for. */
+  players: string[];
+  /** What a seat costs in the matches the helper opens, in yoctoNEAR. */
+  stake: string;
+  /** Whether it can open a match against the house (it needs a house runner for that). */
+  solo: boolean;
+};
 
 async function dev<T>(path: string, body?: unknown): Promise<T> {
-  if (!CHAIN.devUrl) throw new Error("the dev stub exists on the local sandbox only");
+  if (!CHAIN.devUrl) throw new Error("no local helper is set up for this network");
   const response = await fetch(`${CHAIN.devUrl}${path}`, body === undefined ? undefined : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const answer = (await response.json().catch(() => ({}))) as T & { error?: string };
-  if (!response.ok) throw new Error(answer.error ?? `dev stub: HTTP ${response.status}`);
+  if (!response.ok) throw new Error(answer.error ?? `local helper: HTTP ${response.status}`);
   return answer;
 }
 
-export const devConfig = () => dev<DevConfig>("/config");
+let config: Promise<DevConfig> | null = null;
+/** Asked once per page: the helper does not change while it runs. A failed read is asked again. */
+export function devConfig(): Promise<DevConfig> {
+  config ??= dev<DevConfig>("/config").catch((error) => {
+    config = null;
+    throw error;
+  });
+  return config;
+}
+
+/** `null` until the helper has answered, and for as long as it cannot be reached. */
+export function useDevConfig(): DevConfig | null {
+  const [known, setKnown] = useState<DevConfig | null>(null);
+  useEffect(() => {
+    let stale = false;
+    devConfig().then(
+      (answer) => !stale && setKnown(answer),
+      () => undefined,
+    );
+    return () => {
+      stale = true;
+    };
+  }, []);
+  return known;
+}
 
 export type NewMatch = { kind: "solo" | "duel"; open?: boolean; player?: string; turnSeconds?: number; rules?: { max_rounds?: number } };
 export const devCreateMatch = (match: NewMatch) => dev<{ id: string }>("/match", match);
@@ -32,8 +67,8 @@ export const devJoin = (id: string, seat: number, accountId: string) => dev<{ id
 const keyStorage = (accountId: string) => `deedlords:session:${CHAIN.network}:${CHAIN.contractId}:${accountId}`;
 
 /**
- * This browser's session for a dev account. The key pair is made here and only its public half is handed to the stub,
- * which adds it to the account as a function-call key for the game contract's move methods.
+ * This browser's session for a test account. The key pair is made here and only its public half is handed to the
+ * helper, which adds it to the account as a function-call key for the game contract's move methods.
  */
 export async function openDevSession(accountId: string): Promise<Session> {
   const stored = readStored<string>(keyStorage(accountId));
@@ -48,7 +83,12 @@ export async function openDevSession(accountId: string): Promise<Session> {
     writeStored(keyStorage(accountId), secretKeyText(pair));
   }
   const session = chainClient.session(accountId, pair);
-  // A restarted sandbox is a new chain: the key kept here is not on the account there.
-  if (!(await session.ready())) await dev("/session", { accountId, publicKey: publicKeyText(pair.publicKey) });
+  // The key kept here may be gone from the account: a restarted sandbox is a new chain, and the testnet helper removes
+  // its session keys when it stops.
+  if (!(await session.ready())) {
+    await dev("/session", { accountId, publicKey: publicKeyText(pair.publicKey) });
+    // The node asked next may still be a block behind the one that added the key.
+    for (let i = 0; i < 20 && !(await session.ready()); i++) await new Promise((resolve) => setTimeout(resolve, 500));
+  }
   return session;
 }
