@@ -6,6 +6,7 @@ import { advise, type Advice } from "../agent/advise";
 import type { AgentNote } from "../agent/book";
 import type { Plan } from "../agent/plan";
 import type { RoomState } from "./room";
+import { readAgent, type AgentProfile } from "./useAgent";
 
 // Handing one's own seat to an agent, in the tab: the plan comes from the agent's desk (/api/agent: a model, or the rule
 // bot) and is signed here with the player's own session key, the same key that signs their clicks. Nothing changes on
@@ -25,14 +26,15 @@ export type Autopilot = {
   last: Advice | null;
 };
 
-async function askDesk(id: string, seat: number): Promise<Advice> {
-  const response = await fetch("/api/agent", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, seat }) });
+async function askDesk(id: string, seat: number, agent: AgentProfile): Promise<Advice> {
+  const order = { id, seat, model: agent.model, playbook: agent.playbook, style: agent.wish || undefined };
+  const response = await fetch("/api/agent", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(order) });
   if (!response.ok) throw new Error(`the agent's desk answered ${response.status}`);
   return (await response.json()) as Advice;
 }
 
-/** `null` for somebody who has no seat in the match. */
-export function useAutopilot(id: string, state: RoomState, playTurn: (plan: Plan) => boolean): Autopilot | null {
+/** `accountId`: whose agent flies (its model and playbook, see useAgent). `null` for somebody who has no seat in the match. */
+export function useAutopilot(id: string, state: RoomState, playTurn: (plan: Plan) => boolean, accountId: string | null = null): Autopilot | null {
   const [on, setOn] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [last, setLast] = useState<Advice | null>(null);
@@ -69,16 +71,18 @@ export function useAutopilot(id: string, state: RoomState, playTurn: (plan: Plan
     if (tried.current?.key === key && now - tried.current.at < RETRY_MS) return;
     tried.current = { key, at: now };
     setThinking(true);
-    void askDesk(id, seat)
-      // No desk (a page served without its server): the rule bot runs right here.
-      .catch(() => advise(match, seat, { llm: null }))
+    // Read at each turn: the owner may have adjusted the playbook in another tab since the last one.
+    const agent = readAgent(accountId);
+    void askDesk(id, seat, agent)
+      // No desk (a page served without its server): the playbook runs right here.
+      .catch(() => advise(match, seat, { llm: null, playbook: agent.playbook }))
       .then((advice) => {
         if (!advice || !wanted.current) return;
         if (playTurn(advice.plan)) setLast(advice);
       })
       .catch(() => undefined)
       .finally(() => setThinking(false));
-  }, [mine, key, tick, thinking, id, seat, match, playTurn]);
+  }, [mine, key, tick, thinking, id, seat, match, playTurn, accountId]);
 
   return seat === null ? null : { on, thinking, toggle, last };
 }

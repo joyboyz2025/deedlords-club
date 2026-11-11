@@ -7,8 +7,9 @@ import { test } from "node:test";
 import { advise } from "../games/co-ty-phu/agent/advise.ts";
 import { briefFor, diceChance } from "../games/co-ty-phu/agent/brief.ts";
 import { evPlan } from "../games/co-ty-phu/agent/ev.ts";
-import { buildMessages, llmConfig, parseAnswer, type LlmConfig } from "../games/co-ty-phu/agent/llm.ts";
+import { MAX_STYLE, askPlaybook, buildMessages, llmConfig, llmFor, llmModels, parseAnswer, type LlmConfig } from "../games/co-ty-phu/agent/llm.ts";
 import { cleanPlan } from "../games/co-ty-phu/agent/plan.ts";
+import { DEFAULT_PLAYBOOK, PRESETS, cleanPlaybook, describePlaybook, playbookPlan } from "../games/co-ty-phu/agent/playbook.ts";
 import { SQUARES, cityRents, houseCost } from "../games/co-ty-phu/board.ts";
 import type { ChainMatch } from "../games/co-ty-phu/chain/types.ts";
 
@@ -167,7 +168,7 @@ test("advice is the model's plan when it answers, with its label", async () => {
   // The key goes in the header only.
   assert.ok(!(asked[0].init.body as string).includes("secret-key"));
   assert.match(buildMessages(briefFor(match, 0)!).user, /^State of your seat:\n/);
-  assert.equal(buildMessages(briefFor(match, 0)!, "x".repeat(999)).user.split("\n")[0].length, "The owner of this seat asks you to play like this: ".length + 282);
+  assert.equal(buildMessages(briefFor(match, 0)!, "x".repeat(999)).user.split("\n")[0].length, "The owner of this seat asks you to play like this: ".length + MAX_STYLE + 2);
 });
 
 test("advice falls back to the rule bot when the model is wrong, refused or late, and says so", async () => {
@@ -177,7 +178,7 @@ test("advice falls back to the rule bot when the model is wrong, refused or late
   assert.deepEqual([nonsense.plan, nonsense.reason, nonsense.driver, nonsense.fallback], [rule.plan, rule.reason, "ev", true]);
   assert.equal(nonsense.problem, "the model did not answer with a plan");
   const refused = (await advise(match, 0, { llm: model, fetch: answering("{}", 429) }))!;
-  assert.deepEqual([refused.fallback, refused.problem], [true, "the model service answered 429"]);
+  assert.deepEqual([refused.fallback, refused.problem], [true, "the model service answered 429 (out of credit, or asked too often)"]);
   const never = ((_url: string | URL | Request, init?: RequestInit) =>
     new Promise<Response>((_resolve, reject) => init!.signal!.addEventListener("abort", () => reject(new Error("aborted"))))) as typeof fetch;
   const late = (await advise(match, 0, { llm: model, fetch: never, timeoutMs: 30 }))!;
@@ -188,4 +189,107 @@ test("advice falls back to the rule bot when the model is wrong, refused or late
   assert.deepEqual([alone.plan, alone.driver, alone.fallback, alone.problem], [rule.plan, "ev", false, null]);
   assert.equal(asked.length, 0);
   assert.equal(await advise(fixture.lobby, 0, { llm: null }), null);
+});
+
+test("a playbook: the default one plays like the rule bot, and each rule moves the plan", () => {
+  const city = SQUARES.findIndex((square, i) => square.kind === "city" && i >= 2 && i <= 12);
+  for (const match of [facing(city, 3), facing(city, 0, 90), copy(fixture.mid)]) {
+    for (const seat of [0, 1]) {
+      const brief = briefFor(match, seat);
+      if (brief) assert.deepEqual(playbookPlan(brief, DEFAULT_PLAYBOOK).plan, evPlan(brief).plan);
+    }
+  }
+  const brief = briefFor(facing(city, 3), 0)!;
+  const rent = brief.threat!.amount;
+  // The reserve is the larger of the fixed one and the share of the worst rent ahead.
+  assert.equal(playbookPlan(brief, { ...DEFAULT_PLAYBOOK, reserve: 0, caution: 0 }).plan.buy_reserve, 0);
+  assert.equal(playbookPlan(brief, { ...DEFAULT_PLAYBOOK, reserve: 0, caution: 2 }).plan.buy_reserve, rent * 2);
+  assert.equal(playbookPlan(brief, { ...DEFAULT_PLAYBOOK, reserve: 900 }).plan.buy_reserve, 900);
+  // A cushion is asked of houses only.
+  const cushioned = playbookPlan(brief, { ...DEFAULT_PLAYBOOK, cushion: 200 }).plan;
+  assert.equal(cushioned.keep_reserve, cushioned.buy_reserve + 200);
+
+  // Two cities of mine: the order houses go on follows the rule, and so does the order of what is sold.
+  const mine = SQUARES.flatMap((square, i) => (square.kind === "city" ? [i] : []));
+  const [cheap, dear] = [mine[0], mine[mine.length - 1]];
+  const owner = copy(fixture.started);
+  const me = owner.game.players.find((player) => player.id === owner.meta.seats[0].player)!;
+  owner.game.props = { [cheap]: { owner: me.id, houses: 0, mortgaged: false }, [dear]: { owner: me.id, houses: 0, mortgaged: false } };
+  const holding = briefFor(owner, 0)!;
+  assert.deepEqual(playbookPlan(holding, { ...DEFAULT_PLAYBOOK, build: "priciest" }).plan.build, [dear, cheap]);
+  assert.deepEqual(playbookPlan(holding, { ...DEFAULT_PLAYBOOK, build: "cheapest" }).plan.build, [cheap, dear]);
+  assert.deepEqual(playbookPlan(holding, { ...DEFAULT_PLAYBOOK, build: "none" }).plan.build, []);
+  assert.deepEqual(playbookPlan(holding, { ...DEFAULT_PLAYBOOK, sell: "cheapest" }).plan.liquidate, [cheap, dear]);
+  assert.deepEqual(playbookPlan(holding, { ...DEFAULT_PLAYBOOK, sell: "priciest" }).plan.liquidate, [dear, cheap]);
+
+  // In custody: always pays when it can, never stays put.
+  const held = facing(city, 0);
+  held.game.players.find((player) => player.id === held.meta.seats[0].player)!.jail = 0;
+  const inside = briefFor(held, 0)!;
+  assert.equal(playbookPlan(inside, { ...DEFAULT_PLAYBOOK, bail: "always" }).plan.bail, true);
+  assert.equal(playbookPlan(inside, { ...DEFAULT_PLAYBOOK, bail: "never" }).plan.bail, false);
+});
+
+test("a playbook from a model or a saved profile is clamped, or refused", () => {
+  assert.deepEqual(cleanPlaybook({ reserve: 149, caution: 0.9, build: "priciest", cushion: 5000, bail: "always", sell: "cheapest" }), {
+    reserve: 150,
+    caution: 1,
+    build: "priciest",
+    cushion: 500,
+    bail: "always",
+    sell: "cheapest",
+  });
+  assert.deepEqual(cleanPlaybook({ reserve: -5, caution: 9, build: "none", bail: "never", sell: "priciest" }), { reserve: 0, caution: 2, build: "none", cushion: 0, bail: "never", sell: "priciest" });
+  for (const wrong of [null, "aggressive", [], { reserve: 100 }, { ...DEFAULT_PLAYBOOK, build: "everything" }, { ...DEFAULT_PLAYBOOK, reserve: "150" }]) assert.equal(cleanPlaybook(wrong), null);
+  for (const preset of PRESETS) assert.deepEqual(cleanPlaybook(preset.book), preset.book, preset.name);
+  assert.ok(describePlaybook(DEFAULT_PLAYBOOK).length >= 4);
+});
+
+test("an owner picks among the models the server offers, and no other", () => {
+  const env = { OPENAI_API_KEY: "k", DEEDLORDS_LLM_MODELS: "gpt-4.1, gemini-2.5-flash ,gpt-4.1-mini" };
+  assert.deepEqual(llmModels(env), ["gpt-4.1-mini", "gpt-4.1", "gemini-2.5-flash"]);
+  assert.deepEqual(llmModels({ OPENAI_API_KEY: "k" }), ["gpt-4.1-mini"]);
+  assert.deepEqual(llmModels({}), []);
+  assert.equal(llmFor(env, "gemini-2.5-flash")!.model, "gemini-2.5-flash");
+  assert.equal(llmFor(env, "gemini-2.5-flash")!.label, "gemini-2.5-flash");
+  assert.equal(llmFor(env)!.model, "gpt-4.1-mini");
+  assert.equal(llmFor(env, "gpt-5.5-pro"), null, "not on the list: refused, never swapped");
+  assert.equal(llmFor({}, "gpt-4.1"), null);
+});
+
+test("with a playbook, advice comes from it when no model is asked, and a model gets it as its orders", async () => {
+  const city = SQUARES.findIndex((square, i) => square.kind === "city" && i >= 2 && i <= 12);
+  const match = facing(city, 3);
+  const playbook = { ...DEFAULT_PLAYBOOK, reserve: 700 };
+  const plain = (await advise(match, 0, { llm: null, playbook }))!;
+  assert.equal(plain.driver, "playbook");
+  assert.equal(plain.plan.buy_reserve, 700);
+
+  let asked = "";
+  const llm: LlmConfig = { baseUrl: "https://model.test/v1", apiKey: "k", model: "m", label: "m" };
+  const answering = (async (_url: string | URL | Request, init?: RequestInit) => {
+    asked = String(init?.body);
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ plan: { buy_reserve: 710, build: [], keep_reserve: 710, bail: false, liquidate: [] }, reason: "As told." }) } }] }));
+  }) as typeof fetch;
+  const guided = (await advise(match, 0, { llm, playbook, style: "Never gamble.", fetch: answering }))!;
+  assert.equal(guided.driver, "m");
+  assert.equal(guided.plan.buy_reserve, 710);
+  assert.match(asked, /Keep 700 in reserve/);
+  assert.match(asked, /Never gamble/);
+
+  // The model fails: the playbook plays, not the rule bot.
+  const failing = (async () => new Response("no", { status: 500 })) as typeof fetch;
+  const fallen = (await advise(match, 0, { llm, playbook, fetch: failing }))!;
+  assert.deepEqual([fallen.driver, fallen.fallback, fallen.plan.buy_reserve], ["playbook", true, 700]);
+});
+
+test("a model writes a playbook from a wish, and anything else is an error", async () => {
+  const llm: LlmConfig = { baseUrl: "https://model.test/v1", apiKey: "k", model: "m", label: "m" };
+  const saying = (content: string) => (async () => new Response(JSON.stringify({ choices: [{ message: { content } }] }))) as typeof fetch;
+  const written = await askPlaybook(llm, "buy everything early", {
+    fetch: saying('Here you go: {"playbook": {"reserve": 40, "caution": 0.5, "build": "payback", "cushion": 250, "bail": "always", "sell": "priciest"}, "reason": "Grabs  land first."}'),
+  });
+  assert.deepEqual(written, { playbook: { reserve: 40, caution: 0.5, build: "payback", cushion: 250, bail: "always", sell: "priciest" }, reason: "Grabs land first." });
+  await assert.rejects(askPlaybook(llm, "anything", { fetch: saying('{"playbook": {"reserve": "lots"}}') }), /did not answer with a playbook/);
+  await assert.rejects(askPlaybook(llm, "anything", { fetch: (async () => new Response("no", { status: 402 })) as typeof fetch }), /answered 402/);
 });

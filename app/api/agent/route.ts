@@ -1,5 +1,5 @@
-// The agent's desk. POST { id, seat, style? }: a plan for the seat whose turn it is in match `id`, from the model the
-// server is configured with (see games/co-ty-phu/agent/llm.ts) or from the rule bot. GET ?id=: who drives which seat of
+// The agent's desk. POST { id, seat, style?, model?, playbook? }: a plan for the seat whose turn it is in match `id`,
+// from a model the server offers (see games/co-ty-phu/agent/llm.ts), from the owner's playbook, or from the rule bot. GET ?id=: who drives which seat of
 // the match and the sentence each gave last.
 //
 // It only advises. The match is read from the chain here, not taken from the caller, and whoever asked signs
@@ -8,7 +8,8 @@
 
 import { advise, type Advice } from "@/games/co-ty-phu/agent/advise";
 import { AdviceBook } from "@/games/co-ty-phu/agent/book";
-import { MAX_STYLE, llmConfig } from "@/games/co-ty-phu/agent/llm";
+import { MAX_STYLE, RULES_MODEL, llmConfig, llmFor } from "@/games/co-ty-phu/agent/llm";
+import { cleanPlaybook } from "@/games/co-ty-phu/agent/playbook";
 import type { ChainMatch } from "@/games/co-ty-phu/chain/types";
 import { CHAIN } from "@/lib/chain/config";
 import { chainClient } from "@/lib/chain/shared";
@@ -30,9 +31,15 @@ export async function POST(request: Request): Promise<Response> {
   } catch {
     return refuse(400, "send JSON: { id, seat }");
   }
-  const { id, seat, style } = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
+  const { id, seat, style, model, playbook: rawPlaybook } = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
   if (typeof id !== "string" || !MATCH_ID.test(id) || typeof seat !== "number" || !Number.isInteger(seat) || seat < 0 || seat > 5) return refuse(400, "send JSON: { id, seat }");
   if (style !== undefined && (typeof style !== "string" || style.length > MAX_STYLE)) return refuse(400, `style: at most ${MAX_STYLE} characters`);
+  if (model !== undefined && typeof model !== "string") return refuse(400, "model: a name from GET /api/agent/playbook");
+  const playbook = rawPlaybook === undefined ? undefined : cleanPlaybook(rawPlaybook);
+  if (playbook === null) return refuse(400, "playbook: not a playbook");
+  // A model the server does not offer is refused rather than swapped for another: its owner asked for that one.
+  const llm = model === RULES_MODEL ? null : llmFor(process.env, model);
+  if (model !== undefined && model !== RULES_MODEL && !llm && llmConfig(process.env)) return refuse(400, `model ${model} is not offered here`);
 
   let match: ChainMatch | null;
   try {
@@ -51,7 +58,7 @@ export async function POST(request: Request): Promise<Response> {
   let pending = asking.get(ticket);
   if (!pending) {
     const live = match;
-    pending = advise(live, seat, { llm: llmConfig(process.env), style: style as string | undefined })
+    pending = advise(live, seat, { llm, style: style as string | undefined, playbook })
       .then((advice) => {
         if (advice) book.remember(id, seat, turnKey, live.game.round, advice, Date.now());
         return advice;

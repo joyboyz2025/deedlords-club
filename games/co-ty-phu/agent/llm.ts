@@ -4,6 +4,7 @@
 
 import type { Brief } from "./brief.ts";
 import { cleanPlan, type Plan } from "./plan.ts";
+import { BAIL_RULES, BUILD_ORDERS, MAX_CAUTION, MAX_CUSHION, MAX_RESERVE, SELL_ORDERS, cleanPlaybook, type Playbook } from "./playbook.ts";
 
 export type LlmConfig = {
   baseUrl: string;
@@ -16,7 +17,11 @@ export type LlmConfig = {
 const NEAR_AI_URL = "https://cloud-api.near.ai/v1";
 const OPENAI_URL = "https://api.openai.com/v1";
 export const MAX_REASON = 160;
-export const MAX_STYLE = 280;
+export const MAX_STYLE = 480;
+/** An owner's wish for a playbook, in their words. */
+export const MAX_WISH = 280;
+/** A seat that plays from its playbook alone, with no model asked. */
+export const RULES_MODEL = "rules";
 
 /**
  * Which model plays, from the server's environment. In order: an explicit endpoint (DEEDLORDS_LLM_BASE_URL, _API_KEY,
@@ -36,6 +41,27 @@ export function llmConfig(env: Record<string, string | undefined>): LlmConfig | 
   if (openAi) return at(OPENAI_URL, openAi, "gpt-4.1-mini");
   return null;
 }
+
+/**
+ * The models an owner may pick from: DEEDLORDS_LLM_MODELS (comma-separated, as the service names them), or just the
+ * configured one. Whoever runs the server pays for every request, so the list is theirs to set. Empty: no model.
+ */
+export function llmModels(env: Record<string, string | undefined>): string[] {
+  const config = llmConfig(env);
+  if (!config) return [];
+  const listed = (env.DEEDLORDS_LLM_MODELS ?? "").split(",").map((name) => name.trim()).filter(Boolean);
+  return [...new Set([config.model, ...listed])];
+}
+
+/** The configuration with `model` in place of the default one; `null` when no model is configured or `model` is not offered. */
+export function llmFor(env: Record<string, string | undefined>, model?: string): LlmConfig | null {
+  const config = llmConfig(env);
+  if (!config || !model || model === config.model) return config;
+  return llmModels(env).includes(model) ? { ...config, model, label: model.split("/").pop() || model } : null;
+}
+
+/** What to tell the owner when the service refuses: 402 and 429 are almost always an account out of credit or over its rate. */
+const refusal = (status: number) => `the model service answered ${status}${status === 402 || status === 429 ? " (out of credit, or asked too often)" : ""}`;
 
 const SYSTEM = `You play one seat of Deedlords, a property board game settled on the NEAR blockchain: 40 squares in a ring, two dice, buy squares, collect rent.
 
@@ -102,10 +128,60 @@ export async function askLlm(
     }),
     signal: options.signal,
   });
-  if (!response.ok) throw new Error(`the model service answered ${response.status}`);
+  if (!response.ok) throw new Error(refusal(response.status));
   const body = (await response.json()) as { choices?: { message?: { content?: unknown } }[] };
   const text = body.choices?.[0]?.message?.content;
   const answer = typeof text === "string" ? parseAnswer(text) : null;
   if (!answer) throw new Error("the model did not answer with a plan");
   return answer;
+}
+
+const PLAYBOOK_SYSTEM = `You write the playbook of an agent that plays one seat of Deedlords, a property board game settled on the NEAR blockchain: 40 squares in a ring, two dice, buy squares, build houses, collect rent. A game starts with 1500 cash and squares cost 60 to 400.
+
+How it ends: after the last round the players are ranked by net worth = cash + the price of every square owned (half if mortgaged) + the cost of every house. So buying and building do not lower net worth and every rent raises it. What loses is running out of cash: a debt that cannot be paid forces sales at half value.
+
+The playbook is six rules. Each turn they are turned into the agent's moves:
+- "reserve": integer 0 to ${MAX_RESERVE}. Cash always kept back; nothing is bought that would leave less.
+- "caution": number 0 to ${MAX_CAUTION} in steps of 0.25. How much of the largest rent the agent could owe within two rolls is also kept: 0 ignores it, 1 covers it, more keeps a margin.
+- "build": one of ${BUILD_ORDERS.map((name) => `"${name}"`).join(", ")}. Which of its cities get the next house first: where a house pays back most, the dearest, the cheapest, or never.
+- "cushion": integer 0 to ${MAX_CUSHION}. Extra cash a house must leave on top of the reserve; above 0 the agent prefers squares to houses.
+- "bail": one of ${BAIL_RULES.map((name) => `"${name}"`).join(", ")}. Leaving custody: "smart" pays while squares are still for sale.
+- "sell": one of ${SELL_ORDERS.map((name) => `"${name}"`).join(", ")}. What is sold first when a debt cannot be paid.
+
+The owner tells you how they want the agent to play. Answer with one JSON object and nothing else:
+{"playbook": {"reserve": 150, "caution": 1, "build": "payback", "cushion": 0, "bail": "smart", "sell": "least-earning"}, "reason": "one sentence, at most 140 characters, plain words, how this playbook plays"}`;
+
+/** A playbook written by the model from the owner's wish. Throws when the service refuses or answers something else. */
+export async function askPlaybook(config: LlmConfig, wish: string, options: { signal?: AbortSignal; fetch?: typeof fetch } = {}): Promise<{ playbook: Playbook; reason: string }> {
+  const response = await (options.fetch ?? fetch)(`${config.baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}` },
+    body: JSON.stringify({
+      model: config.model,
+      messages: [
+        { role: "system", content: PLAYBOOK_SYSTEM },
+        { role: "user", content: `The owner asks: ${JSON.stringify(wish.trim().slice(0, MAX_WISH))}` },
+      ],
+      response_format: { type: "json_object" },
+      max_tokens: 300,
+    }),
+    signal: options.signal,
+  });
+  if (!response.ok) throw new Error(refusal(response.status));
+  const body = (await response.json()) as { choices?: { message?: { content?: unknown } }[] };
+  const text = body.choices?.[0]?.message?.content;
+  let answer: { playbook?: unknown; reason?: unknown } | null = null;
+  if (typeof text === "string") {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    try {
+      answer = start >= 0 && end > start ? (JSON.parse(text.slice(start, end + 1)) as { playbook?: unknown; reason?: unknown }) : null;
+    } catch {
+      answer = null;
+    }
+  }
+  const playbook = cleanPlaybook(answer?.playbook);
+  if (!playbook) throw new Error("the model did not answer with a playbook");
+  const reason = typeof answer?.reason === "string" ? answer.reason.replace(/\s+/g, " ").trim().slice(0, MAX_REASON) : "";
+  return { playbook, reason: reason || "No reason given." };
 }
