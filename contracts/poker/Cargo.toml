@@ -1,0 +1,27 @@
+[package]
+name = "deedlords-poker"
+version = "0.1.0"
+edition = "2021"
+description = "Deedlords Poker NEAR contract: heads-up Texas Hold'em dealt as mental poker (ElGamal over BN254, proofs checked by the chain's own curve functions)."
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = "5.30.1"
+
+[dev-dependencies]
+near-sdk = { version = "5.30.1", features = ["unit-testing"] }
+
+# Its own workspace, so building it does not touch the lock file or the target directory of the other contracts.
+[workspace]
+
+[profile.release]
+codegen-units = 1
+opt-level = "z"
+lto = true
+debug = false
+strip = "symbols"
+panic = "abort"
+overflow-checks = true
