@@ -6,6 +6,8 @@ if (process.env.VERCEL && !process.env.NEXT_PUBLIC_ROOM_URL) {
 }
 
 const config: NextConfig = {
+  // The dev badge sits on top of the page's own corner; the pages are checked in screenshots.
+  devIndicators: false,
   // Cho phép mở bản dev từ điện thoại trong cùng wifi.
   allowedDevOrigins: ["192.168.*.*", "10.*.*.*", "172.16.*.*"],
   // File vẽ nhân vật cho app HSK ở domain khác (study.ttech.website), tải bằng import(). Chỉ có code công khai.

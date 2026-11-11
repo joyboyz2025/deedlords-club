@@ -1,0 +1,619 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-11T00:00:00.000Z",
+  "title": "Design System: Deedlords",
+  "extensions": {
+    "colorMeta": {
+      "ground": {
+        "role": "neutral",
+        "displayName": "Hall Red",
+        "canonical": "#5d100a",
+        "oklch": "oklch(31.4% 0.110 29)",
+        "tonalRamp": [
+          "#220000",
+          "#4e0000",
+          "#71241c",
+          "#96453b",
+          "#bb675b",
+          "#e28a7c",
+          "#feb3a7",
+          "#ffe9e5"
+        ]
+      },
+      "ground-low": {
+        "role": "neutral",
+        "displayName": "Hall Red, Low",
+        "canonical": "#3f0806",
+        "oklch": "oklch(24.2% 0.084 28)",
+        "tonalRamp": [
+          "#220000",
+          "#460f0b",
+          "#682e28",
+          "#8b4e46",
+          "#af6f66",
+          "#d59188",
+          "#fbb5ab",
+          "#ffe9e5"
+        ]
+      },
+      "red": {
+        "role": "neutral",
+        "displayName": "Lantern Red",
+        "canonical": "#7a1712",
+        "oklch": "oklch(37.9% 0.134 28)",
+        "tonalRamp": [
+          "#220000",
+          "#4d0001",
+          "#7a1712",
+          "#9f3c32",
+          "#c65f53",
+          "#ed8274",
+          "#feb3a8",
+          "#ffe9e5"
+        ]
+      },
+      "red-deep": {
+        "role": "neutral",
+        "displayName": "Lantern Red, Deep",
+        "canonical": "#4a0c09",
+        "oklch": "oklch(27.0% 0.093 28)",
+        "tonalRamp": [
+          "#230000",
+          "#480a08",
+          "#6b2b25",
+          "#8e4b43",
+          "#b36c63",
+          "#d98f84",
+          "#fdb4a9",
+          "#ffe9e5"
+        ]
+      },
+      "red-lit": {
+        "role": "neutral",
+        "displayName": "Lantern Red, Lit",
+        "canonical": "#a4241b",
+        "oklch": "oklch(47.2% 0.166 29)",
+        "tonalRamp": [
+          "#220000",
+          "#4e0000",
+          "#820000",
+          "#ab2c22",
+          "#d35244",
+          "#fb7766",
+          "#feb3a8",
+          "#ffe9e5"
+        ]
+      },
+      "gold": {
+        "role": "primary",
+        "displayName": "Foil Gold",
+        "canonical": "#f8c93f",
+        "oklch": "oklch(85.4% 0.156 89)",
+        "tonalRamp": [
+          "#130900",
+          "#302300",
+          "#523f02",
+          "#785e07",
+          "#9f7e0f",
+          "#ca9f00",
+          "#f2c337",
+          "#feedc2"
+        ]
+      },
+      "gold-flat": {
+        "role": "primary",
+        "displayName": "Flat Gold",
+        "canonical": "#f2c14e",
+        "oklch": "oklch(83.4% 0.141 85)",
+        "tonalRamp": [
+          "#140900",
+          "#312200",
+          "#543e02",
+          "#7a5c07",
+          "#a37c0e",
+          "#cd9d1d",
+          "#f3c24f",
+          "#ffedc7"
+        ]
+      },
+      "amber": {
+        "role": "primary",
+        "displayName": "Board Amber",
+        "canonical": "#ffc857",
+        "oklch": "oklch(86.1% 0.142 83)",
+        "tonalRamp": [
+          "#140800",
+          "#322200",
+          "#563d02",
+          "#7d5b06",
+          "#a67a0c",
+          "#d09b1b",
+          "#f6c04e",
+          "#ffecca"
+        ]
+      },
+      "cream": {
+        "role": "neutral",
+        "displayName": "Cream",
+        "canonical": "#fff7e6",
+        "oklch": "oklch(97.8% 0.024 86)",
+        "tonalRamp": [
+          "#100a02",
+          "#2a2418",
+          "#484134",
+          "#676052",
+          "#898272",
+          "#aca494",
+          "#d0c8b8",
+          "#f6eedd"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Ticket Paper",
+        "canonical": "#f8f0d4",
+        "oklch": "oklch(95.4% 0.038 94)",
+        "tonalRamp": [
+          "#100a00",
+          "#2b250e",
+          "#49422b",
+          "#686149",
+          "#8a8269",
+          "#ada58b",
+          "#d1c9ae",
+          "#f7efd3"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#2a1208",
+        "oklch": "oklch(21.5% 0.044 43)",
+        "tonalRamp": [
+          "#190400",
+          "#371e13",
+          "#563a2f",
+          "#77594d",
+          "#9a7a6e",
+          "#be9d90",
+          "#e3c1b3",
+          "#ffe9e1"
+        ]
+      },
+      "ink-soft": {
+        "role": "neutral",
+        "displayName": "Ink, Soft",
+        "canonical": "#5a3524",
+        "oklch": "oklch(37.0% 0.060 45)",
+        "tonalRamp": [
+          "#1e0100",
+          "#3c1a09",
+          "#5c3726",
+          "#7e5644",
+          "#a17764",
+          "#c69a86",
+          "#ecbea9",
+          "#ffe9e0"
+        ]
+      },
+      "soft": {
+        "role": "neutral",
+        "displayName": "Soft",
+        "canonical": "#f0d9c4",
+        "oklch": "oklch(89.9% 0.038 65)",
+        "tonalRamp": [
+          "#160700",
+          "#322110",
+          "#503e2c",
+          "#715d4b",
+          "#937e6b",
+          "#b6a18d",
+          "#dbc5b0",
+          "#ffebd8"
+        ]
+      },
+      "soft-warm": {
+        "role": "neutral",
+        "displayName": "Soft, Warm",
+        "canonical": "#f3d9b1",
+        "oklch": "oklch(89.7% 0.060 78)",
+        "tonalRamp": [
+          "#150800",
+          "#342100",
+          "#533e19",
+          "#745d39",
+          "#967e59",
+          "#baa17b",
+          "#dfc59e",
+          "#ffecce"
+        ]
+      },
+      "night": {
+        "role": "neutral",
+        "displayName": "Night",
+        "canonical": "#201009",
+        "oklch": "oklch(19.4% 0.030 44)",
+        "tonalRamp": [
+          "#150703",
+          "#322019",
+          "#503d35",
+          "#715c53",
+          "#937d74",
+          "#b69f96",
+          "#dbc3b9",
+          "#ffe9e1"
+        ]
+      },
+      "night-top": {
+        "role": "neutral",
+        "displayName": "Night, Top",
+        "canonical": "#2a120a",
+        "oklch": "oklch(21.6% 0.043 39)",
+        "tonalRamp": [
+          "#190401",
+          "#371d15",
+          "#563a31",
+          "#77594f",
+          "#9a7a70",
+          "#be9d92",
+          "#e3c0b5",
+          "#ffe9e2"
+        ]
+      },
+      "boarding-green": {
+        "role": "secondary",
+        "displayName": "Boarding Green",
+        "canonical": "#4fae6c",
+        "oklch": "oklch(67.6% 0.133 151)",
+        "tonalRamp": [
+          "#001102",
+          "#002e11",
+          "#005123",
+          "#0f753a",
+          "#379858",
+          "#5ebc7a",
+          "#83e29d",
+          "#c8ffd4"
+        ]
+      },
+      "boarding-green-text": {
+        "role": "secondary",
+        "displayName": "Boarding Green, Text",
+        "canonical": "#bfeccb",
+        "oklch": "oklch(90.3% 0.065 153)",
+        "tonalRamp": [
+          "#001103",
+          "#032e15",
+          "#244c31",
+          "#436c50",
+          "#648e70",
+          "#86b192",
+          "#aad6b6",
+          "#cefcda"
+        ]
+      },
+      "gain": {
+        "role": "secondary",
+        "displayName": "Gain Green",
+        "canonical": "#1f6a34",
+        "oklch": "oklch(46.5% 0.112 149)",
+        "tonalRamp": [
+          "#001101",
+          "#002f0d",
+          "#00511f",
+          "#29723c",
+          "#4d955c",
+          "#70b97e",
+          "#94dea1",
+          "#c9ffd1"
+        ]
+      },
+      "loss": {
+        "role": "secondary",
+        "displayName": "Loss Red",
+        "canonical": "#a02a1a",
+        "oklch": "oklch(47.0% 0.157 31)",
+        "tonalRamp": [
+          "#230000",
+          "#4d0000",
+          "#7f0a00",
+          "#a83221",
+          "#cf5744",
+          "#f77b66",
+          "#feb4a6",
+          "#ffe9e5"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "The product name on the landing's first screen and the lobby logo. Uppercase."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "One slab headline per landing section."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Slab headings on paper and on boards."
+      },
+      "title-sans": {
+        "displayName": "Title, sans",
+        "purpose": "A sub-heading on the ground that should not compete with the section headline."
+      },
+      "lede": {
+        "displayName": "Lede",
+        "purpose": "The sentence under a headline, max 62ch."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Prose on the landing; 16px on paper."
+      },
+      "body-app": {
+        "displayName": "Body, app",
+        "purpose": "The denser base size of the lobby and table."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Status chips and name tags, uppercase."
+      },
+      "data": {
+        "displayName": "Data",
+        "purpose": "Transaction hashes and match ids on boards; system mono stack."
+      }
+    },
+    "shadows": [
+      {
+        "name": "ticket-on-ground",
+        "value": "drop-shadow(0 14px 18px rgb(20 4 2 / 40%))",
+        "purpose": "A filter on the unmasked parent of any masked paper object on the landing; 45% under the itinerary strip."
+      },
+      {
+        "name": "ticket-close",
+        "value": "drop-shadow(0 18px 22px rgb(20 4 2 / 40%))",
+        "purpose": "The closing ticket."
+      },
+      {
+        "name": "foil-lettering",
+        "value": "drop-shadow(0 2px 1.5px rgb(74 30 4 / 70%))",
+        "purpose": "The shade under foil-clipped slab headlines."
+      },
+      {
+        "name": "foil-lettering-hero",
+        "value": "drop-shadow(0 2px 1.5px rgb(74 30 4 / 70%)) drop-shadow(0 10px 16px rgb(0 0 0 / 22%))",
+        "purpose": "First-screen name, wordmark and departures heading (lengths scale with the first screen's unit)."
+      },
+      {
+        "name": "go-button",
+        "value": "inset 0 -2px 0 rgb(160 96 10 / 35%), 0 3px 7px rgb(90 50 5 / 22%)",
+        "purpose": "Lower edge and short cast of the Go button on paper."
+      },
+      {
+        "name": "speech-note",
+        "value": "0 6px 14px rgb(0 0 0 / 22%)",
+        "purpose": "The agent's cream notes on the ground."
+      },
+      {
+        "name": "lobby-panel",
+        "value": "0 14px 30px rgb(0 0 0 / 28%)",
+        "purpose": "Incumbent: panels in the lobby."
+      },
+      {
+        "name": "lobby-ticket",
+        "value": "0 18px 36px rgb(0 0 0 / 40%)",
+        "purpose": "Incumbent: the lobby's boarding pass."
+      }
+    ],
+    "motion": [
+      {
+        "name": "deal",
+        "value": "0.7s cubic-bezier(0.16, 1, 0.3, 1), 0.11s between stubs",
+        "purpose": "The itinerary strip arrives once, stub by stub; removed under reduced motion."
+      },
+      {
+        "name": "rise",
+        "value": "0.9s cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "The board plate on the first screen."
+      },
+      {
+        "name": "lift",
+        "value": "0.25s to 0.3s cubic-bezier(0.2, 0.9, 0.2, 1)",
+        "purpose": "Hover lift of the Go button (2px) and of a transaction stub (4px)."
+      },
+      {
+        "name": "wash",
+        "value": "0.2s",
+        "purpose": "Background and border colour changes on rows and segments."
+      },
+      {
+        "name": "press",
+        "value": "120ms",
+        "purpose": "Incumbent: buttons scale to 0.97 while pressed."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "landing-stack",
+        "value": "899px"
+      },
+      {
+        "name": "lobby-narrow",
+        "value": "520px"
+      },
+      {
+        "name": "table-landscape",
+        "value": "600px"
+      }
+    ],
+    "gradients": [
+      {
+        "name": "landing-ground",
+        "value": "radial-gradient(62% 520px at 50% 0%, rgb(190 60 38 / 55%) 0%, transparent 72%), linear-gradient(180deg, #67120b 0, #5d100a 400px, #480b08 760px, #3f0806 1040px, #3f0806 100%)",
+        "purpose": "The landing's page ground; stop lengths scale with the first screen's unit."
+      },
+      {
+        "name": "app-ground",
+        "value": "radial-gradient(120% 70% at 50% 0%, #a4241b 0%, #7a1712 45%, #4a0c09 100%)",
+        "purpose": "Incumbent: the ground of the lobby and table."
+      },
+      {
+        "name": "board",
+        "value": "linear-gradient(180deg, #2a120a 0%, #201009 100%)",
+        "purpose": "Departures boards and ledgers on the landing."
+      },
+      {
+        "name": "go-button",
+        "value": "linear-gradient(180deg, #fbd155 0%, #f3b93a 100%)",
+        "purpose": "The Go button's fill."
+      }
+    ],
+    "plates": [
+      {
+        "name": "gold-foil",
+        "path": "assets/plates/gold-foil.webp",
+        "purpose": "Clipped to slab lettering on the ground and on boards, under a 52% wash of rgb(250 206 70), tiled 420px wide below the first screen."
+      },
+      {
+        "name": "strip-paper",
+        "path": "assets/plates/strip-paper.png",
+        "purpose": "Paper grain tiled over Ticket Paper (180px on stubs, 420px on the fare table and closing ticket)."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Go Button",
+      "kind": "button",
+      "refersTo": "button-go",
+      "description": "The landing's primary action. It sits on a ticket stub, never on the ground.",
+      "html": "<div class=\"ds-go-paper\"><a class=\"ds-go\" href=\"#\">Play on testnet <svg viewBox=\"0 0 24 24\" width=\"22\" height=\"22\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4 12h15M13 6l6 6-6 6\"/></svg></a></div>",
+      "css": ".ds-go-paper { display: inline-block; padding: 22px 26px; background: #f8f0d4; } .ds-go { display: inline-flex; align-items: center; justify-content: center; gap: 14px; width: 250px; height: 56px; border-radius: 999px; background: linear-gradient(180deg, #fbd155 0%, #f3b93a 100%); box-shadow: inset 0 -2px 0 rgb(160 96 10 / 35%), 0 3px 7px rgb(90 50 5 / 22%); color: #2a1208; font-family: \"Be Vietnam Pro\", system-ui, sans-serif; font-size: 18px; font-weight: 700; text-decoration: none; white-space: nowrap; transition: transform 0.25s cubic-bezier(0.2, 0.9, 0.2, 1), box-shadow 0.25s; } .ds-go:hover { transform: translateY(-2px); } .ds-go:focus-visible { outline: 3px solid #2a1208; outline-offset: 3px; }"
+    },
+    {
+      "name": "Main and Outline Buttons (lobby, table)",
+      "kind": "button",
+      "refersTo": "button-main",
+      "description": "The incumbent app buttons: flat gold for the one action, a cream outline for the rest.",
+      "html": "<div class=\"ds-btn-ground\"><button class=\"ds-btn ds-btn-main\">Open a match</button><button class=\"ds-btn\">Sign out</button></div>",
+      "css": ".ds-btn-ground { display: inline-flex; gap: 8px; padding: 18px; background: #7a1712; color: #fff7e6; } .ds-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 0 16px; border: 1.5px solid rgb(255 247 230 / 40%); border-radius: 999px; background: rgb(255 255 255 / 8%); color: inherit; font-family: \"Be Vietnam Pro\", system-ui, sans-serif; font-size: 15px; font-weight: 700; cursor: pointer; transition: transform 120ms; } .ds-btn:active { transform: scale(0.97); } .ds-btn:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; } .ds-btn-main { border-color: #f2c14e; background: #f2c14e; color: #2a1208; }"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "refersTo": "status-chip",
+      "description": "Boarding or Open (green), Live or Beta (gold), Coming (dashed).",
+      "html": "<div class=\"ds-status-ground\"><i class=\"ds-status\">Boarding</i><i class=\"ds-status ds-status-live\">In play · 4/6</i><i class=\"ds-status ds-status-soon\">Coming</i></div>",
+      "css": ".ds-status-ground { display: inline-flex; gap: 10px; padding: 18px; background: #201009; } .ds-status { display: inline-block; padding: 4px 14px; border: 1.5px solid #4fae6c; border-radius: 999px; background: rgb(47 154 92 / 22%); color: #bfeccb; font-family: \"Be Vietnam Pro\", system-ui, sans-serif; font-size: 13px; font-style: normal; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; } .ds-status-live { border-color: #f8c93f; background: rgb(248 201 63 / 14%); color: #fbe29a; } .ds-status-soon { border-color: rgb(255 247 230 / 38%); border-style: dashed; background: none; color: #f0d9c4; }"
+    },
+    {
+      "name": "Ticket Stubs",
+      "kind": "card",
+      "refersTo": "ticket-stub",
+      "description": "Ticket paper cut by bitten corners and a dashed perforation; the shadow is a drop-shadow on the unmasked parent. The shipped paper also carries a tiled grain plate, left out here.",
+      "html": "<ol class=\"ds-pass\"><li><h3>Board</h3><p>Stake your seat, from 0.05 test NEAR.</p></li><li><h3>Fly</h3><p>Roll, buy capitals, build, collect rent.</p></li><li><h3>Land</h3><p>The contract ranks the seats and pays the pot.</p></li></ol>",
+      "css": ".ds-pass { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; padding: 0; list-style: none; filter: drop-shadow(0 14px 18px rgb(20 4 2 / 40%)); } .ds-pass li { position: relative; padding: 26px 24px 30px; background: #f8f0d4; color: #2a1208; -webkit-mask: radial-gradient(circle 10px at 0 0, #0000 97%, #000) top left / 51% 51% no-repeat, radial-gradient(circle 10px at 100% 0, #0000 97%, #000) top right / 51% 51% no-repeat, radial-gradient(circle 10px at 0 100%, #0000 97%, #000) bottom left / 51% 51% no-repeat, radial-gradient(circle 10px at 100% 100%, #0000 97%, #000) bottom right / 51% 51% no-repeat; mask: radial-gradient(circle 10px at 0 0, #0000 97%, #000) top left / 51% 51% no-repeat, radial-gradient(circle 10px at 100% 0, #0000 97%, #000) top right / 51% 51% no-repeat, radial-gradient(circle 10px at 0 100%, #0000 97%, #000) bottom left / 51% 51% no-repeat, radial-gradient(circle 10px at 100% 100%, #0000 97%, #000) bottom right / 51% 51% no-repeat; } .ds-pass li + li::before { position: absolute; top: 18px; bottom: 18px; left: 0; border-left: 2px dashed rgb(122 82 46 / 55%); content: \"\"; } .ds-pass h3 { margin: 0; color: #7a1712; font-family: \"Alfa Slab One\", serif; font-size: 26px; font-weight: 400; line-height: 1.1; } .ds-pass p { margin: 10px 0 0; color: #45261a; font-family: \"Be Vietnam Pro\", system-ui, sans-serif; font-size: 16px; line-height: 1.5; }"
+    },
+    {
+      "name": "Departures Board",
+      "kind": "custom",
+      "refersTo": "departures-board",
+      "description": "A near-black board with a gold hairline for what is read from the chain; every row is a link. Shipped headings are clipped to the gold-foil plate; flat gold stands in here.",
+      "html": "<section class=\"ds-board\"><h2><svg viewBox=\"0 0 24 24\" width=\"28\" height=\"28\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M21.5 3.2c-1-.9-2.5-.7-3.5.3L14.3 7.2 4.6 4.700 3 6.3l7.6 4.5-3.3 3.4-3-.5L3 15l4 2 2 4 1.3-1.3-.5-3 3.400-3.300 4.500 7.600 1.600-1.600-2.500-9.700 3.700-3.700c1-1 1.200-2.500.300-3.500Z\"/></svg> Departures</h2><div class=\"ds-board-table\"><div class=\"ds-board-row ds-board-head\"><span>Match</span><span>Seats</span><span>Stake</span><span>Status</span></div><a class=\"ds-board-row\" href=\"#\"><span class=\"ds-board-id\">web-mwb2nqpp-3</span><span>2 / 2</span><span><b>0.05</b> NEAR</span><span><i class=\"ds-board-status\">In play · 4/6</i></span></a></div></section>",
+      "css": ".ds-board { padding: 14px 14px 20px; border: 1.5px solid rgb(248 201 63 / 55%); border-radius: 22px; background: linear-gradient(180deg, #2a120a 0%, #201009 100%); font-family: \"Be Vietnam Pro\", system-ui, sans-serif; } .ds-board h2 { display: flex; align-items: center; gap: 16px; margin: 0; padding: 4px 16px 10px; color: #f8c93f; font-family: \"Alfa Slab One\", serif; font-size: 30px; font-weight: 400; line-height: 1; filter: drop-shadow(0 2px 1.5px rgb(74 30 4 / 70%)); } .ds-board-table { padding: 0 10px; border: 1px solid rgb(255 247 230 / 10%); border-radius: 16px; } .ds-board-row { display: grid; grid-template-columns: 36% 18% 22% 24%; align-items: center; min-height: 48px; padding: 0 12px; border-top: 1px solid rgb(255 247 230 / 11%); color: #fff7e6; font-size: 16px; font-variant-numeric: tabular-nums; text-decoration: none; } .ds-board-head { min-height: 34px; border-top: 0; color: #f0d9c4; font-size: 13px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; } a.ds-board-row:hover { background: rgb(255 247 230 / 5%); } a.ds-board-row:focus-visible { outline: 3px solid #f8c93f; outline-offset: 3px; border-radius: 6px; } .ds-board-id { overflow: hidden; font-family: ui-monospace, \"SF Mono\", Menlo, Consolas, monospace; font-size: 0.92em; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; } .ds-board-row b { color: #f8c93f; font-weight: 600; } .ds-board-status { display: inline-block; padding: 4px 14px; border: 1.5px solid #f8c93f; border-radius: 999px; background: rgb(248 201 63 / 14%); color: #fbe29a; font-size: 13px; font-style: normal; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }"
+    },
+    {
+      "name": "Segmented Picker on Paper",
+      "kind": "input",
+      "refersTo": "segment",
+      "description": "The fare table's stake picker: separate pills, solid ink when pressed. The lobby's version sits in a dark track and presses to flat gold.",
+      "html": "<div class=\"ds-pick\" role=\"group\" aria-label=\"Stake a seat, in NEAR\"><span>Stake a seat</span><button type=\"button\" aria-pressed=\"true\">0.05</button><button type=\"button\" aria-pressed=\"false\">0.1</button><button type=\"button\" aria-pressed=\"false\">0.25</button></div>",
+      "css": ".ds-pick { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 22px 24px; background: #f8f0d4; color: #2a1208; font-family: \"Be Vietnam Pro\", system-ui, sans-serif; } .ds-pick span { margin-right: 8px; font-size: 15px; font-weight: 700; } .ds-pick button { min-width: 48px; min-height: 40px; padding: 0 12px; border: 1.5px solid rgb(42 18 8 / 30%); border-radius: 999px; background: none; color: #2a1208; font-family: inherit; font-size: 15px; font-variant-numeric: tabular-nums; font-weight: 600; cursor: pointer; transition: background-color 0.2s, border-color 0.2s; } .ds-pick button:hover { border-color: #2a1208; } .ds-pick button:focus-visible { outline: 3px solid #7a1712; outline-offset: 3px; } .ds-pick button[aria-pressed=\"true\"] { border-color: #2a1208; background: #2a1208; color: #fff7e6; }"
+    },
+    {
+      "name": "Agent Speech Note",
+      "kind": "custom",
+      "refersTo": "agent-note",
+      "description": "The sentence an agent gave for its plan: cream, one tight corner towards the speaker.",
+      "html": "<div class=\"ds-note-ground\"><p class=\"ds-note\">&ldquo;Keep 400 cash reserve to afford potential rent; no building.&rdquo;</p></div>",
+      "css": ".ds-note-ground { padding: 20px; background: #5d100a; } .ds-note { max-width: 44rem; margin: 0; padding: 14px 18px; border-radius: 4px 16px 16px 16px; background: #fff7e6; box-shadow: 0 6px 14px rgb(0 0 0 / 22%); color: #3a1508; font-family: \"Be Vietnam Pro\", system-ui, sans-serif; font-size: 17px; line-height: 1.45; }"
+    },
+    {
+      "name": "Top Row",
+      "kind": "nav",
+      "refersTo": "status-chip-live",
+      "description": "Slab wordmark, sans links with a gold underline on hover, the network chip at the far right. The shipped wordmark is foil-clipped; flat gold stands in here.",
+      "html": "<header class=\"ds-nav\"><a class=\"ds-nav-mark\" href=\"#\">Deedlords</a><nav><a href=\"#\">Play</a><a href=\"#\">How it works</a><a href=\"#\">On chain</a></nav><p class=\"ds-nav-chip\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M10 14a4 4 0 0 0 5.700 0l3-3a4 4 0 0 0-5.700-5.700l-1 1M14 10a4 4 0 0 0-5.700 0l-3 3a4 4 0 0 0 5.700 5.700l1-1\"/></svg> NEAR testnet · mainnet coming</p></header>",
+      "css": ".ds-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 40px; padding: 16px 24px; background: #5d100a; color: #fff7e6; font-family: \"Be Vietnam Pro\", system-ui, sans-serif; } .ds-nav a { color: inherit; text-decoration: none; } .ds-nav-mark { color: #f8c93f !important; font-family: \"Alfa Slab One\", serif; font-size: 30px; line-height: 1; text-transform: uppercase; filter: drop-shadow(0 2px 1.5px rgb(74 30 4 / 70%)); } .ds-nav nav { display: flex; gap: 32px; font-size: 16px; font-weight: 600; } .ds-nav nav a { padding: 8px 0; border-bottom: 3px solid transparent; } .ds-nav nav a:hover { border-bottom-color: #f8c93f; } .ds-nav a:focus-visible { outline: 3px solid #f8c93f; outline-offset: 3px; border-radius: 6px; } .ds-nav-chip { display: flex; align-items: center; gap: 9px; margin: 0 0 0 auto; padding: 6px 14px 6px 10px; border: 1.5px solid #f8c93f; border-radius: 999px; background: rgb(52 10 8 / 78%); font-size: 13.5px; white-space: nowrap; } .ds-nav-chip svg { color: #f8c93f; }"
+    },
+    {
+      "name": "Lobby Panel",
+      "kind": "card",
+      "refersTo": "lobby-panel",
+      "description": "The incumbent form container of /play: a translucent dark panel on the lighter red ground, with a neutral shadow.",
+      "html": "<div class=\"ds-panel-ground\"><section class=\"ds-panel\"><h2>Open a match</h2><p>Stake a seat and wait for the other one to be taken.</p></section></div>",
+      "css": ".ds-panel-ground { padding: 20px; background: radial-gradient(120% 70% at 50% 0%, #a4241b 0%, #7a1712 45%, #4a0c09 100%); } .ds-panel { display: flex; flex-direction: column; gap: 12px; padding: 18px; border: 1px solid rgb(255 247 230 / 16%); border-radius: 20px; background: rgb(20 6 3 / 38%); box-shadow: 0 14px 30px rgb(0 0 0 / 28%); color: #fff7e6; font-family: \"Be Vietnam Pro\", system-ui, sans-serif; } .ds-panel h2 { margin: 0; font-family: \"Alfa Slab One\", serif; font-size: 21px; font-weight: 400; line-height: 1.1; } .ds-panel p { margin: 0; color: #f3d9b1; font-size: 13.500px; line-height: 1.45; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Departures Hall",
+    "overview": "Deedlords is drawn as an airport for a board game. A match is a flight: it is listed on a departures board, boarded with a ticket, and paid out at landing. Three materials do all the work. A deep red ground, lit from the top centre, holds the prose. Cream ticket paper, cut by perforations and notched at its corners, holds a match's facts and the action that starts one. Near-black boards with a gold hairline hold what is read from the chain: open matches and transaction ledgers. Gold slab lettering names things; a geometric sans says everything else.\n\nThe system is warm and physical, never glassy or technical. The chain is shown as printed matter: a transaction is a stub you can pick up, a ledger is a board you can read down. Small isometric vignettes of the board's own squares stand in for illustration. Density is high on paper and boards (tabular figures, short lines) and generous on the ground (one headline, one lede, wide vertical gaps).\n\nThe landing page and the app are the same world built at two moments and they differ in measurable ways. The landing sets its lettering in a gold-foil plate on a darker ground; the lobby and table use flat gold on a lighter, redder ground, and the lobby adds translucent dark panels that the landing does not have. The name \"The Departures Hall\" was chosen by the documenting pass from the built forms and has not been confirmed by the owner.",
+    "keyCharacteristics": [
+      "Three materials: red ground, cream ticket paper, near-black board. Each has one job.",
+      "Tickets are divided by dashed perforations and bitten corners, not by gaps or borders.",
+      "Gold is lettering and the primary action; green is \"boarding\"; nothing else is an accent.",
+      "Alfa Slab One for names, headlines and amounts; Be Vietnam Pro for everything else.",
+      "Only paper tilts and casts a shadow. Boards and prose sit level and flat.",
+      "Every figure is set in tabular numerals; every chain identifier is a link."
+    ],
+    "rules": [
+      {
+        "name": "The Three Materials Rule",
+        "body": "On the landing every surface is ground, paper or board. Ground carries prose, paper carries a match and its action, boards carry what is read from the chain. The lobby adds a fourth, a translucent dark panel (rgb(20 6 3 / 38%)) for forms; it is incumbent and stays where it is.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two Golds Rule",
+        "body": "Foil Gold belongs to the landing, Flat Gold to the lobby and table. This is recorded as a difference in the build, not as a design decision; do not introduce a third.",
+        "section": "colors"
+      },
+      {
+        "name": "The Slab Says Little Rule",
+        "body": "Alfa Slab One sets names, headlines and amounts (the pot, the fare result), and nothing smaller than 19px anywhere in the build. It never sets a sentence of body text.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Figures Rule",
+        "body": "Times, stakes, seat counts, returns and hashes are set with `font-variant-numeric: tabular-nums`, so a board's columns hold still as its numbers change.",
+        "section": "typography"
+      },
+      {
+        "name": "The Level Ground Rule",
+        "body": "Only tickets tilt: the itinerary strip by -5.08deg (-1.2deg when stacked), the closing ticket by -1.4deg (-1deg), the first stub's button by -3deg. Boards, prose and lists are never rotated.",
+        "section": "layout"
+      },
+      {
+        "name": "The Paper Casts, Boards Sit Rule",
+        "body": "On the landing, shadow means \"this is paper\". A board gets a 1.5px border of Foil Gold at 55% and a top-to-bottom gradient from `night-top` to `night`, and no shadow.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do put a match's facts and its one action on Ticket Paper, what is read from the chain on a Night board, and prose directly on the ground.",
+      "Do divide a ticket with a 2px dashed perforation and bitten corners; shadow it with `filter: drop-shadow` on the unmasked parent.",
+      "Do set every time, amount, count and hash in tabular numerals, and make every chain identifier a link to its transaction or account.",
+      "Do keep Alfa Slab One at 19px or larger, for names, headlines and amounts only.",
+      "Do mark what does not exist yet with a dashed outline and the word Coming.",
+      "Do draw new illustration as small isometric vignettes of the board's own squares, and keep each raster's generation prompt with the file, as `assets/plates/` does.",
+      "Do honour `prefers-reduced-motion`: entrances are removed and transitions shortened, as all three stylesheets already do."
+    ],
+    "donts": [
+      "Don't clip the gold-foil plate to anything but slab lettering on the dark ground or a board: on paper the same lettering is flat `red`.",
+      "Don't rotate a board, a list or a paragraph; only tickets tilt.",
+      "Don't put a `box-shadow` on masked paper (the mask cuts it off) or a shadow under a landing board.",
+      "Don't add a third gold or another ground red; the two of each that exist are a recorded difference between the landing and the app.",
+      "Don't carry the first screen's window-scaled comp units to another screen: below the fold the landing itself returns to fixed and clamped sizes.",
+      "Don't use any Monopoly name, art or wording; the corners are Departure, Customs, Transit Lounge and Visa Denied."
+    ]
+  }
+}
