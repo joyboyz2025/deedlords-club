@@ -6,6 +6,7 @@ import { Chibi, ChibiKit } from "../../ma-soi/scene/chibi";
 import type { Actor } from "../../ma-soi/scene/state";
 import { SALARY, SQUARES, TOKEN_COLORS } from "../board";
 import type { PublicPlayer, View } from "../view";
+import { type BoardArt, loadBoardArt } from "./art";
 import { HOUSE_SLOT, TIERS, TIER_OF_GROUP, TRAY_RADIUS, TRAY_TOP, buildingGeometry, cityGeometry } from "./city";
 import { DIE_SIZE, bounceHeight, dieGeometry, easeOut, restQuaternion } from "./dice";
 import {
@@ -51,8 +52,8 @@ export type TycoonEvents = {
   onArrive: (rolls: number) => void;
 };
 
-const SKY = "#bfe3f5";
-const GROUND = "#cfe7c2";
+const SKY = "#c4e6f7";
+const GROUND = "#d3e9df";
 const CHIBI_SCALE = 0.78;
 const LABEL_PX = 15;
 /** Đứng yên cả thì 20 hình mỗi giây là đủ, đỡ nóng máy. */
@@ -137,6 +138,7 @@ export class TycoonScene {
   private boardMaterial: THREE.MeshLambertMaterial;
   /** Mỗi hạng nhà hai khối vẽ: nhà rồi khách sạn. */
   private buildings: THREE.InstancedMesh[];
+  private art: BoardArt | null = null;
   private built = new Map<string, Built>();
   private buildingsMoving = false;
   private propsSeen = false;
@@ -271,6 +273,13 @@ export class TycoonScene {
       this.busy = true;
     });
     this.frame = requestAnimationFrame(this.tick);
+    // Ảnh minh họa tải xong thì vẽ lại mặt bàn có ảnh.
+    void loadBoardArt().then((art) => {
+      if (!art || !this.frame) return;
+      this.art = art;
+      this.redrawBoard();
+      this.busy = true;
+    });
   }
 
   private own<T extends { dispose(): void }>(thing: T): T {
@@ -279,7 +288,7 @@ export class TycoonScene {
   }
 
   private makeBoardTexture(): THREE.Texture {
-    return boardTexture(this.fonts, this.renderer.capabilities.getMaxAnisotropy(), this.salary);
+    return boardTexture(this.fonts, this.renderer.capabilities.getMaxAnisotropy(), this.salary, this.art);
   }
 
   private redrawBoard(): void {
@@ -292,14 +301,15 @@ export class TycoonScene {
     const { scene } = this;
     scene.background = new THREE.Color(SKY);
     scene.fog = new THREE.Fog(SKY, 70, 160);
-    const hemi = new THREE.HemisphereLight("#ffffff", "#8a8f7a", 2.2);
-    const sun = new THREE.DirectionalLight("#fff4dd", 2.0);
+    // Ánh sáng trắng trung tính: không ngả vàng.
+    const hemi = new THREE.HemisphereLight("#ffffff", "#98a2ad", 2.2);
+    const sun = new THREE.DirectionalLight("#ffffff", 2.0);
     sun.position.set(-10, 18, 12);
     scene.add(hemi, sun);
 
     const ground = new THREE.Mesh(this.own(new THREE.CircleGeometry(150, 48).rotateX(-Math.PI / 2).translate(0, -0.55, 0)), this.own(new THREE.MeshLambertMaterial({ color: GROUND })));
-    // Bàn cờ là một tấm gỗ dày, mặt trên dán ảnh bàn cờ.
-    const slab = new THREE.Mesh(this.own(new THREE.BoxGeometry(SIDE + 0.5, 0.5, SIDE + 0.5).translate(0, -0.26, 0)), this.own(new THREE.MeshLambertMaterial({ color: "#7a1712" })));
+    // Bàn cờ là một tấm dày màu xanh đen, mặt trên dán ảnh bàn cờ.
+    const slab = new THREE.Mesh(this.own(new THREE.BoxGeometry(SIDE + 0.5, 0.5, SIDE + 0.5).translate(0, -0.26, 0)), this.own(new THREE.MeshLambertMaterial({ color: "#22384d" })));
     const top = new THREE.Mesh(this.own(new THREE.PlaneGeometry(SIDE, SIDE).rotateX(-Math.PI / 2)), this.boardMaterial);
     scene.add(ground, slab, top);
 

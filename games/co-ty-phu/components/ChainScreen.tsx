@@ -14,6 +14,7 @@ import { sendStake, usePlayer, type PlayerState } from "../chain/usePlayer";
 import { Ledger } from "./Ledger";
 import { Icon, useSeatPortraits } from "./LobbyArt";
 import { Passport } from "./Passport";
+import { TROPHY_ART } from "../scene/art";
 import { Stage, type AgentTag } from "./TycoonScreen";
 
 const problemText = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -358,6 +359,7 @@ function Payout({
   if (listing && ledger) return <>{ledger(() => setListing(false))}</>;
   return (
     <>
+      <img className="tp-result__trophy" src={TROPHY_ART} alt="" width={132} height={132} />
       <p className="tp-result__title">{winner === accountId ? "You win!" : `${names[result.ranking[0]] ?? shortAccount(winner)} wins`}</p>
       <p className="tp-result__line">{result.reason === "time" ? "Out of rounds: ranked by net worth." : "Everybody else went bankrupt."}</p>
       <ol className="tp-ranking">

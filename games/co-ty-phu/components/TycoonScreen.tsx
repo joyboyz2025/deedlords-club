@@ -20,6 +20,7 @@ import { sound } from "../sound";
 import { savedLook } from "../../ma-soi/components/Wardrobe";
 import { hostKeyStorage, useRoom, type Send } from "../useRoom";
 import type { PublicPlayer, View } from "../view";
+import { DECK_ART, TROPHY_ART } from "../scene/art";
 import type { CameraMode } from "../scene/tycoon";
 import { Board, SquareDetail, money } from "./Board";
 import { Board3D } from "./Board3D";
@@ -1401,6 +1402,7 @@ function CardPopup({ view, holding }: { view: View; holding: boolean }) {
   return (
     <div className="tp-popup" role="dialog" aria-label={`${DECK_NAMES[card.deck]} card`} onClick={() => setOpen(null)}>
       <div className={`tp-popup__card tp-popup__card--${card.deck}`}>
+        <img className="tp-popup__art" src={DECK_ART[card.deck]} alt="" width={96} height={96} />
         <strong>{DECK_NAMES[card.deck]}</strong>
         <span>{card.text}</span>
         <small>Drawn by {drawer && drawer.id === view.you.id ? "you" : drawer?.name} · tap to close</small>
@@ -1616,6 +1618,7 @@ function ResultCard({ view, send, onClose }: { view: View; send: Send; onClose: 
   const winner = ranking[0];
   return (
     <div className="tp-result" role="dialog" aria-label="Result of the game">
+      <img className="tp-result__trophy" src={TROPHY_ART} alt="" width={132} height={132} />
       <p className="tp-result__title">{winner.id === view.you.id ? "You win!" : `${winner.name} wins`}</p>
       <p className="tp-result__line">{result.reason === "time" ? "Time is up: ranked by net worth." : "Everybody else went bankrupt."}</p>
       <ol className="tp-ranking">

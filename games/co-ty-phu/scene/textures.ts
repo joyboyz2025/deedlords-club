@@ -4,6 +4,7 @@
 import * as THREE from "three";
 import { paint } from "../../ma-soi/scene/textures";
 import { GROUPS, SQUARES } from "../board";
+import type { BoardArt, CornerKind } from "./art";
 import { BAND, CORNER, HALF, SIDE, TILE, VIEW_YAW, tileCenter, tileYaw } from "./layout";
 
 /** Cạnh tấm ảnh mặt bàn, đủ nét để đọc tên ô khi camera theo sát quân. */
@@ -12,12 +13,16 @@ const K = BOARD_PX / SIDE;
 /** Xoay chừng này thì chữ nằm ngang trên màn hình, vì camera nhìn chéo từ góc Xuất phát. */
 const LEVEL = -VIEW_YAW;
 
-const PAPER = "#fbf3df";
-const INK = "#2a1208";
-const LINE = "#5b3a24";
-const LAWN = "#9fcf7c";
-const ROAD = "#7d7f86";
-const PAVEMENT = "#e6dcc6";
+// Giấy trắng, mực xanh đen, đường kẻ xám: màu trung tính, không ngả vàng, cho ảnh minh họa và dải màu của đất nổi lên.
+const PAPER = "#fafbfc";
+const INK = "#17212b";
+const LINE = "#aab4bf";
+const LAWN = "#9fd39a";
+const ROAD = "#7d848c";
+const PAVEMENT = "#e4e8ec";
+/** Nền ô góc và màu tấm tên của từng góc. */
+const CORNER_PAPER = "#eef2f5";
+const CORNER_INK: Record<CornerKind, string> = { start: "#e8543f", jail: "#12838f", rest: "#1f9d6b", arrest: "#c8352a" };
 
 /** Hai dòng: chữ đầu một dòng, phần còn lại một dòng. */
 function lines(text: string): string[] {
@@ -31,6 +36,14 @@ function fitText(ctx: CanvasRenderingContext2D, text: string, x: number, y: numb
   const width = ctx.measureText(text).width;
   if (width > maxWidth) ctx.font = `${weight} ${Math.floor((size * maxWidth) / width)}px ${family}`;
   ctx.fillText(text, x, y);
+}
+
+/** Vẽ ảnh vừa khung rộng `width`, cao `height`, tâm ở (`x`, `y`), giữ tỉ lệ. */
+function fitImage(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, width: number, height: number): void {
+  const scale = Math.min(width / image.naturalWidth, height / image.naturalHeight);
+  const w = image.naturalWidth * scale;
+  const h = image.naturalHeight * scale;
+  ctx.drawImage(image, x - w / 2, y - h / 2, w, h);
 }
 
 function drawIcon(ctx: CanvasRenderingContext2D, kind: string, y: number): void {
@@ -104,12 +117,12 @@ function drawIcon(ctx: CanvasRenderingContext2D, kind: string, y: number): void 
  * Ô thường vẽ như ở hàng dưới: dải màu phía trên (phía xa người đọc), tên ở giữa, giá ở mép trước. Nhìn cả bàn trên điện thoại
  * thì ô rất nhỏ, tên khó đọc, nên giá viết thật to; muốn đọc tên thì chạm ô hay phóng to.
  */
-function drawTile(ctx: CanvasRenderingContext2D, index: number, fonts: { text: string; title: string }): void {
+function drawTile(ctx: CanvasRenderingContext2D, index: number, fonts: { text: string; title: string }, art: BoardArt | null): void {
   const square = SQUARES[index];
   const u = K;
   const w = TILE * u;
   const h = CORNER * u;
-  ctx.fillStyle = square.kind === "card" ? (square.deck === "chest" ? "#fbe2dc" : "#fff0d6") : PAPER;
+  ctx.fillStyle = square.kind === "card" ? (square.deck === "chest" ? "#ffe9e4" : "#e4f3fb") : PAPER;
   ctx.fillRect(-w / 2, -h / 2, w, h);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -122,11 +135,15 @@ function drawTile(ctx: CanvasRenderingContext2D, index: number, fonts: { text: s
     const icon = square.kind === "utility" ? (/power/i.test(square.name) ? "power" : "water") : square.kind === "card" ? square.deck : square.kind;
     // Ô có giá thì hình nhỏ lại, chừa chỗ cho giá.
     const card = square.kind === "card";
-    ctx.save();
-    ctx.translate(0, (card ? 0.25 : 0.02) * u);
-    if (!card) ctx.scale(0.75, 0.75);
-    drawIcon(ctx, icon, 0);
-    ctx.restore();
+    if (card && art) {
+      fitImage(ctx, art.decks[square.deck], 0, 0.36 * u, w * 0.9, 1.6 * u);
+    } else {
+      ctx.save();
+      ctx.translate(0, (card ? 0.25 : 0.02) * u);
+      if (!card) ctx.scale(0.75, 0.75);
+      drawIcon(ctx, icon, 0);
+      ctx.restore();
+    }
     nameY = -0.85;
   }
 
@@ -146,103 +163,62 @@ function drawTile(ctx: CanvasRenderingContext2D, index: number, fonts: { text: s
   if (price !== null) fitText(ctx, square.kind === "tax" ? `−${price}` : String(price), 0, (square.kind === "city" ? 0.66 : 0.72) * u, 0.6 * u, w * 0.92, fonts.text, "900");
 }
 
-/** Chữ có viền nền sáng, để đọc được trên song sắt. */
-function plateText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, size: number, maxWidth: number, family: string): void {
+/** Tấm tên bo góc, chữ trắng trên nền màu của góc. */
+function plateText(ctx: CanvasRenderingContext2D, text: string, y: number, size: number, maxWidth: number, family: string, color: string): void {
   ctx.font = `400 ${size}px ${family}`;
-  const width = Math.min(maxWidth, ctx.measureText(text).width) + size * 0.6;
-  ctx.fillStyle = PAPER;
+  const width = Math.min(maxWidth, ctx.measureText(text).width) + size * 0.9;
+  ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.roundRect(x - width / 2, y - size * 0.72, width, size * 1.44, size * 0.3);
+  ctx.roundRect(-width / 2, y - size * 0.74, width, size * 1.48, size * 0.74);
   ctx.fill();
-  ctx.fillStyle = INK;
-  fitText(ctx, text, x, y, size, maxWidth, family, "400");
+  ctx.fillStyle = "#ffffff";
+  fitText(ctx, text, 0, y + size * 0.04, size, maxWidth, family, "400");
 }
 
+const CORNER_TITLE: Record<CornerKind, string> = { start: "DEPARTURE", jail: "CUSTOMS", rest: "TRANSIT LOUNGE", arrest: "VISA DENIED" };
+
 /**
- * Ô góc: nền vuông theo bàn, chữ và hình vẽ nằm ngang trên màn hình. Nhìn trên màn hình mỗi ô góc là một hình thoi,
- * tâm ở gốc tọa độ, đỉnh cách tâm chừng 1,84 đơn vị theo bốn hướng, nên chữ dài đặt gần giữa.
+ * Ô góc: tấm tên ở trên, ảnh minh họa ở giữa, một dòng nhỏ ở dưới. Ai đứng ở ô góc thì đứng ở nửa ngoài của ô, trên ảnh
+ * (xem `standSpot`); tên ở mép trong nên không bị che. Chưa có ảnh thì chỉ có chữ.
  */
-function drawCorner(ctx: CanvasRenderingContext2D, index: number, fonts: { text: string; title: string }, salary: number): void {
+function drawCorner(ctx: CanvasRenderingContext2D, index: number, fonts: { text: string; title: string }, salary: number, art: BoardArt | null): void {
   const u = K;
   const h = CORNER * u;
-  const kind = SQUARES[index].kind;
-  ctx.fillStyle = kind === "start" ? "#ffe08a" : kind === "rest" ? "#cdeccf" : kind === "arrest" ? "#f6c7bd" : PAPER;
+  const kind = SQUARES[index].kind as CornerKind;
+  ctx.fillStyle = CORNER_PAPER;
   ctx.fillRect(-h / 2, -h / 2, h, h);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-
-  if (kind === "jail") {
-    // Phòng tạm giữ ở góc phía trong bàn, đúng chỗ người bị giữ đứng (`standSpot`); song sắt dựng đứng trên màn hình.
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(-0.1 * u, -1.3 * u, 1.4 * u, 1.4 * u);
-    ctx.fillStyle = "#f2a33a";
-    ctx.fill();
-    ctx.clip();
-    ctx.rotate(LEVEL);
-    ctx.fillStyle = "#4b3a2e";
-    for (let i = -4; i <= 4; i++) ctx.fillRect((0.85 + i * 0.24 - 0.03) * u, -1.1 * u, 0.06 * u, 2.2 * u);
-    ctx.restore();
-  }
-
-  // Từ đây trục x sang phải màn hình, trục y xuống dưới màn hình. Ai đứng ở ô góc thì đứng ở một phần tư (xem `standSpot`),
-  // nên chữ và hình tránh phần đó.
+  // Camera nhìn chéo thì chữ và hình xoay theo cho nằm ngang trên màn hình.
   ctx.rotate(LEVEL);
-  ctx.fillStyle = INK;
+  if (art) fitImage(ctx, art.corners[kind], 0, 0.12 * u, 2.3 * u, 1.62 * u);
+  plateText(ctx, CORNER_TITLE[kind], -0.98 * u, 0.26 * u, 1.9 * u, fonts.title, CORNER_INK[kind]);
+
+  const noteY = 1.06 * u;
   if (kind === "start") {
-    fitText(ctx, "DEPARTURE", 0, -0.45 * u, 0.5 * u, 2.7 * u, fonts.title, "400");
-    // Tiền qua Xuất phát của ván này.
-    ctx.fillStyle = "#c0392b";
-    fitText(ctx, `+${salary.toLocaleString("en-US")}`, 0, 0.38 * u, 0.46 * u, 2.2 * u, fonts.text, "900");
-    // Mũi tên chỉ hướng đi: sang trái, về phía Tạm giữ.
-    ctx.fillStyle = "#d32f22";
+    // Tiền qua Xuất phát của ván này, và mũi tên chỉ hướng đi: sang trái, về phía Tạm giữ.
+    ctx.fillStyle = CORNER_INK.start;
+    fitText(ctx, `+${salary.toLocaleString("en-US")}`, 0.3 * u, noteY, 0.3 * u, 1.3 * u, fonts.text, "900");
     ctx.beginPath();
-    for (const [x, y] of [[-0.7, 0.92], [-0.3, 0.72], [-0.3, 0.84], [0.6, 0.84], [0.6, 1.0], [-0.3, 1.0], [-0.3, 1.12]]) ctx.lineTo(x * u, y * u);
+    for (const [x, y] of [[-1.05, 0], [-0.72, -0.17], [-0.72, -0.07], [-0.3, -0.07], [-0.3, 0.07], [-0.72, 0.07], [-0.72, 0.17]]) ctx.lineTo(x * u, noteY + y * u);
     ctx.closePath();
     ctx.fill();
-  } else if (kind === "jail") {
-    plateText(ctx, "CUSTOMS", 0.85 * u, 0, 0.34 * u, 1.4 * u, fonts.title);
-    // Người ghé thăm đứng ở nửa trên bên trái; chữ ở nửa dưới cho khỏi bị che.
-    fitText(ctx, "JUST", -0.45 * u, 0.42 * u, 0.32 * u, 1.2 * u, fonts.title, "400");
-    fitText(ctx, "VISITING", -0.45 * u, 0.8 * u, 0.32 * u, 1.2 * u, fonts.title, "400");
-  } else if (kind === "rest") {
-    fitText(ctx, "TRANSIT LOUNGE", 0, 0.4 * u, 0.48 * u, 2.5 * u, fonts.title, "400");
-    // Ly cà phê sữa đá, bên trái: người dừng chân đứng ở nửa trên bên phải.
-    ctx.save();
-    ctx.translate(-0.85 * u, -0.3 * u);
-    ctx.scale(0.55, 0.55);
-    ctx.fillStyle = "#8a5a35";
-    ctx.beginPath();
-    ctx.moveTo(-0.32 * u, -0.3 * u);
-    ctx.lineTo(0.32 * u, -0.3 * u);
-    ctx.lineTo(0.24 * u, 0.6 * u);
-    ctx.lineTo(-0.24 * u, 0.6 * u);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#f3e6cf";
-    ctx.fillRect(-0.32 * u, -0.3 * u, 0.64 * u, 0.2 * u);
-    ctx.fillStyle = "#2f9a5c";
-    ctx.fillRect(0.06 * u, -0.75 * u, 0.06 * u, 0.5 * u);
-    ctx.restore();
-  } else if (kind === "arrest") {
-    fitText(ctx, "VISA DENIED", 0, -0.5 * u, 0.5 * u, 2.7 * u, fonts.title, "400");
-    ctx.fillStyle = "#6b4a33";
-    fitText(ctx, "Go to Customs Hold", 0, 0.05 * u, 0.24 * u, 3.0 * u, fonts.text, "800");
-    // Biển cấm đi: tròn đỏ, vạch trắng. Ai bị bắt đứng ở nửa dưới bên phải nên biển ở bên trái.
-    ctx.fillStyle = "#c8352a";
-    ctx.beginPath();
-    ctx.arc(-0.5 * u, 0.58 * u, 0.38 * u, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(-0.76 * u, 0.5 * u, 0.52 * u, 0.15 * u);
+  } else if (kind !== "rest") {
+    ctx.fillStyle = INK;
+    fitText(ctx, kind === "jail" ? "Just visiting" : "Go to Customs Hold", 0, noteY, 0.22 * u, 2.3 * u, fonts.text, "800");
   }
 }
 
-/** Khu phố giữa bàn: bãi cỏ, hai con đường cắt nhau, quảng trường tròn ở giữa. Nhà cao tầng dựng bằng khối 3D đặt lên trên. */
-function drawCenter(ctx: CanvasRenderingContext2D): void {
+/** Khu phố giữa bàn: ảnh công viên và hai con đường cắt nhau, mâm xúc xắc đặt trên vòng xuyến ở giữa. Chưa có ảnh thì vẽ bãi cỏ và đường. */
+function drawCenter(ctx: CanvasRenderingContext2D, art: BoardArt | null): void {
   const u = K;
   const inner = (HALF - CORNER) * u;
   const mid = BOARD_PX / 2;
+  if (art) {
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(art.centre, mid - inner, mid - inner, inner * 2, inner * 2);
+    return;
+  }
   ctx.fillStyle = PAVEMENT;
   ctx.fillRect(mid - inner, mid - inner, inner * 2, inner * 2);
   const margin = 0.35 * u;
@@ -252,33 +228,18 @@ function drawCenter(ctx: CanvasRenderingContext2D): void {
   ctx.fillStyle = ROAD;
   ctx.fillRect(mid - road / 2, mid - inner + margin, road, inner * 2 - margin * 2);
   ctx.fillRect(mid - inner + margin, mid - road / 2, inner * 2 - margin * 2, road);
-  // Vạch giữa đường.
-  ctx.strokeStyle = "#f4f1e6";
-  ctx.lineWidth = 0.06 * u;
-  ctx.setLineDash([0.3 * u, 0.3 * u]);
-  ctx.beginPath();
-  ctx.moveTo(mid, mid - inner + margin);
-  ctx.lineTo(mid, mid + inner - margin);
-  ctx.moveTo(mid - inner + margin, mid);
-  ctx.lineTo(mid + inner - margin, mid);
-  ctx.stroke();
-  ctx.setLineDash([]);
   ctx.fillStyle = PAVEMENT;
   ctx.beginPath();
   ctx.arc(mid, mid, 1.9 * u, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "#7cbf5a";
-  ctx.beginPath();
-  ctx.arc(mid, mid, 1.3 * u, 0, Math.PI * 2);
-  ctx.fill();
 }
 
-/** `salary`: tiền nhận mỗi lần đi qua Xuất phát của ván này, ghi trên ô Xuất phát. */
-export function boardTexture(fonts: { text: string; title: string }, anisotropy: number, salary: number): THREE.CanvasTexture {
+/** `salary`: tiền nhận mỗi lần đi qua Xuất phát của ván này, ghi trên ô Xuất phát. `art`: ảnh minh họa, `null` khi chưa tải xong. */
+export function boardTexture(fonts: { text: string; title: string }, anisotropy: number, salary: number, art: BoardArt | null = null): THREE.CanvasTexture {
   const texture = paint(BOARD_PX, BOARD_PX, (ctx) => {
     ctx.fillStyle = LINE;
     ctx.fillRect(0, 0, BOARD_PX, BOARD_PX);
-    drawCenter(ctx);
+    drawCenter(ctx, art);
     const gap = 0.025 * K;
     for (let index = 0; index < SQUARES.length; index++) {
       const center = tileCenter(index);
@@ -292,8 +253,8 @@ export function boardTexture(fonts: { text: string; title: string }, anisotropy:
       const h = CORNER * K - gap * 2;
       ctx.rect(-w / 2, -h / 2, w, h);
       ctx.clip();
-      if (index % 10 === 0) drawCorner(ctx, index, fonts, salary);
-      else drawTile(ctx, index, fonts);
+      if (index % 10 === 0) drawCorner(ctx, index, fonts, salary, art);
+      else drawTile(ctx, index, fonts, art);
       ctx.restore();
     }
   });

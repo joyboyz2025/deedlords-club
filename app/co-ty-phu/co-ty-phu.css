@@ -1072,6 +1072,15 @@
   margin: 0;
 }
 
+/* Cúp nhô lên khỏi mép trên của thẻ kết quả. */
+.tp-result__trophy {
+  width: 132px;
+  height: 132px;
+  margin-top: -84px;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 10px rgb(0 0 0 / 30%));
+}
+
 .tp-result__title {
   color: var(--red);
   font-family: var(--font-alfa), serif;
@@ -1798,6 +1807,13 @@
   text-align: center;
   box-shadow: 0 12px 30px rgb(0 0 0 / 35%);
   animation: tp-card-pop 0.45s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+.tp-popup__art {
+  align-self: center;
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
 }
 
 .tp-popup__card strong {

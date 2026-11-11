@@ -39,51 +39,19 @@ function tower(width: number, height: number, depth: number, x: number, y: numbe
   return tinted(geometry.translate(x, y + height / 2, z), color);
 }
 
-/**
- * Tòa tháp nhiều tầng thu nhỏ dần, có chóp, làm điểm nhấn giữa phố. Camera nhìn chéo từ góc Xuất phát nên tháp đứng ở nửa gần
- * camera, lệch khỏi đường nhìn vào mâm: đứng ở nửa xa thì che chữ trên các ô ở hai cạnh xa.
- */
-const LANDMARK = { x: 6.0, z: 1.75 };
-
-function landmark(x: number, z: number): THREE.BufferGeometry[] {
-  return [
-    tower(2.1, 2.8, 2.1, x, 0, z, "#9fd3ec"),
-    tower(1.6, 2.4, 1.6, x, 2.8, z, "#8cc9e6"),
-    tower(1.1, 1.0, 1.1, x, 5.2, z, "#f2c14e"),
-  ];
-}
-
-/** Những phần không có cửa sổ: mái, chóp, cây, đài phun nước. */
+/** Phần không có cửa sổ: mâm tung xúc xắc. Khu phố giữa bàn giờ là ảnh in trên mặt bàn (`drawCenter`), không còn khối 3D che chữ. */
 function plainParts(): THREE.BufferGeometry[] {
-  const parts: THREE.BufferGeometry[] = [];
-  // Chóp tháp.
-  parts.push(painted(new THREE.ConeGeometry(0.2, 1.2, 8).translate(LANDMARK.x, 6.8, LANDMARK.z), "#f2c14e"));
-  // Mái ngói hình chóp cho mấy nhà thấp: hình nón bốn cạnh xoay 45 độ thì đáy vuông, cạnh bằng bán kính nhân căn hai.
-  const roof = (x: number, z: number, width: number, y: number, color: string) =>
-    painted(new THREE.ConeGeometry((width / Math.SQRT2) * 1.08, 0.9, 4).rotateY(Math.PI / 4).translate(x, y + 0.45, z), color);
-  parts.push(roof(-2.7, 2.9, 1.7, 1.6, "#c8352a"), roof(-5.5, 2.5, 1.5, 1.2, "#b5562f"), roof(5.6, 5.6, 1.7, 1.8, "#c8352a"));
-  // Cây tròn ven đường.
-  const tree = (x: number, z: number, size = 1) => [
-    painted(new THREE.CylinderGeometry(0.07 * size, 0.09 * size, 0.5 * size, 6).translate(x, 0.25 * size, z), "#7a5236"),
-    sphere(0.38 * size, "#3f9a4f", x, 0.75 * size, z, 1, 1, 1, 8),
+  // Mâm đặt trên vòng xuyến giữa ảnh, để cả bàn cùng nhìn số: đế trắng, lòng nỉ xanh cổ vịt, vành san hô cao hơn mặt nỉ.
+  return [
+    painted(new THREE.CylinderGeometry(TRAY_RADIUS + 0.18, TRAY_RADIUS + 0.28, 0.12, 40).translate(0, 0.06, 0), "#f4f6f8"),
+    painted(new THREE.CylinderGeometry(TRAY_RADIUS, TRAY_RADIUS, 0.04, 40).translate(0, TRAY_TOP - 0.02, 0), "#157f8c"),
+    painted(new THREE.TorusGeometry(TRAY_RADIUS + 0.08, 0.08, 8, 48).rotateX(Math.PI / 2).translate(0, TRAY_TOP - 0.01, 0), "#f0624d"),
   ];
-  const spots = [
-    [-1.35, -2.6], [1.35, -2.6], [-1.35, 2.6], [1.35, 2.6], [-1.6, -6.8], [1.6, -6.8], [-1.6, 6.8], [1.6, 6.8],
-    [-6.8, -1.5], [-6.8, 1.5], [6.8, -1.5], [-3.9, 6.6], [3.9, 6.8], [-6.7, 4.2], [6.6, 3.9],
-    [-4.0, -1.4], [4.0, 1.4], [-1.4, 4.2], [1.4, -4.1],
-  ];
-  // Cây sát hai cạnh xa camera thấp hơn, kẻo che chữ trên ô.
-  spots.forEach(([x, z], i) => parts.push(...tree(x, z, x < -6 || z < -6 ? 0.8 : [0.9, 1.05, 1.2][i % 3])));
-  // Mâm tung xúc xắc giữa quảng trường, để cả bàn cùng nhìn số: đế vàng, lòng nỉ đỏ, vành tròn cao hơn mặt nỉ.
-  parts.push(painted(new THREE.CylinderGeometry(TRAY_RADIUS + 0.18, TRAY_RADIUS + 0.28, 0.12, 40).translate(0, 0.06, 0), "#c98f2e"));
-  parts.push(painted(new THREE.CylinderGeometry(TRAY_RADIUS, TRAY_RADIUS, 0.04, 40).translate(0, TRAY_TOP - 0.02, 0), "#8e1b1b"));
-  parts.push(painted(new THREE.TorusGeometry(TRAY_RADIUS + 0.08, 0.08, 8, 48).rotateX(Math.PI / 2).translate(0, TRAY_TOP - 0.01, 0), "#e2b04a"));
-  return parts;
 }
 
 /** Dãy nhà xa quanh bàn cờ để nền không trống: cao thấp xen nhau, màu nhạt dần như chìm trong sương. */
 function skyline(): THREE.BufferGeometry[] {
-  const colors = ["#dfe9f1", "#e8dccb", "#cfe0ea", "#f0e2d0", "#d6e4d8"];
+  const colors = ["#dfe9f1", "#e6ebef", "#cfe0ea", "#f1f3f5", "#d6e4e2"];
   const parts: THREE.BufferGeometry[] = [];
   for (let i = 0; i < 44; i++) {
     const angle = (i / 44) * Math.PI * 2 + (i % 2) * 0.05;
@@ -95,37 +63,20 @@ function skyline(): THREE.BufferGeometry[] {
   return parts;
 }
 
-/** Khu phố: nhà cao tầng gắn ảnh cửa sổ, và phần trơn tô màu. Chừa hai con đường và quảng trường giữa. */
+/** Dãy nhà xa gắn ảnh cửa sổ, và phần trơn tô màu (mâm xúc xắc). */
 export function cityGeometry(): { towers: THREE.BufferGeometry; plain: THREE.BufferGeometry } {
-  // Nhà cao đứng ở nửa gần camera; nửa xa (phía cạnh trái và hàng trên) chỉ có nhà thấp, kẻo che chữ trên các ô ở xa.
-  const towers = merged([
-    ...skyline(),
-    ...landmark(LANDMARK.x, LANDMARK.z),
-    tower(1.8, 2.0, 1.6, -2.6, 0, -5.4, "#f4d9a6"),
-    tower(1.6, 1.9, 1.8, -5.5, 0, -2.7, "#f2a65a"),
-    tower(2.0, 1.6, 2.0, -5.6, 0, -5.6, "#e9e4dc"),
-    tower(1.4, 2.2, 1.4, -2.6, 0, -2.6, "#c5e1a5"),
-    tower(1.7, 1.6, 1.7, -2.7, 0, 2.9, "#f7d6a0"),
-    tower(2.0, 1.8, 1.8, -5.4, 0, 5.4, "#f7c6c7"),
-    tower(1.5, 1.2, 1.5, -5.5, 0, 2.5, "#f4e3b5"),
-    tower(1.8, 2.6, 1.8, 2.7, 0, 2.7, "#b9d7f0"),
-    tower(1.7, 1.8, 1.7, 5.6, 0, 5.6, "#f4d9a6"),
-    tower(1.6, 2.0, 1.6, 2.6, 0, 5.6, "#c5e1a5"),
-    tower(1.5, 2.6, 1.5, 2.5, 0, -2.6, "#f7c6c7"),
-    tower(1.8, 1.6, 1.6, 6.0, 0, -5.8, "#e9e4dc"),
-  ]);
-  return { towers, plain: merged(plainParts()) };
+  return { towers: merged(skyline()), plain: merged(plainParts()) };
 }
 
-/** Hạng nhà theo bộ màu: đất càng đắt nhà càng hiện đại. Hai bộ rẻ nhất là nhà mái ngói, rồi nhà phố cổ, nhà phố hiện đại, cao ốc kính. */
+/** Hạng nhà theo bộ màu: đất càng đắt nhà càng lớn. Quầy hàng, nhà phố, biệt thự, biệt thự ba tầng; khách sạn nhỏ, khách sạn lớn, tháp nghỉ dưỡng, tháp kính. */
 export const TIER_OF_GROUP = [0, 0, 1, 1, 2, 2, 3, 3];
 export const TIERS = 4;
 /** Bốn nhà xếp hàng trên dải màu, nhà nọ cách nhà kia chừng này. */
 export const HOUSE_SLOT = 0.42;
 
-// Nhà trên đất dựng theo đúng cách nhà trong thị trấn, chỉ thu nhỏ cho vừa dải màu: nền đá, tường, cửa sổ sáng đèn có khung,
-// kính sẫm dưới sáng trên như đang soi trời, mái ngói có bờ nóc. Mái chỉ chìa ra một chút vì camera nhìn chếch từ trên xuống,
-// mái chìa sâu thì che mất mặt tiền. Gốc ở giữa chân nhà, mặt tiền nhìn về +z, tức ra phía ngoài bàn.
+// Nhà trên đất ghép từ khối cơ bản theo bộ ảnh ý tưởng trong `_notes/concepts/pack`: tường trắng, kính xanh, điểm màu san hô,
+// xanh cổ vịt và xanh cô-ban, sân thượng có dù, cây và hồ bơi. Ánh sáng trắng, không ngả vàng. Camera nhìn chếch từ trên xuống
+// nên chi tiết dồn vào mặt tiền và mái. Gốc ở giữa chân nhà, mặt tiền nhìn về +z, tức ra phía ngoài bàn.
 
 type Parts = THREE.BufferGeometry[];
 
@@ -134,22 +85,28 @@ const HOUSE_DEPTH = 0.5;
 const HOTEL_WIDTH = 1.6;
 const HOTEL_DEPTH = 0.54;
 
-const STONE = "#9a9082";
-const GRANITE = "#34353c";
-const CONCRETE = "#c9c5bd";
-const GOLD = "#d8a944";
-const LIT = "#f6d98a";
-const STEEL = "#d9dde3";
-const LEAF = "#47713e";
-const WHITE = "#f5f4f0";
-const CREAM = "#fbf3df";
-const WOOD = "#6b3a1e";
-const TEAK = "#a0673a";
-const POT = "#a0522d";
-const SHUTTER = "#2f6b4f";
-const FLOWER = "#d63a5f";
-const LANTERN = "#e8473c";
-const RIDGE = "#6b2416";
+const WHITE = "#f7f8f9";
+const SHADE = "#dfe5ea";
+const PLINTH = "#c9d0d7";
+const CORAL = "#f0624d";
+const TEAL = "#16939b";
+const DEEP = "#1d5c68";
+const COBALT = "#2f6fdc";
+const NAVY = "#22384d";
+const FRAME = "#2b3640";
+const WOOD = "#b9824f";
+const DECK = "#dcbf93";
+const LEAF = "#3f9a4f";
+const LIME = "#6dbb55";
+const POOL = "#3fc3ea";
+const LIT = "#ffe9b0";
+const STEEL = "#e3e8ed";
+const TRUNK = "#7a5a3c";
+const PETAL = "#5b8def";
+const BLOSSOM = "#ffffff";
+/** Kính: dưới sẫm, trên sáng như đang soi trời. */
+const GLASS: [string, string] = ["#2e6f9e", "#c4e6f7"];
+const RAIL: [string, string] = ["#a9d6ee", "#e9f6fc"];
 
 /** Khối hộp, đáy đặt ở độ cao `y`. */
 function box(width: number, height: number, depth: number, color: string, x = 0, y = 0, z = 0): THREE.BufferGeometry {
@@ -161,8 +118,8 @@ function post(radius: number, height: number, color: string, x: number, y: numbe
   return painted(new THREE.CylinderGeometry(radius, radius, height, segments).translate(x, y + height / 2, z), color);
 }
 
-/** Khối kính: dưới sẫm, trên sáng như đang soi bầu trời. Màu theo đỉnh nên không tốn thêm vật liệu. */
-function glass(width: number, height: number, depth: number, bottom: string, top: string, x = 0, y = 0, z = 0): THREE.BufferGeometry {
+/** Khối kính đổi màu từ dưới lên. Màu theo đỉnh nên không tốn thêm vật liệu. */
+function glass(width: number, height: number, depth: number, [bottom, top]: [string, string], x = 0, y = 0, z = 0): THREE.BufferGeometry {
   const geometry = new THREE.BoxGeometry(width, height, depth).translate(x, y + height / 2, z);
   const position = geometry.attributes.position;
   const low = new THREE.Color(bottom);
@@ -178,206 +135,345 @@ function glass(width: number, height: number, depth: number, bottom: string, top
   return geometry;
 }
 
-/** Mái hai dốc có bờ nóc chạy theo bề ngang: lăng trụ tam giác, đáy mái ở độ cao `y`, tâm mái ở `z`. */
-function gable(length: number, span: number, rise: number, y: number, color: string, z = 0): Parts {
-  // Hình trụ 3 cạnh có một đỉnh ở +z: xoay cho đỉnh lên trời và trục theo bề ngang, rồi kéo cho vừa.
-  const prism = new THREE.CylinderGeometry(1, 1, length, 3).rotateX(-Math.PI / 2).rotateY(Math.PI / 2);
-  prism.scale(1, rise / 1.5, span / 2 / 0.866).translate(0, y + rise / 3, z);
-  return [painted(prism, color), box(length + 0.02, 0.025, 0.035, RIDGE, 0, y + rise - 0.015, z)];
-}
-
-/** Mái kiểu Pháp: bốn mặt dốc, đỉnh bằng. */
-function mansard(width: number, depth: number, height: number, y: number, color: string, z = 0): THREE.BufferGeometry {
-  const frustum = new THREE.CylinderGeometry(Math.SQRT1_2 * 0.78, Math.SQRT1_2, height, 4, 1).rotateY(Math.PI / 4);
-  return painted(frustum.scale(width, 1, depth).translate(0, y + height / 2, z), color);
-}
-
 /** Ô cửa sáng đèn có khung, mặt kính nhô hơn khung một chút cho khỏi nhấp nháy. */
 function pane(width: number, height: number, frame: string, x: number, y: number, z: number): Parts {
   return [box(width + 0.016, height + 0.016, 0.01, frame, x, y - 0.008, z), box(width, height, 0.014, LIT, x, y, z)];
 }
 
+/** Mái hiên vải sọc hai màu, dốc xuống phía trước; mép sát tường ở độ cao `y`. */
+function awning(width: number, depth: number, y: number, z: number, a: string, b: string, x = 0): Parts {
+  const slope = 0.5;
+  const stripes = Math.max(3, Math.round(width / 0.05)) | 1;
+  const each = width / stripes;
+  return Array.from({ length: stripes }, (_, i) =>
+    painted(
+      new THREE.BoxGeometry(each, 0.012, depth)
+        .rotateX(slope)
+        .translate(x - width / 2 + each * (i + 0.5), y - (depth / 2) * Math.sin(slope), z + (depth / 2) * Math.cos(slope)),
+      i % 2 ? b : a,
+    ),
+  );
+}
+
+/** Dù che nắng trên sân thượng. */
+function parasol(x: number, y: number, z: number, color: string, size = 1): Parts {
+  return [post(0.005 * size, 0.1 * size, STEEL, x, y, z, 5), painted(new THREE.ConeGeometry(0.085 * size, 0.035 * size, 8).translate(x, y + 0.115 * size, z), color)];
+}
+
+/** Bồn hoa dài: thành gỗ, cây xen hoa màu `bloom`. */
+function planter(width: number, x: number, y: number, z: number, bloom: string = LEAF): Parts {
+  const count = Math.max(1, Math.round(width / 0.05));
+  return [
+    box(width, 0.022, 0.032, WOOD, x, y, z),
+    ...Array.from({ length: count }, (_, i) => sphere(0.022, i % 2 ? bloom : LEAF, x - width / 2 + (width / count) * (i + 0.5), y + 0.032, z, 1.2, 0.9, 1, 6)),
+  ];
+}
+
 /** Chậu cây tròn trước cửa. */
-function potted(x: number, z: number, size = 1): Parts {
-  return [post(0.025 * size, 0.04 * size, POT, x, 0.025, z, 8), sphere(0.042 * size, LEAF, x, 0.065 + 0.035 * size, z, 1, 0.9, 1, 7)];
+function potted(x: number, z: number, size = 1, y = 0.02): Parts {
+  return [post(0.022 * size, 0.035 * size, WHITE, x, y, z, 8), sphere(0.04 * size, LEAF, x, y + 0.04 + 0.03 * size, z, 1, 0.9, 1, 7)];
 }
 
-/** Hạng một, nhà: nhà mái ngói một gian, cửa gỗ, hai cửa sổ sáng đèn, hai chậu cây trên hiên gạch. */
-function cottage(): Parts {
-  const front = 0.13;
+/** Cây tán tròn hai lớp lá. */
+function tree(x: number, y: number, z: number, size = 1): Parts {
   return [
-    box(HOUSE_WIDTH, 0.025, HOUSE_DEPTH, STONE),
-    box(0.3, 0.005, 0.1, "#c98f5f", 0, 0.025, front + 0.055),
-    box(0.32, 0.2, 0.34, "#f1dcae", 0, 0.025, front - 0.17),
-    box(0.075, 0.13, 0.012, WOOD, 0, 0.025, front),
-    ...[-1, 1].flatMap((side) => [...pane(0.06, 0.06, WOOD, side * 0.095, 0.09, front), ...potted(side * 0.13, front + 0.07, 0.85)]),
-    ...gable(0.36, 0.44, 0.18, 0.225, "#c4532f", front - 0.18),
+    post(0.008 * size, 0.07 * size, TRUNK, x, y, z, 5),
+    sphere(0.055 * size, LEAF, x, y + 0.1 * size, z, 1, 0.85, 1, 7),
+    sphere(0.038 * size, LIME, x + 0.028 * size, y + 0.128 * size, z + 0.01 * size, 1, 0.85, 1, 6),
   ];
 }
 
-/** Hạng một, khách sạn: nhà nghỉ hai tầng mái ngói, ban công gỗ chạy dài treo hoa, cửa lá sách xanh, đèn lồng đỏ. */
-function guesthouse(): Parts {
-  const front = 0.11;
+/** Cây cọ: thân cao, tán dẹt. */
+function palm(x: number, y: number, z: number, size = 1): Parts {
   return [
-    box(HOTEL_WIDTH, 0.025, HOTEL_DEPTH, STONE),
-    box(1.5, 0.44, 0.36, "#f3e2bd", 0, 0.025, front - 0.18),
-    box(0.14, 0.17, 0.012, WOOD, 0, 0.025, front),
-    ...[-0.6, -0.36, 0.36, 0.6].flatMap((x) => pane(0.1, 0.09, WOOD, x, 0.08, front)),
-    ...[-1, 1].flatMap((side) => potted(side * 0.18, front + 0.09)),
-    ...[-0.6, -0.36, -0.12, 0.12, 0.36, 0.6].flatMap((x) => pane(0.09, 0.13, SHUTTER, x, 0.275, front)),
-    box(1.52, 0.02, 0.1, "#8a5a3b", 0, 0.235, front + 0.05),
-    box(1.52, 0.045, 0.012, "#5a3a22", 0, 0.255, front + 0.094),
-    ...[-0.48, -0.24, 0, 0.24, 0.48].map((x) => sphere(0.024, FLOWER, x, 0.31, front + 0.085, 1.4, 0.8, 1, 6)),
-    ...[-0.72, 0.72].map((x) => sphere(0.028, LANTERN, x, 0.18, front + 0.08, 1, 1.25, 1, 8)),
-    ...gable(1.6, 0.48, 0.22, 0.465, "#b5452a", front - 0.2),
+    post(0.007 * size, 0.15 * size, TRUNK, x, y, z, 5),
+    sphere(0.07 * size, LEAF, x, y + 0.155 * size, z, 1, 0.28, 1, 7),
+    sphere(0.042 * size, LIME, x, y + 0.172 * size, z, 1, 0.35, 1, 6),
   ];
 }
 
-/** Hạng hai, nhà: nhà phố cổ hai tầng tường vàng, gian hàng gỗ có biển đỏ, ban công hoa, cửa sổ lá sách, đèn lồng. */
-function shophouse(): Parts {
-  const front = 0.15;
+/** Hồ bơi: thành trắng, mặt nước xanh. */
+function pool(width: number, depth: number, x: number, y: number, z: number): Parts {
+  return [box(width + 0.024, 0.012, depth + 0.024, WHITE, x, y, z), box(width, 0.015, depth, POOL, x, y, z)];
+}
+
+/** Ban công: sàn mỏng chìa ra trước, lan can kính ở mép. */
+function balcony(width: number, x: number, y: number, z: number, depth = 0.045): Parts {
+  return [box(width, 0.012, depth, SHADE, x, y, z + depth / 2), glass(width, 0.03, 0.005, RAIL, x, y + 0.012, z + depth - 0.003)];
+}
+
+/** Tường chắn mái bốn phía quanh sân thượng rộng `width`, sâu `depth`, tâm ở `z`. */
+function parapet(width: number, depth: number, y: number, z: number, color: string, height = 0.035): Parts {
   return [
-    box(HOUSE_WIDTH, 0.025, HOUSE_DEPTH, STONE),
-    box(0.34, 0.4, 0.4, "#f2c94c", 0, 0.025, front - 0.2),
-    ...pane(0.22, 0.12, WOOD, 0, 0.04, front),
-    box(0.16, 0.03, 0.012, "#c8321e", 0, 0.172, front),
-    box(0.34, 0.015, 0.06, "#7a4b30", 0, 0.205, front + 0.03),
-    box(0.34, 0.035, 0.008, "#5a3a22", 0, 0.22, front + 0.056),
-    ...[-0.1, 0, 0.1].map((x) => sphere(0.018, FLOWER, x, 0.262, front + 0.05, 1.4, 0.8, 1, 6)),
-    ...[-1, 1].flatMap((side) => [
-      ...pane(0.06, 0.09, SHUTTER, side * 0.08, 0.26, front),
-      box(0.028, 0.09, 0.012, SHUTTER, side * 0.026, 0.26, front + 0.002),
-      box(0.028, 0.09, 0.012, SHUTTER, side * 0.134, 0.26, front + 0.002),
-      sphere(0.02, LANTERN, side * 0.14, 0.165, front + 0.05, 1, 1.25, 1, 8),
-    ]),
-    ...gable(0.36, 0.44, 0.16, 0.425, "#a8452c", front - 0.19),
+    box(width, height, 0.012, color, 0, y, z + depth / 2 - 0.006),
+    box(width, height, 0.012, color, 0, y, z - depth / 2 + 0.006),
+    box(0.012, height, depth, color, -width / 2 + 0.006, y, z),
+    box(0.012, height, depth, color, width / 2 - 0.006, y, z),
   ];
 }
 
-/** Hạng hai, khách sạn: khách sạn kiểu Pháp ba tầng, tường vàng gờ trắng, cửa lá sách xanh, ban công sắt, mái dốc bốn phía. */
-function colonial(): Parts {
-  const front = 0.12;
-  const body = front - 0.19;
-  const opening = (x: number, y: number): Parts => [
-    ...pane(0.08, 0.12, CREAM, x, y, front),
-    box(0.03, 0.12, 0.012, SHUTTER, x - 0.066, y, front + 0.002),
-    box(0.03, 0.12, 0.012, SHUTTER, x + 0.066, y, front + 0.002),
-  ];
-  const columns = [-0.63, -0.42, -0.21, 0, 0.21, 0.42, 0.63];
+/** Hạng một, nhà: quầy hàng nhỏ tường trắng, mái hiên sọc xanh cổ vịt, sân thượng có bàn và dù san hô, bồn hoa trước cửa. */
+function kiosk(): Parts {
+  const front = 0.1;
+  const body = front - 0.16;
+  const roof = 0.22;
   return [
-    box(HOTEL_WIDTH, 0.025, HOTEL_DEPTH, STONE),
-    box(1.5, 0.66, 0.38, "#f2c94c", 0, 0.025, body),
-    ...[0.235, 0.455].map((y) => box(1.53, 0.022, 0.4, CREAM, 0, y, body)),
-    box(1.56, 0.04, 0.42, CREAM, 0, 0.685, body),
-    ...pane(0.16, 0.16, GOLD, 0, 0.035, front),
-    box(0.3, 0.015, 0.1, "#c8321e", 0, 0.205, front + 0.05),
-    ...columns.filter((x) => x !== 0).flatMap((x) => opening(x, 0.065)),
-    ...[0.28, 0.5].flatMap((y) => columns.flatMap((x) => opening(x, y))),
-    ...columns.map((x) => box(0.13, 0.03, 0.03, "#2b2b2b", x, 0.27, front + 0.015)),
-    ...[-1, 1].flatMap((side) => potted(side * 0.12, front + 0.1)),
-    mansard(1.56, 0.42, 0.15, 0.725, "#a8452c", body),
+    box(HOUSE_WIDTH, 0.02, HOUSE_DEPTH, PLINTH),
+    box(0.32, 0.2, 0.32, WHITE, 0, 0.02, body),
+    box(0.335, 0.016, 0.335, TEAL, 0, roof - 0.016, body),
+    ...parapet(0.34, 0.34, roof, body, WHITE),
+    ...pane(0.15, 0.1, TEAL, -0.06, 0.05, front),
+    glass(0.06, 0.14, 0.012, GLASS, 0.1, 0.02, front),
+    ...awning(0.32, 0.09, 0.19, front, TEAL, WHITE),
+    box(0.07, 0.03, 0.07, WOOD, 0.03, roof, body),
+    ...parasol(0.03, roof, body, CORAL, 1.15),
+    sphere(0.045, LEAF, -0.1, roof + 0.035, body - 0.09, 1, 0.9, 1, 7),
+    ...planter(0.14, -0.1, 0.02, front + 0.11, PETAL),
+    ...potted(0.13, front + 0.09),
   ];
 }
 
-/** Hạng ba, nhà: nhà phố hiện đại ba tầng tường trắng, mặt kính, lam gỗ, ban công kính, vườn và bồn nước inox trên sân thượng. */
+/** Hạng hai, nhà: nhà phố hai tầng, gian hàng xanh sẫm có mái hiên sọc san hô, cửa sổ khung sẫm treo bồn hoa, sân thượng có lan can và chòi cầu thang. */
 function townhouse(): Parts {
-  const front = 0.15;
-  const roof = 0.635;
+  const front = 0.12;
+  const body = front - 0.18;
+  const roof = 0.48;
   return [
-    box(HOUSE_WIDTH, 0.025, HOUSE_DEPTH, CONCRETE),
-    box(0.34, 0.58, 0.4, WHITE, 0, 0.025, front - 0.2),
-    ...pane(0.17, 0.13, GRANITE, -0.05, 0.035, front),
-    glass(0.2, 0.36, 0.014, "#3f5f77", "#bfe0f2", -0.05, 0.215, front),
-    box(0.09, 0.56, 0.016, TEAK, 0.115, 0.035, front),
-    box(0.36, 0.02, 0.05, WHITE, 0, 0.195, front + 0.015),
-    box(0.36, 0.015, 0.08, WHITE, 0, 0.385, front + 0.03),
-    glass(0.36, 0.045, 0.006, "#a8d4ec", "#e8f5fc", 0, 0.4, front + 0.067),
-    sphere(0.03, LEAF, 0.12, 0.43, front + 0.035, 1, 0.9, 1, 7),
-    box(0.36, 0.03, 0.42, "#e6e3dc", 0, roof - 0.03, front - 0.2),
-    box(0.26, 0.012, 0.3, "#6f9a4e", 0, roof, front - 0.21),
-    post(0.03, 0.07, "#c7ccd3", -0.09, roof + 0.012, -0.15, 12),
-    post(0.006, 0.05, "#6b4a2f", 0.08, roof + 0.012, -0.07),
-    sphere(0.045, LEAF, 0.08, roof + 0.085, -0.07, 1, 0.9, 1, 7),
+    box(HOUSE_WIDTH, 0.02, HOUSE_DEPTH, PLINTH),
+    box(0.34, 0.2, 0.36, DEEP, 0, 0.02, body),
+    box(0.34, 0.25, 0.36, WHITE, 0, 0.22, body),
+    box(0.36, 0.02, 0.38, DEEP, 0, 0.21, body),
+    ...pane(0.19, 0.11, "#0f3d47", -0.05, 0.05, front),
+    glass(0.06, 0.15, 0.012, GLASS, 0.11, 0.02, front),
+    ...awning(0.34, 0.09, 0.2, front, CORAL, WHITE),
+    ...[-1, 1].flatMap((side) => [...pane(0.08, 0.1, FRAME, side * 0.085, 0.3, front), ...planter(0.1, side * 0.085, 0.262, front + 0.02, BLOSSOM)]),
+    box(0.36, 0.02, 0.38, SHADE, 0, roof - 0.02, body),
+    ...parapet(0.35, 0.37, roof, body, FRAME, 0.03),
+    box(0.12, 0.1, 0.12, WHITE, 0.08, roof, body - 0.09),
+    box(0.05, 0.075, 0.01, FRAME, 0.08, roof, body - 0.028),
+    sphere(0.045, LEAF, -0.1, roof + 0.04, body + 0.06, 1, 0.9, 1, 7),
+    sphere(0.035, LIME, -0.11, roof + 0.035, body - 0.11, 1, 0.9, 1, 6),
+    ...potted(0.14, front + 0.08),
+    ...planter(0.14, -0.09, 0.02, front + 0.1, BLOSSOM),
   ];
 }
 
-/** Hạng ba, khách sạn: khách sạn năm tầng tường trắng, sảnh kính có mái che, ban công kính từng tầng, hồ bơi và dù trên sân thượng. */
+/** Hạng ba, nhà: biệt thự hiện đại hai tầng, tầng trệt kính, sàn trắng chìa ra, mảng gỗ, pin mặt trời và cây trên mái, hồ bơi trước nhà. */
+function villa(): Parts {
+  const front = 0.05;
+  const body = front - 0.13;
+  return [
+    box(HOUSE_WIDTH, 0.02, HOUSE_DEPTH, PLINTH),
+    glass(0.26, 0.17, 0.26, GLASS, -0.04, 0.02, body),
+    box(0.07, 0.17, 0.27, WOOD, 0.13, 0.02, body),
+    box(0.045, 0.12, 0.012, TEAL, 0.06, 0.02, front),
+    box(0.37, 0.02, 0.32, WHITE, 0, 0.19, body + 0.01),
+    glass(0.37, 0.03, 0.005, RAIL, 0, 0.21, front + 0.035),
+    box(0.3, 0.18, 0.24, WHITE, -0.02, 0.21, body - 0.03),
+    glass(0.2, 0.12, 0.012, GLASS, -0.05, 0.235, body + 0.09),
+    box(0.06, 0.16, 0.012, WOOD, 0.09, 0.22, body + 0.09),
+    box(0.34, 0.02, 0.28, WHITE, -0.02, 0.39, body - 0.03),
+    box(0.16, 0.008, 0.11, "#27508c", -0.08, 0.41, body - 0.03),
+    box(0.165, 0.004, 0.012, STEEL, -0.08, 0.416, body - 0.03),
+    ...tree(0.09, 0.41, body - 0.07, 1.7),
+    ...pool(0.19, 0.09, -0.07, 0.02, front + 0.12),
+    box(0.11, 0.012, 0.12, DECK, 0.12, 0.02, front + 0.12),
+    ...parasol(0.12, 0.03, front + 0.13, WHITE, 0.75),
+    box(0.3, 0.035, 0.028, LEAF, -0.02, 0.02, front + 0.215),
+  ];
+}
+
+/** Hạng tư, nhà: biệt thự ba tầng lệch khối, hồ bơi trên sân tầng hai, vườn và cây trên mái, mảng gỗ, ga-ra có xe xanh. */
+function mansion(): Parts {
+  const front = 0.08;
+  const body = front - 0.15;
+  const second = 0.18;
+  const third = 0.35;
+  const roof = 0.51;
+  return [
+    box(HOUSE_WIDTH, 0.02, HOUSE_DEPTH, PLINTH),
+    box(0.36, 0.16, 0.3, "#eceff2", 0, 0.02, body),
+    box(0.05, 0.12, 0.012, WOOD, -0.13, 0.02, front),
+    glass(0.1, 0.11, 0.012, GLASS, -0.04, 0.03, front),
+    box(0.14, 0.1, 0.012, NAVY, 0.1, 0.02, front),
+    box(0.1, 0.028, 0.07, COBALT, 0.1, 0.02, front + 0.08),
+    box(0.07, 0.022, 0.04, "#1b3f8f", 0.1, 0.048, front + 0.075),
+    box(0.38, 0.018, 0.34, WHITE, 0, second, body + 0.01),
+    glass(0.2, 0.152, 0.24, GLASS, -0.08, second + 0.018, body - 0.03),
+    box(0.02, 0.152, 0.25, WOOD, -0.18, second + 0.018, body - 0.03),
+    ...pool(0.13, 0.13, 0.1, second + 0.018, body + 0.07),
+    glass(0.38, 0.03, 0.005, RAIL, 0, second + 0.018, front + 0.027),
+    sphere(0.03, LEAF, 0.16, second + 0.045, body - 0.1, 1, 0.9, 1, 6),
+    box(0.3, 0.018, 0.3, WHITE, -0.04, third, body - 0.02),
+    box(0.2, 0.142, 0.2, WHITE, -0.07, third + 0.018, body - 0.04),
+    glass(0.13, 0.09, 0.012, GLASS, -0.09, third + 0.04, body + 0.06),
+    box(0.04, 0.13, 0.012, WOOD, 0.005, third + 0.024, body + 0.06),
+    box(0.24, 0.016, 0.24, WHITE, -0.07, roof, body - 0.04),
+    box(0.18, 0.01, 0.18, LIME, -0.07, roof + 0.016, body - 0.04),
+    ...tree(-0.09, roof + 0.02, body - 0.05, 1.8),
+    sphere(0.03, LEAF, 0.0, roof + 0.045, body + 0.02, 1, 0.9, 1, 6),
+    box(0.2, 0.035, 0.028, LEAF, -0.08, 0.02, front + 0.2),
+    ...potted(-0.165, front + 0.07, 0.8),
+  ];
+}
+
+/** Hạng một, khách sạn: khách sạn nhỏ bốn tầng tường trắng, cửa sổ khung xanh cổ vịt, ban công treo hoa, mái đón san hô, sân thượng có hai chiếc dù. */
+function boutique(): Parts {
+  const front = 0.1;
+  const body = front - 0.18;
+  const floor = 0.165;
+  const roof = 0.025 + floor * 4;
+  const columns = [-0.34, -0.17, 0, 0.17, 0.34];
+  return [
+    box(HOTEL_WIDTH, 0.025, HOTEL_DEPTH, PLINTH),
+    box(0.9, floor * 4, 0.36, WHITE, 0, 0.025, body),
+    ...[1, 2, 3].flatMap((level) => {
+      const y = 0.025 + floor * level;
+      return [
+        box(0.92, 0.012, 0.38, SHADE, 0, y - 0.006, body),
+        ...columns.flatMap((x) => pane(0.085, 0.1, TEAL, x, y + 0.035, front)),
+        ...balcony(0.5, 0, y + 0.012, front, 0.04),
+        ...[-1, 1].flatMap((side) => [box(0.1, 0.02, 0.03, WOOD, side * 0.34, y + 0.006, front + 0.02), box(0.09, 0.016, 0.024, PETAL, side * 0.34, y + 0.026, front + 0.02)]),
+      ];
+    }),
+    glass(0.16, 0.13, 0.012, GLASS, 0, 0.025, front),
+    box(0.28, 0.03, 0.1, CORAL, 0, 0.16, front + 0.05),
+    ...[-0.34, -0.2, 0.2, 0.34].flatMap((x) => pane(0.085, 0.09, TEAL, x, 0.05, front)),
+    box(0.94, 0.02, 0.4, SHADE, 0, roof, body),
+    ...parapet(0.92, 0.38, roof + 0.02, body, WHITE, 0.03),
+    box(0.16, 0.1, 0.14, WHITE, 0.34, roof + 0.02, body - 0.08),
+    ...parasol(-0.24, roof + 0.02, body, CORAL, 1.2),
+    ...parasol(0.04, roof + 0.02, body + 0.02, COBALT, 1.2),
+    sphere(0.045, LEAF, -0.4, roof + 0.05, body - 0.1, 1, 0.9, 1, 7),
+    sphere(0.04, LEAF, 0.2, roof + 0.05, body + 0.12, 1, 0.9, 1, 6),
+    ...[-1, 1].flatMap((side) => [...tree(side * 0.64, 0.025, front - 0.1, 1.5), ...planter(0.2, side * 0.3, 0.025, front + 0.11, PETAL), ...potted(side * 0.12, front + 0.07, 0.9, 0.025)]),
+  ];
+}
+
+/** Hạng hai, khách sạn: khách sạn sáu tầng trên sảnh kính, trụ góc san hô, ban công kính có ghế xanh, mái đón xanh cô-ban trên cửa xoay, quầy bar trên mái. */
+function grand(): Parts {
+  const front = 0.1;
+  const body = front - 0.18;
+  const lobby = 0.2;
+  const floor = 0.15;
+  const base = 0.025 + lobby;
+  const roof = base + floor * 6;
+  return [
+    box(HOTEL_WIDTH, 0.025, HOTEL_DEPTH, PLINTH),
+    glass(0.94, lobby, 0.34, ["#1f3a52", "#7fb4d6"], 0, 0.025, body),
+    post(0.055, 0.15, RAIL[0], 0, 0.025, front + 0.02, 10),
+    box(0.36, 0.035, 0.13, COBALT, 0, 0.175, front + 0.05),
+    box(1.0, floor * 6, 0.36, WHITE, 0, base, body),
+    ...[-1, 1].map((side) => box(0.045, floor * 6 + lobby, 0.045, CORAL, side * 0.5, 0.025, front - 0.005)),
+    ...Array.from({ length: 6 }, (_, level) => {
+      const y = base + floor * level;
+      return [
+        glass(0.88, floor * 0.6, 0.012, GLASS, 0, y + floor * 0.22, front),
+        ...balcony(0.92, 0, y, front),
+        box(0.03, 0.022, 0.022, COBALT, level % 2 ? -0.26 : 0.26, y + 0.012, front + 0.022),
+        sphere(0.02, LEAF, level % 2 ? 0.3 : -0.3, y + 0.03, front + 0.022, 1, 1, 1, 5),
+      ];
+    }).flat(),
+    box(1.04, 0.022, 0.4, SHADE, 0, roof, body),
+    ...parapet(1.02, 0.38, roof + 0.022, body, WHITE, 0.03),
+    box(0.3, 0.012, 0.16, WOOD, 0.1, roof + 0.13, body - 0.04),
+    ...[-0.04, 0.24].flatMap((x) => [-0.11, 0.03].map((z) => post(0.006, 0.11, WOOD, x, roof + 0.022, body + z, 4))),
+    box(0.2, 0.05, 0.06, DECK, 0.1, roof + 0.022, body - 0.05),
+    ...parasol(-0.3, roof + 0.022, body + 0.03, CORAL, 1.1),
+    ...parasol(0.4, roof + 0.022, body + 0.05, CORAL, 1.0),
+    sphere(0.04, LEAF, -0.44, roof + 0.05, body - 0.12, 1, 0.9, 1, 6),
+    ...[-1, 1].flatMap((side) => [...tree(side * 0.68, 0.025, front - 0.12, 1.6), box(0.2, 0.04, 0.03, LEAF, side * 0.34, 0.025, front + 0.13), ...potted(side * 0.22, front + 0.08, 0.9, 0.025)]),
+  ];
+}
+
+/** Hạng ba, khách sạn: tháp nghỉ dưỡng hai đầu bo tròn, trục thang kính xanh giữa mặt tiền, ban công ôm vòng treo cây, mái đón tròn san hô, hồ bơi, cọ và dù trên mái. */
 function resort(): Parts {
-  const front = 0.14;
-  const body = front - 0.2;
-  const top = 1.185;
+  const front = 0.1;
+  const body = front - 0.18;
+  const lobby = 0.2;
+  const floor = 0.155;
+  const floors = 7;
+  const base = 0.025 + lobby;
+  const roof = base + floor * floors;
+  const ends = [-0.36, 0.36];
   return [
-    box(HOTEL_WIDTH, 0.03, HOTEL_DEPTH, CONCRETE),
-    glass(1.36, 0.2, 0.34, "#22313f", "#6f90ad", 0, 0.03, front - 0.21),
-    box(0.32, 0.15, 0.014, LIT, 0, 0.03, front - 0.04),
-    box(0.5, 0.02, 0.15, STEEL, 0, 0.2, front + 0.035),
-    box(0.3, 0.035, 0.01, GOLD, 0, 0.202, front + 0.115),
-    box(1.5, 0.92, 0.4, WHITE, 0, 0.23, body),
-    ...[0.27, 0.49, 0.71, 0.93].flatMap((y) => [
-      glass(1.36, 0.15, 0.012, "#3d6f93", "#bfe0f2", 0, y, front),
-      box(1.44, 0.014, 0.05, WHITE, 0, y - 0.025, front + 0.025),
-      box(1.44, 0.03, 0.006, "#cfe8f5", 0, y - 0.011, front + 0.047),
-    ]),
-    ...[-1, 1].map((side) => box(0.05, 0.92, 0.05, TEAK, side * 0.73, 0.23, front)),
-    box(1.52, 0.035, 0.42, "#e6e3dc", 0, top - 0.035, body),
-    box(1.42, 0.008, 0.34, "#c9a27a", 0, top, body),
-    box(0.62, 0.006, 0.2, "#4fc3e8", -0.3, top + 0.004, body),
-    ...[-0.5, -0.38, -0.26].map((x) => box(0.05, 0.012, 0.08, WHITE, x, top + 0.008, front - 0.045)),
-    ...([[0.22, "#e9b949"], [0.46, "#c8321e"]] as const).flatMap(([x, color]) => [
-      post(0.006, 0.09, WHITE, x, top + 0.008, front - 0.24),
-      painted(new THREE.ConeGeometry(0.075, 0.035, 8).translate(x, top + 0.115, front - 0.24), color),
-    ]),
-    sphere(0.05, LEAF, 0.64, top + 0.05, front - 0.06, 1, 0.9, 1, 7),
-    sphere(0.05, LEAF, -0.66, top + 0.05, front - 0.34, 1, 0.9, 1, 7),
+    box(HOTEL_WIDTH, 0.025, HOTEL_DEPTH, PLINTH),
+    glass(0.8, lobby, 0.32, ["#1f3a52", "#7fb4d6"], 0, 0.025, body),
+    post(0.17, 0.03, CORAL, 0, 0.17, front + 0.05, 12),
+    ...pane(0.14, 0.12, STEEL, 0, 0.03, front + 0.002),
+    box(0.72, floor * floors, 0.36, WHITE, 0, base, body),
+    ...ends.map((x) => post(0.18, floor * floors, WHITE, x, base, body, 12)),
+    glass(0.16, floor * floors + 0.06, 0.05, ["#1f6fb5", "#9ad4f5"], 0, base, front),
+    ...Array.from({ length: floors }, (_, level) => {
+      const y = base + floor * level;
+      return [
+        box(0.74, 0.012, 0.41, SHADE, 0, y, body),
+        ...ends.map((x) => post(0.205, 0.012, SHADE, x, y, body, 8)),
+        ...[-1, 1].map((side) => glass(0.24, floor * 0.56, 0.012, GLASS, side * 0.22, y + floor * 0.24, front)),
+        box(0.07, 0.03, 0.02, level % 2 ? LIME : LEAF, level % 2 ? -0.3 : 0.3, y - 0.02, front + 0.03),
+      ];
+    }).flat(),
+    box(0.74, 0.022, 0.4, WHITE, 0, roof, body),
+    ...ends.map((x) => post(0.2, 0.022, WHITE, x, roof, body, 12)),
+    ...pool(0.4, 0.14, -0.14, roof + 0.022, body + 0.04),
+    box(0.3, 0.1, 0.2, WHITE, 0.3, roof + 0.022, body - 0.04),
+    glass(0.2, 0.06, 0.012, GLASS, 0.3, roof + 0.04, body + 0.06),
+    ...parasol(-0.3, roof + 0.022, body - 0.1, CORAL, 1.0),
+    ...parasol(0.0, roof + 0.022, body - 0.11, CORAL, 1.0),
+    ...palm(-0.46, roof + 0.022, body + 0.02, 0.9),
+    ...palm(0.5, roof + 0.022, body + 0.05, 0.8),
+    ...[-1, 1].flatMap((side) => [...palm(side * 0.68, 0.025, front + 0.02, 1.5), box(0.16, 0.04, 0.03, LEAF, side * 0.38, 0.025, front + 0.13)]),
   ];
 }
 
-/** Hạng tư, nhà: cao ốc kính trên đế đá sẫm, sảnh sáng đèn, khung thép, vạch tầng, ăng-ten có đèn đỏ. */
-function glassTower(): Parts {
-  const front = 0.13;
-  const body = front - 0.17;
-  return [
-    box(HOUSE_WIDTH, 0.12, 0.48, GRANITE),
-    ...pane(0.18, 0.08, STEEL, 0, 0.015, 0.24),
-    glass(0.3, 0.86, 0.34, "#1f3a57", "#86bce0", 0, 0.12, body),
-    ...[-0.075, 0, 0.075].map((x) => box(0.012, 0.86, 0.01, STEEL, x, 0.12, front)),
-    // Vạch tầng nhô hơn khung đứng một chút để chỗ bắt chéo không nhấp nháy.
-    ...[0.3, 0.47, 0.64, 0.81].map((y) => box(0.31, 0.01, 0.36, STEEL, 0, y, body)),
-    box(0.26, 0.05, 0.3, STEEL, 0, 0.98, body),
-    post(0.006, 0.18, "#9aa1aa", 0.07, 1.03, -0.1, 4),
-    sphere(0.016, "#ff3b30", 0.07, 1.215, -0.1, 1, 1, 1, 6),
-  ];
-}
-
-/** Hạng tư, khách sạn: tháp kính sẫm hai cánh như casino trong thị trấn, cột vàng, viền neon, vương miện vàng có chóp. */
+/** Hạng tư, khách sạn: tháp kính xanh nhiều tầng vạch ban công trắng, sọc san hô, hai cánh thấp có hồ bơi và vườn mái, sân đỗ trực thăng trên đỉnh. */
 function skyTower(): Parts {
-  const front = 0.15;
-  const body = front - 0.2;
+  const front = 0.1;
+  const body = front - 0.18;
+  const podium = 0.26;
+  const height = 1.7;
+  const top = podium + height;
   return [
-    box(HOTEL_WIDTH, 0.26, HOTEL_DEPTH, GRANITE),
-    ...pane(0.5, 0.17, GOLD, 0, 0.03, HOTEL_DEPTH / 2),
-    box(0.7, 0.025, 0.06, GOLD, 0, 0.215, HOTEL_DEPTH / 2 + 0.03),
-    glass(0.8, 1.5, 0.4, "#161b36", "#5468a8", 0, 0.26, body),
-    ...[-1, 1].flatMap((side) => [
-      glass(0.3, 0.9, 0.36, "#1d2747", "#6a80bb", side * 0.6, 0.26, body - 0.01),
-      ...[0.5, 0.75, 1.0].map((y) => box(0.31, 0.012, 0.37, STEEL, side * 0.6, y, body - 0.01)),
-      box(0.32, 0.03, 0.38, STEEL, side * 0.6, 1.16, body - 0.01),
-      box(0.03, 1.5, 0.03, GOLD, side * 0.4, 0.26, front),
-    ]),
-    ...[0.75, 1.25].map((y) => box(0.82, 0.022, 0.42, "#ff3fb4", 0, y, body)),
-    box(0.82, 0.022, 0.42, "#3fe0ff", 0, 1.7, body),
-    glass(0.5, 0.3, 0.28, "#22305a", "#7a90d0", 0, 1.76, body),
-    box(0.56, 0.06, 0.34, GOLD, 0, 2.06, body),
-    painted(new THREE.ConeGeometry(0.07, 0.36, 8).translate(0, 2.3, body), GOLD),
-    sphere(0.02, "#ff3b30", 0, 2.5, body, 1, 1, 1, 6),
+    box(HOTEL_WIDTH, 0.025, HOTEL_DEPTH, PLINTH),
+    box(1.3, podium - 0.025, 0.4, WHITE, 0, 0.025, body),
+    glass(1.1, 0.13, 0.012, ["#1f3a52", "#7fb4d6"], 0, 0.06, front + 0.02),
+    ...pane(0.2, 0.15, CORAL, 0, 0.04, front + 0.022),
+    box(0.42, 0.03, 0.13, CORAL, 0, 0.2, front + 0.07),
+    glass(0.62, height, 0.36, ["#1b4f86", "#8fd0f4"], 0, podium, body),
+    ...[-1, 1].map((side) => box(0.03, height, 0.38, WHITE, side * 0.32, podium, body)),
+    box(0.035, height, 0.012, CORAL, 0.2, podium, front + 0.003),
+    ...Array.from({ length: 11 }, (_, level) => box(0.66, 0.014, 0.4, WHITE, 0, podium + 0.145 * (level + 1), body)),
+    // Cánh trái: kính, thấp hơn, hồ bơi trên mái.
+    glass(0.32, 0.9, 0.32, GLASS, -0.49, podium, body),
+    ...Array.from({ length: 5 }, (_, level) => box(0.34, 0.014, 0.35, WHITE, -0.49, podium + 0.15 * (level + 1), body)),
+    box(0.34, 0.02, 0.35, WHITE, -0.49, podium + 0.9, body),
+    ...pool(0.2, 0.18, -0.5, podium + 0.92, body),
+    ...parasol(-0.6, podium + 0.92, body - 0.12, CORAL, 0.9),
+    // Cánh phải: khối trắng, vườn trên mái.
+    box(0.32, 0.55, 0.32, WHITE, 0.49, podium, body),
+    ...[0.08, 0.24, 0.4].map((y) => glass(0.26, 0.09, 0.012, GLASS, 0.49, podium + y, front - 0.02)),
+    box(0.3, 0.012, 0.3, LIME, 0.49, podium + 0.55, body),
+    ...tree(0.44, podium + 0.56, body - 0.04, 1.5),
+    ...tree(0.57, podium + 0.56, body + 0.07, 1.1),
+    // Đỉnh tháp: mũ trắng, sân đỗ trực thăng tròn có vòng vàng và chữ thập trắng, cột thu sóng có đèn đỏ.
+    box(0.68, 0.04, 0.42, WHITE, 0, top, body),
+    post(0.17, 0.03, "#8d98a3", -0.08, top + 0.04, body, 16),
+    post(0.13, 0.004, "#f2c94c", -0.08, top + 0.07, body, 16),
+    post(0.115, 0.005, "#8d98a3", -0.08, top + 0.071, body, 16),
+    box(0.12, 0.004, 0.026, WHITE, -0.08, top + 0.076, body),
+    box(0.026, 0.004, 0.12, WHITE, -0.08, top + 0.076, body),
+    box(0.14, 0.08, 0.14, STEEL, 0.22, top + 0.04, body - 0.08),
+    post(0.006, 0.2, "#9aa1aa", 0.24, top + 0.12, body - 0.1, 4),
+    sphere(0.016, "#ff3b30", 0.24, top + 0.33, body - 0.1, 1, 1, 1, 6),
+    ...[-1, 1].flatMap((side) => [...tree(side * 0.72, 0.025, front + 0.06, 1.3), box(0.22, 0.04, 0.03, LEAF, side * 0.42, 0.025, front + 0.14)]),
   ];
 }
 
 const DESIGNS: [house: () => Parts, hotel: () => Parts][] = [
-  [cottage, guesthouse],
-  [shophouse, colonial],
-  [townhouse, resort],
-  [glassTower, skyTower],
+  [kiosk, boutique],
+  [townhouse, grand],
+  [villa, resort],
+  [mansion, skyTower],
 ];
 
 /** Nhà (`hotel` sai) hoặc khách sạn của hạng `tier`, gộp thành một khối để vẽ cả loạt nhà cùng kiểu một lượt. */
