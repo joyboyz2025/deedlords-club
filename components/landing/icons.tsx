@@ -25,3 +25,13 @@ export const Die = ({ size = 30, className }: Props) => (
     </g>
   </svg>
 );
+
+// The front desk at /play uses the same set.
+export const User = ({ size = 20, className }: Props) => svg(size, className, <><circle cx="12" cy="8" r="3.500" /><path d="M5 20c.6-3.500 3.400-5.500 7-5.500s6.400 2 7 5.500" /></>);
+export const Gem = ({ size = 20, className }: Props) => svg(size, className, <path d="M12 3 5 12l7 9 7-9-7-9ZM5 12l7 3 7-3M12 3v12" />);
+export const NearMark = ({ size = 20, className }: Props) => svg(size, className, <path d="M6 19V5l12 14V5" />);
+export const Bot = ({ size = 20, className }: Props) => svg(size, className, <><rect x="5" y="8" width="14" height="11" rx="3" /><path d="M12 8V4.500M9.500 13v1.500M14.500 13v1.500M2.500 12.500v3M21.500 12.500v3" /><circle cx="12" cy="3.500" r="1" /></>);
+export const Spark = ({ size = 18, className }: Props) => svg(size, className, <path d="M12 3.500 13.800 9l5.700 1.800-5.700 1.800L12 18.500l-1.800-5.900L4.500 10.800 10.200 9 12 3.500ZM19 17v3.500M17.300 18.700h3.400" />);
+export const Sliders = ({ size = 18, className }: Props) => svg(size, className, <><path d="M4 7h9M17 7h3M4 17h3M11 17h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></>);
+export const Copy = ({ size = 16, className }: Props) => svg(size, className, <><rect x="8.500" y="8.500" width="11" height="11" rx="2" /><path d="M15.500 5.500v-1a1 1 0 0 0-1-1h-9a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h1" /></>);
+export const Seat = ({ size = 18, className }: Props) => svg(size, className, <path d="M8 4h6a2 2 0 0 1 2 2v6H8V4ZM6 12h12a1.500 1.500 0 0 1 1.500 1.500V16h-15v-2.500A1.500 1.500 0 0 1 6 12ZM7 16v4M17 16v4" />);

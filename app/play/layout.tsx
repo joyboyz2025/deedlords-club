@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { alfaSlab, beVietnam } from "@/lib/fonts";
 import "../co-ty-phu/co-ty-phu.css";
 import "./play.css";
+import "./desk.css";
 
 export const metadata: Metadata = {
   title: "Deedlords",
@@ -10,7 +11,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#7a1712",
+  themeColor: "#5d100a",
   viewportFit: "cover",
 };
 

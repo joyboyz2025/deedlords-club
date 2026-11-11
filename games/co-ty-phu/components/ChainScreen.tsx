@@ -2,18 +2,20 @@
 
 import Link from "next/link";
 import { useState, type CSSProperties, type ReactNode } from "react";
+import { Arrow, Bot, Copy, Seat } from "@/components/landing/icons";
 import { CHAIN } from "@/lib/chain/config";
 import { TOKEN_COLORS } from "../board";
 import { formatBps, formatNear, seatNames, shortAccount } from "../chain/adapt";
 import { MOVE_HOLD, joinCalls, near, upfront } from "../chain/calls";
 import { devJoin, devSeatAgent, useDevConfig, type DevConfig } from "../chain/devSession";
 import type { ChainMatch, ChainResult } from "../chain/types";
+import { armAgent, useAgent } from "../chain/useAgent";
 import { useAgentNotes, useAutopilot } from "../chain/useAutopilot";
 import { useChainRoom } from "../chain/useChainRoom";
 import { sendStake, usePlayer, type PlayerState } from "../chain/usePlayer";
+import { AgentStub, Flap, Hall, PassengerStub } from "./Desk";
 import { Ledger } from "./Ledger";
-import { Icon, useSeatPortraits } from "./LobbyArt";
-import { Passport } from "./Passport";
+import { useSeatPortraits } from "./LobbyArt";
 import { TROPHY_ART } from "../scene/art";
 import { Stage, type AgentTag } from "./TycoonScreen";
 
@@ -44,7 +46,7 @@ function Table({ id, state, helper }: { id: string; state: PlayerState; helper: 
   const room = useChainRoom(id, player?.session ?? null);
   const { view, match, result, seat, link, error, busy, notice, sent, send, playTurn, retry, refresh } = room;
   const accountId = player?.accountId ?? null;
-  const autopilot = useAutopilot(id, room, playTurn);
+  const autopilot = useAutopilot(id, room, playTurn, accountId);
   const notes = useAgentNotes(id, match?.meta.status === "playing");
 
   if (error) {
@@ -128,7 +130,12 @@ function Table({ id, state, helper }: { id: string; state: PlayerState; helper: 
           label: `${CHAIN.network} · ${accountId === null ? "watching" : seat === null ? `${shortAccount(accountId)} (no seat here)` : `${shortAccount(accountId)}, seat ${seat + 1}`}`,
           busy,
           agents,
-          autopilot: autopilot && { on: autopilot.on, thinking: autopilot.thinking, toggle: autopilot.toggle, note: autopilot.last ? `AI · ${autopilot.last.driver}: ${autopilot.last.reason}` : null },
+          autopilot: autopilot && {
+            on: autopilot.on,
+            thinking: autopilot.thinking,
+            toggle: autopilot.toggle,
+            note: autopilot.last ? `AI · ${autopilot.last.driver}: ${autopilot.last.reason}` : null,
+          },
           ledger,
           result: (onClose) =>
             result ? (
@@ -163,14 +170,18 @@ function Notice({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/** The gate of a match: its terms as a boarding pass, the seats, and who is about to sit. The last seat starts the game. */
+/**
+ * The gate of a match: who sits where on the wall, and on the desk the visitor's ticket, whose last stub is the boarding
+ * pass of this match. The last seat taken starts the game.
+ */
 function Lobby({ match, state, helper, onJoined }: { match: ChainMatch; state: PlayerState; helper: DevConfig | null; onJoined: () => Promise<void> }) {
   const { meta } = match;
   const player = state.player ?? null;
   const accountId = player?.accountId ?? null;
+  const desk = useAgent(accountId);
   const names = seatNames(meta);
   const faces = useSeatPortraits(meta.seats.length);
-  const [joining, setJoining] = useState<number | null>(null);
+  const [joining, setJoining] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [inviting, setInviting] = useState(false);
@@ -179,6 +190,7 @@ function Lobby({ match, state, helper, onJoined }: { match: ChainMatch; state: P
   const mayJoin = player !== null && !seated && (meta.solo_player === null || meta.solo_player === accountId);
   const stake = BigInt(meta.stake);
   const pot = stake * BigInt(meta.seats.length);
+  const free = meta.seats.find((seat) => seat.backer === null) ?? null;
   const open = meta.seats.filter((seat) => seat.backer === null).length;
   // What a game account must hold to sit: enough for the node to take the join, and enough left to make moves after it.
   const needed = (() => {
@@ -202,19 +214,19 @@ function Lobby({ match, state, helper, onJoined }: { match: ChainMatch; state: P
   };
   const take = async (seat: number) => {
     if (!player) return;
-    setJoining(seat);
+    setJoining(true);
     setFailed(null);
     try {
       if (player.via === "helper") await devJoin(meta.id, seat, player.accountId);
       else await sendStake(player, joinCalls(meta.id, seat, stake));
+      armAgent(meta.id, player.accountId);
       await onJoined();
       void state.refreshBalance();
     } catch (error) {
       setFailed(problemText(error));
     }
-    setJoining(null);
+    setJoining(false);
   };
-
   const share = async () => {
     const here = new URL(window.location.href);
     here.search = "";
@@ -226,113 +238,124 @@ function Lobby({ match, state, helper, onJoined }: { match: ChainMatch; state: P
     }
   };
 
+  const line = open === 0 ? "Every seat is taken." : seated ? "You are in. One seat to fill." : mayJoin ? "A seat is open. Sit down." : "Boarding now.";
+
   return (
-    <main className="tp dl">
-      <nav className="dl-back">
-        <Link href="/play">← All matches</Link>
-      </nav>
-      <section className="dl-ticket" aria-label={`Match ${meta.id}`}>
-        <div className="dl-ticket__main">
-          <p className="dl-ticket__kicker">
-            <Icon name="plane" size={16} /> Boarding · {open === 0 ? "starting" : `${open} seat${open > 1 ? "s" : ""} open`}
+    <Hall gate>
+      <div className="fd-hall">
+        <section className="fd-wall">
+          <h1 className="fd-line">{line}</h1>
+          <p className="fd-lede">
+            Match <code className="fd-code">{meta.id}</code>, held by {CHAIN.contractId}. The game starts by itself when the last seat is taken.
           </p>
-          <h1 className="dl-ticket__code">{meta.id}</h1>
-          <div className="dl-pot">
-            <span>Pot</span>
-            <strong>{formatNear(pot.toString())}</strong>
-            <span>NEAR</span>
-          </div>
-          <div className="dl-split" aria-label="How the pot is shared">
-            {meta.split.map((share, rank) => (
-              <span key={rank} style={{ flexGrow: share } as CSSProperties} data-rank={rank}>
-                {rank === 0 ? "1st" : rank === 1 ? "2nd" : rank === 2 ? "3rd" : "4th"} · {formatBps(share)}
-              </span>
-            ))}
-          </div>
-          {meta.fee_bps > 0 && <p className="dl-muted">The contract keeps {formatBps(meta.fee_bps)} of the pot; the ranks share the rest.</p>}
-        </div>
-        <ul className="dl-ticket__stub">
-          <li>
-            <Icon name="coins" size={18} />
-            <span>
-              <strong>{formatNear(meta.stake)} NEAR</strong>
-              <small>a seat</small>
-            </span>
-          </li>
-          <li>
-            <Icon name="laps" size={18} />
-            <span>
-              <strong>{meta.rules.maxRounds}</strong>
-              <small>{meta.rules.maxRounds === 1 ? "round" : "rounds"}</small>
-            </span>
-          </li>
-          <li>
-            <Icon name="clock" size={18} />
-            <span>
-              <strong>{meta.turn_seconds} s</strong>
-              <small>a turn</small>
-            </span>
-          </li>
-          <li>
-            <Icon name="seat" size={18} />
-            <span>
-              <strong>{meta.rules.cash}</strong>
-              <small>{meta.rules.blitz ? "Blitz start" : "to start"}</small>
-            </span>
-          </li>
-        </ul>
-      </section>
+          <section className="fd-board" aria-label={`Seats of match ${meta.id}`}>
+            <h2 className="fd-board__title">
+              <Seat size={24} /> Gate
+              <span className="fd-board__state">{open === 0 ? <Flap text="STARTING" /> : <span className="fd-chip">Boarding · {open} open</span>}</span>
+            </h2>
+            <ul className="fd-seats">
+              {meta.seats.map((seat) => {
+                const empty = seat.backer === null;
+                return (
+                  <li key={seat.seat} className="fd-seat" data-free={empty || undefined} style={{ "--seat": TOKEN_COLORS[seat.seat] } as CSSProperties}>
+                    <span className="fd-seat__face">{faces[seat.seat] ? <img src={faces[seat.seat]!} alt="" /> : <b>{seat.seat + 1}</b>}</span>
+                    <p>
+                      <small>Seat {seat.seat + 1}</small>
+                      <strong>{empty ? "Open" : seat.backer === accountId ? `${names[seat.seat]} (you)` : names[seat.seat]}</strong>
+                    </p>
+                    <Flap text={empty ? "WAITING" : seat.house ? "THE HOUSE" : "SEATED"} />
+                  </li>
+                );
+              })}
+            </ul>
+            <dl className="fd-terms">
+              <div>
+                <dt>Rounds</dt>
+                <dd>{meta.rules.maxRounds}</dd>
+              </div>
+              <div>
+                <dt>A turn</dt>
+                <dd>{meta.turn_seconds} s</dd>
+              </div>
+              <div>
+                <dt>{meta.rules.blitz ? "Blitz start" : "Cash to start"}</dt>
+                <dd>{meta.rules.cash}</dd>
+              </div>
+              <div>
+                <dt>Late player</dt>
+                <dd>moved by the contract</dd>
+              </div>
+            </dl>
+          </section>
+          <Link className="fd-back" href="/play">
+            <Arrow size={18} /> All departures
+          </Link>
+        </section>
 
-      <section className="dl-seats" aria-label="Seats">
-        {meta.seats.map((seat) => {
-          const free = seat.backer === null;
-          return (
-            <article key={seat.seat} className="dl-seat" data-free={free || undefined} style={{ "--seat": TOKEN_COLORS[seat.seat] } as CSSProperties}>
-              <span className="dl-seat__face">{faces[seat.seat] ? <img src={faces[seat.seat]!} alt="" /> : <b>{seat.seat + 1}</b>}</span>
-              <small>Seat {seat.seat + 1}</small>
-              <strong>{free ? "Open" : names[seat.seat]}</strong>
-              {free && mayJoin ? (
-                <button type="button" className="tp-btn tp-btn--main tp-btn--small" disabled={joining !== null || short} onClick={() => take(seat.seat)}>
-                  {joining !== seat.seat ? `Sit · ${formatNear(meta.stake)} NEAR` : player?.via === "wallet" ? "In your wallet…" : "Staking…"}
+        <aside className="fd-ticket" aria-label="Your ticket">
+          <section className="fd-stub" aria-label="Boarding pass">
+            <h2 className="fd-stub__title">Boarding pass</h2>
+            <dl className="fd-sum fd-sum--top">
+              <div>
+                <dt>Pot</dt>
+                <dd>
+                  {formatNear(pot.toString())} <small>NEAR</small>
+                </dd>
+              </div>
+              <div>
+                <dt>A seat</dt>
+                <dd>
+                  {formatNear(meta.stake)} <small>NEAR</small>
+                </dd>
+              </div>
+            </dl>
+            <div className="fd-split" aria-label="How the pot is shared">
+              {meta.split.map((share, rank) => (
+                <span key={rank} style={{ flexGrow: share } as CSSProperties} data-rank={rank}>
+                  {rank === 0 ? "1st" : rank === 1 ? "2nd" : rank === 2 ? "3rd" : "4th"} · {formatBps(share)}
+                </span>
+              ))}
+            </div>
+            {meta.fee_bps > 0 && <p className="fd-fine">The contract keeps {formatBps(meta.fee_bps)} of the pot; the ranks share the rest.</p>}
+            {free && mayJoin && (
+              <button type="button" className="fd-go" disabled={joining || short} onClick={() => take(free.seat)}>
+                {joining ? (player?.via === "wallet" ? "Waiting for your wallet…" : "Staking…") : `Take seat ${free.seat + 1} · ${formatNear(meta.stake)} NEAR`}
+                {!joining && <Arrow size={20} />}
+              </button>
+            )}
+            {free && !player && <p className="fd-small">Check in below to take the open seat.</p>}
+            {short && free && mayJoin && (
+              <p className="fd-fine">
+                Your game account needs {formatNear(needed.toString(), 2)} NEAR to sit here: the {formatNear(meta.stake)} stake and about{" "}
+                {formatNear((needed - stake).toString(), 2)} the network holds for gas while you play. The hold comes back.
+              </p>
+            )}
+            {seated && open > 0 && (
+              <div className="fd-acts">
+                <button type="button" className="fd-go" onClick={share}>
+                  <Copy size={18} /> {copied ? "Link copied" : "Copy the invitation link"}
                 </button>
-              ) : (
-                <span className="dl-seat__state">{free ? "waiting" : seat.backer === accountId ? "you" : seat.house ? "the house" : "seated"}</span>
-              )}
-            </article>
-          );
-        })}
-      </section>
-
-      <p className="dl-muted dl-center">
-        {open === 0
-          ? "Every seat is taken: the game is starting."
-          : seated
-            ? "You are in. The game starts by itself when the last seat is taken."
-            : short
-              ? `Your game account needs ${formatNear(needed.toString(), 2)} NEAR to sit here: the stake, and about 0.1 the network holds for gas while you play (it comes back).`
-              : "The game starts by itself when the last seat is taken."}
-      </p>
-      {seated && open > 0 && (
-        <button type="button" className="tp-btn dl-center" onClick={share}>
-          <Icon name="copy" size={16} /> {copied ? "Link copied" : "Copy the invitation link"}
-        </button>
-      )}
-      {open > 0 && helper?.agent && meta.solo_player === null && (
-        <>
-          <button type="button" className="tp-btn tp-btn--main dl-center" disabled={inviting} onClick={inviteAgent}>
-            {inviting ? "The AI is taking its seat…" : "Play against the AI"}
-          </button>
-          <p className="dl-muted dl-center">A test account of the local helper stakes the open seat and plays it by an AI agent's plans, one transaction a turn.</p>
-        </>
-      )}
-      {failed && (
-        <p className="dl-problem dl-center" role="alert">
-          {failed}
-        </p>
-      )}
-
-      <Passport state={state} helper={helper} />
-    </main>
+                {helper?.agent && meta.solo_player === null && (
+                  <button type="button" className="fd-pill" disabled={inviting} onClick={inviteAgent}>
+                    <Bot size={16} /> {inviting ? "The AI is taking its seat…" : "Play against the AI"}
+                  </button>
+                )}
+              </div>
+            )}
+            {seated && open > 0 && helper?.agent && meta.solo_player === null && (
+              <p className="fd-fine">A test account of the local helper stakes the open seat and plays it by an AI agent&rsquo;s plans, one transaction a turn.</p>
+            )}
+            {failed && (
+              <p className="fd-problem" role="alert">
+                {failed}
+              </p>
+            )}
+          </section>
+          <PassengerStub state={state} helper={helper} />
+          <AgentStub desk={desk} signedIn={Boolean(player)} />
+        </aside>
+      </div>
+    </Hall>
   );
 }
 

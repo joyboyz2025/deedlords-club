@@ -73,3 +73,16 @@ export const MOVE_HOLD = MOVE_GAS * GAS_HOLD;
 
 /** NEAR as yoctoNEAR, for amounts with at most three decimals. */
 export const near = (amount: number): bigint => BigInt(Math.round(amount * 1000)) * 1_000_000_000_000_000_000_000n;
+
+/** The smallest stake a seat may cost in a match opened from the web page, in NEAR. */
+export const SMALLEST_STAKE = 0.05;
+
+/**
+ * What a game account must hold to open a duel on these terms: enough for a node to take the transaction (stake,
+ * storage deposit and the hold on its gas), and enough left to make moves after it. One figure, wherever it is told.
+ */
+export function neededToOpen(terms: DuelTerms): bigint {
+  const hold = upfront(openDuelCalls("m", terms));
+  const after = terms.stake + STORAGE_DEPOSIT + MOVE_HOLD + near(0.005);
+  return hold > after ? hold : after;
+}
