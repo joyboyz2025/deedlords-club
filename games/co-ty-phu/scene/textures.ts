@@ -119,7 +119,7 @@ function drawTile(ctx: CanvasRenderingContext2D, index: number, fonts: { text: s
     ctx.fillStyle = GROUPS[square.group].color;
     ctx.fillRect(-w / 2, -h / 2, w, BAND * u);
   } else if (square.kind === "station" || square.kind === "utility" || square.kind === "tax" || square.kind === "card") {
-    const icon = square.kind === "utility" ? (square.name === "Điện lực" ? "power" : "water") : square.kind === "card" ? square.deck : square.kind;
+    const icon = square.kind === "utility" ? (/power/i.test(square.name) ? "power" : "water") : square.kind === "card" ? square.deck : square.kind;
     // Ô có giá thì hình nhỏ lại, chừa chỗ cho giá.
     const card = square.kind === "card";
     ctx.save();
@@ -190,11 +190,10 @@ function drawCorner(ctx: CanvasRenderingContext2D, index: number, fonts: { text:
   ctx.rotate(LEVEL);
   ctx.fillStyle = INK;
   if (kind === "start") {
-    fitText(ctx, "XUẤT", 0, -0.75 * u, 0.52 * u, 1.6 * u, fonts.title, "400");
-    fitText(ctx, "PHÁT", 0, -0.2 * u, 0.52 * u, 2.4 * u, fonts.title, "400");
+    fitText(ctx, "DEPARTURE", 0, -0.45 * u, 0.5 * u, 2.7 * u, fonts.title, "400");
     // Tiền qua Xuất phát của ván này.
     ctx.fillStyle = "#c0392b";
-    fitText(ctx, `+${salary.toLocaleString("vi-VN")}`, 0, 0.38 * u, 0.46 * u, 2.2 * u, fonts.text, "900");
+    fitText(ctx, `+${salary.toLocaleString("en-US")}`, 0, 0.38 * u, 0.46 * u, 2.2 * u, fonts.text, "900");
     // Mũi tên chỉ hướng đi: sang trái, về phía Tạm giữ.
     ctx.fillStyle = "#d32f22";
     ctx.beginPath();
@@ -202,12 +201,12 @@ function drawCorner(ctx: CanvasRenderingContext2D, index: number, fonts: { text:
     ctx.closePath();
     ctx.fill();
   } else if (kind === "jail") {
-    plateText(ctx, "TẠM GIỮ", 0.85 * u, 0, 0.34 * u, 1.4 * u, fonts.title);
+    plateText(ctx, "CUSTOMS", 0.85 * u, 0, 0.34 * u, 1.4 * u, fonts.title);
     // Người ghé thăm đứng ở nửa trên bên trái; chữ ở nửa dưới cho khỏi bị che.
-    fitText(ctx, "GHÉ", -0.45 * u, 0.42 * u, 0.32 * u, 1.2 * u, fonts.title, "400");
-    fitText(ctx, "THĂM", -0.45 * u, 0.8 * u, 0.32 * u, 1.2 * u, fonts.title, "400");
+    fitText(ctx, "JUST", -0.45 * u, 0.42 * u, 0.32 * u, 1.2 * u, fonts.title, "400");
+    fitText(ctx, "VISITING", -0.45 * u, 0.8 * u, 0.32 * u, 1.2 * u, fonts.title, "400");
   } else if (kind === "rest") {
-    fitText(ctx, "NGHỈ CHÂN", 0, 0.4 * u, 0.48 * u, 2.5 * u, fonts.title, "400");
+    fitText(ctx, "TRANSIT LOUNGE", 0, 0.4 * u, 0.48 * u, 2.5 * u, fonts.title, "400");
     // Ly cà phê sữa đá, bên trái: người dừng chân đứng ở nửa trên bên phải.
     ctx.save();
     ctx.translate(-0.85 * u, -0.3 * u);
@@ -226,9 +225,9 @@ function drawCorner(ctx: CanvasRenderingContext2D, index: number, fonts: { text:
     ctx.fillRect(0.06 * u, -0.75 * u, 0.06 * u, 0.5 * u);
     ctx.restore();
   } else if (kind === "arrest") {
-    fitText(ctx, "BỊ BẮT", 0, -0.5 * u, 0.56 * u, 2.0 * u, fonts.title, "400");
+    fitText(ctx, "VISA DENIED", 0, -0.5 * u, 0.5 * u, 2.7 * u, fonts.title, "400");
     ctx.fillStyle = "#6b4a33";
-    fitText(ctx, "Vào thẳng tạm giữ", 0, 0.05 * u, 0.24 * u, 3.0 * u, fonts.text, "800");
+    fitText(ctx, "Go to Customs Hold", 0, 0.05 * u, 0.24 * u, 3.0 * u, fonts.text, "800");
     // Biển cấm đi: tròn đỏ, vạch trắng. Ai bị bắt đứng ở nửa dưới bên phải nên biển ở bên trái.
     ctx.fillStyle = "#c8352a";
     ctx.beginPath();
@@ -369,7 +368,7 @@ export function arrowTexture(): THREE.CanvasTexture {
 
 /** Số tiền nổi trên đầu người chơi: đỏ khi mất tiền, xanh khi được tiền, viền đậm cho nền nào cũng đọc được. */
 export function moneyTexture(amount: number, family: string): { texture: THREE.CanvasTexture; aspect: number } {
-  const text = `${amount > 0 ? "+" : "−"}${Math.abs(amount).toLocaleString("vi-VN")}`;
+  const text = `${amount > 0 ? "+" : "−"}${Math.abs(amount).toLocaleString("en-US")}`;
   const height = 64;
   const font = `900 44px ${family}`;
   const measure = document.createElement("canvas").getContext("2d")!;

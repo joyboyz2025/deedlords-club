@@ -311,7 +311,7 @@ export class Chibi {
 
   private applyLabel(): void {
     const { name, title, self, away, rim } = this.actor;
-    const shown = self ? "Bạn" : name;
+    const shown = self ? "You" : name;
     const key = `${shown}|${title}|${self}|${rim ?? ""}`;
     this.labelMaterial.opacity = away ? 0.5 : 1;
     if (key === this.labelKey) return;

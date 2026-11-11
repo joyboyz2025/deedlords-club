@@ -24,7 +24,7 @@ function nameLines(short: string): [string, string] {
   return space < 0 ? [short, ""] : [short.slice(0, space), short.slice(space + 1)];
 }
 
-export const money = (amount: number) => amount.toLocaleString("vi-VN");
+export const money = (amount: number) => amount.toLocaleString("en-US");
 
 type Props = {
   view: View;
@@ -96,9 +96,9 @@ function cellLabel(view: View, index: number): string {
   const owned = view.props[index];
   const owner = owned && view.players.find((p) => p.id === owned.owner)?.name;
   const parts = [square.name];
-  if (isOwnable(square)) parts.push(owner ? `của ${owner}` : `giá ${square.price}`);
-  if (owned?.houses) parts.push(owned.houses === 5 ? "có khách sạn" : `${owned.houses} nhà`);
-  if (owned?.mortgaged) parts.push("đang cầm cố");
+  if (isOwnable(square)) parts.push(owner ? `owned by ${owner}` : `price ${square.price}`);
+  if (owned?.houses) parts.push(owned.houses === 5 ? "with a hotel" : `${owned.houses} house${owned.houses > 1 ? "s" : ""}`);
+  if (owned?.mortgaged) parts.push("mortgaged");
   return parts.join(", ");
 }
 
@@ -111,7 +111,7 @@ export function SquareDetail({ view, index, onClose }: { view: View; index: numb
     <div className="tp-detail" role="dialog" aria-label={square.name}>
       <div className="tp-detail__head" style={{ background: square.kind === "city" ? GROUPS[square.group].color : undefined }}>
         <strong>{square.name}</strong>
-        <button type="button" className="tp-detail__close" onClick={onClose} aria-label="Đóng">
+        <button type="button" className="tp-detail__close" onClick={onClose} aria-label="Close">
           ×
         </button>
       </div>
@@ -120,7 +120,7 @@ export function SquareDetail({ view, index, onClose }: { view: View; index: numb
           <tbody>
             {cityRents(square.price).map((rent, houses) => (
               <tr key={houses} className={owned && owned.houses === houses && !owned.mortgaged ? "tp-rents--now" : undefined}>
-                <th>{houses === 0 ? "Đất trống" : houses === 5 ? "Khách sạn" : `${houses} nhà`}</th>
+                <th>{houses === 0 ? "Empty lot" : houses === 5 ? "Hotel" : `${houses} house${houses > 1 ? "s" : ""}`}</th>
                 <td>{money(rent)}</td>
               </tr>
             ))}
@@ -129,26 +129,26 @@ export function SquareDetail({ view, index, onClose }: { view: View; index: numb
       )}
       {square.kind === "city" && (
         <p>
-          Đủ bộ {GROUPS[square.group].name.toLowerCase()} mà chưa có nhà thì tiền thuê gấp đôi. Chủ đất dừng lại ở đây thì xây thêm được một nhà, giá {houseCost(index)}.
+          Owning all of {GROUPS[square.group].name} doubles the rent while there are no houses. The owner may add one house when stopping here, for {houseCost(index)}.
         </p>
       )}
-      {square.kind === "station" && <p>Tiền vé 25, 50, 100, 200 khi chủ có 1, 2, 3, 4 bến.</p>}
-      {square.kind === "utility" && <p>Trả 4 lần số chấm vừa đổ; chủ có cả điện và nước thì 10 lần.</p>}
-      {square.kind === "tax" && <p>Đứng vào thì trả ngân hàng {square.amount}.</p>}
-      {square.kind === "card" && <p>Đứng vào thì rút một thẻ {square.name}.</p>}
-      {square.kind === "start" && <p>Mỗi lần đi qua nhận {money(view.settings.salary ?? SALARY)}.</p>}
-      {square.kind === "jail" && <p>Ghé thăm thì không sao. Người bị tạm giữ ra bằng cách đổ đôi, nộp 50 hoặc dùng thẻ.</p>}
-      {square.kind === "rest" && <p>Nghỉ chân, không có gì xảy ra.</p>}
-      {square.kind === "arrest" && <p>Đứng vào là vào thẳng tạm giữ, không qua Xuất phát.</p>}
+      {square.kind === "station" && <p>Toll 25, 50, 100, 200 when the owner holds 1, 2, 3, 4 passages.</p>}
+      {square.kind === "utility" && <p>Pay 4 times the dice just rolled; 10 times when the owner holds both utilities.</p>}
+      {square.kind === "tax" && <p>Landing here costs {square.amount}, paid to the bank.</p>}
+      {square.kind === "card" && <p>Landing here draws a {square.name} card.</p>}
+      {square.kind === "start" && <p>Passing here pays {money(view.settings.salary ?? SALARY)}.</p>}
+      {square.kind === "jail" && <p>Just visiting is free. Whoever is held leaves by rolling a double, paying 50 or using a card.</p>}
+      {square.kind === "rest" && <p>A rest stop: nothing happens.</p>}
+      {square.kind === "arrest" && <p>Landing here sends you straight to Customs Hold, without passing Departure.</p>}
       {isOwnable(square) && (
         <p className="tp-detail__owner">
           {owner ? (
             <>
-              Của <strong>{owner.name}</strong>
-              {owned.mortgaged && ", đang cầm cố"}
+              Owned by <strong>{owner.name}</strong>
+              {owned.mortgaged && ", mortgaged"}
             </>
           ) : (
-            <>Chưa có chủ. Giá {money(square.price)}, cầm cố được {money(square.price / 2)}.</>
+            <>No owner. Price {money(square.price)}, mortgages for {money(square.price / 2)}.</>
           )}
         </p>
       )}
