@@ -4,6 +4,7 @@
 // It only writes: nothing is stored here. The owner's browser keeps the playbook and sends it along with each turn.
 
 import { MAX_WISH, askPlaybook, llmConfig, llmFor, llmModels } from "@/games/co-ty-phu/agent/llm";
+import { clientKey, intEnv, rateLimiter, underBudget } from "@/games/co-ty-phu/agent/rateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,12 @@ export const dynamic = "force-dynamic";
 const WRITE_TIMEOUT_MS = 20_000;
 const fresh = { "cache-control": "no-store" };
 const refuse = (status: number, error: string) => Response.json({ error }, { status, headers: fresh });
+
+// Writing a playbook has no free fallback (the point of the call is the model), so a caller over budget is told so,
+// not served a quiet substitute. One wish costs more tokens than one turn's plan, so the ceiling is tighter than the
+// turn desk's; see app/api/agent/route.ts for the matching comment.
+const perIpLimiter = rateLimiter(intEnv(process.env.DEEDLORDS_PLAYBOOK_IP_LIMIT, 5), 10 * 60_000);
+const globalLimiter = rateLimiter(intEnv(process.env.DEEDLORDS_PLAYBOOK_GLOBAL_LIMIT, 60), 60 * 60_000);
 
 export function GET(): Response {
   return Response.json({ models: llmModels(process.env), default: llmConfig(process.env)?.model ?? null }, { headers: fresh });
@@ -28,6 +35,7 @@ export async function POST(request: Request): Promise<Response> {
   if (model !== undefined && typeof model !== "string") return refuse(400, "model: a name from GET");
   const llm = llmFor(process.env, model as string | undefined);
   if (!llm) return refuse(llmConfig(process.env) ? 400 : 503, llmConfig(process.env) ? `model ${model} is not offered here` : "no model is configured on this server");
+  if (!underBudget(perIpLimiter, globalLimiter, clientKey(request))) return refuse(429, "too many playbook requests right now; try again in a few minutes, or write the rules by hand below");
 
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), WRITE_TIMEOUT_MS);

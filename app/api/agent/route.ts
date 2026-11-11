@@ -10,6 +10,7 @@ import { advise, type Advice } from "@/games/co-ty-phu/agent/advise";
 import { AdviceBook } from "@/games/co-ty-phu/agent/book";
 import { MAX_STYLE, RULES_MODEL, llmConfig, llmFor } from "@/games/co-ty-phu/agent/llm";
 import { cleanPlaybook } from "@/games/co-ty-phu/agent/playbook";
+import { clientKey, intEnv, rateLimiter, underBudget } from "@/games/co-ty-phu/agent/rateLimit";
 import type { ChainMatch } from "@/games/co-ty-phu/chain/types";
 import { CHAIN } from "@/lib/chain/config";
 import { chainClient } from "@/lib/chain/shared";
@@ -21,6 +22,13 @@ const MATCH_ID = /^[A-Za-z0-9_-]{1,32}$/;
 const shelf = globalThis as { deedlordsAdvice?: AdviceBook; deedlordsAsking?: Map<string, Promise<Advice | null>> };
 const book = (shelf.deedlordsAdvice ??= new AdviceBook());
 const asking = (shelf.deedlordsAsking ??= new Map());
+
+// A model call costs the server's owner money; a turn is already asked at most once (the book above dedups by turn),
+// but a public deployment still wants a ceiling on how many *different* turns pay for a model. Past it, the playbook
+// or the rule bot plays instead: the move is never refused, only made without a model's help. Defaults are generous
+// for one person testing and tight enough that a forgotten public demo cannot run away; both are one env var to raise.
+const perIpLimiter = rateLimiter(intEnv(process.env.DEEDLORDS_LLM_IP_LIMIT, 20), 10 * 60_000);
+const globalLimiter = rateLimiter(intEnv(process.env.DEEDLORDS_LLM_GLOBAL_LIMIT, 300), 60 * 60_000);
 
 const refuse = (status: number, error: string) => Response.json({ error }, { status, headers: { "cache-control": "no-store" } });
 
@@ -57,9 +65,12 @@ export async function POST(request: Request): Promise<Response> {
   const ticket = `${id}:${seat}:${turnKey}`;
   let pending = asking.get(ticket);
   if (!pending) {
+    // Over budget: the playbook or the rule bot plays this turn instead of a model, same as a model that failed.
+    const overBudget = llm !== null && !underBudget(perIpLimiter, globalLimiter, clientKey(request));
     const live = match;
-    pending = advise(live, seat, { llm, style: style as string | undefined, playbook })
+    pending = advise(live, seat, { llm: overBudget ? null : llm, style: style as string | undefined, playbook })
       .then((advice) => {
+        if (advice && overBudget) Object.assign(advice, { fallback: true, problem: "the model is answering too many requests right now" });
         if (advice) book.remember(id, seat, turnKey, live.game.round, advice, Date.now());
         return advice;
       })
