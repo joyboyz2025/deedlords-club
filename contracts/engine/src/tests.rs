@@ -1,4 +1,4 @@
-//! Unit tests. Ported from `tests/co-ty-phu.test.ts` (adjusted for cards drawn with replacement and the capitals board;
+//! Unit tests. Ported from `tests/co-ty-phu.test.ts` (adjusted for cards drawn with replacement and the cities board;
 //! trades, lobby settings, time limit and `removeAbsent` are not ported), plus Blitz, `maxRounds`, formulas and Rng order.
 
 use std::collections::{BTreeSet, VecDeque};
@@ -891,7 +891,7 @@ fn max_rounds_ends_the_game_on_the_wrap_and_ranks_by_net_worth_with_stable_ties(
     assert!(game.card.is_some(), "nothing else is reset");
     let result = game.result.clone().unwrap();
     assert_eq!(result.reason, Reason::Time);
-    assert_eq!(result.ranking, ["p2", "p0", "p1"], "Hanoi makes p2 richest; p0 and p1 tie and keep turn order");
+    assert_eq!(result.ranking, ["p2", "p0", "p1"], "Monaco makes p2 richest; p0 and p1 tie and keep turn order");
     assert_eq!(game.net_worth("p2"), game.players[2].cash + 400);
 
     // No limit: the rounds just count.

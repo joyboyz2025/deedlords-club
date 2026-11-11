@@ -11,7 +11,7 @@ For the same players, the same actions and the same random values, both must pro
 
 The baseline is the pre-hackathon `engine.ts` (lobby, turn machine, rent, cards, jail, debt, bankruptcy, build/sell/mortgage/redeem, trades, time limit). Changes:
 
-1. **Board data comes from `shared/board.json`** (world capitals, English card texts). `board.ts` keeps the formulas below and re-exports the data.
+1. **Board data comes from `shared/board.json`** (world cities ranked by real prime property prices, English card texts). `board.ts` keeps the formulas below and re-exports the data.
 2. **All randomness goes through an `Rng` interface** (section 2), consumed in a fixed order.
 3. **Cards are drawn with replacement.** There are no shuffled decks any more. The `decks` field is removed. (A pre-shuffled deck is hidden information that someone must hold; on-chain there must be none.)
 4. **Rounds and `maxRounds`.** New fields `round` and `rules.maxRounds` (section 4).

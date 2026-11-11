@@ -294,7 +294,7 @@ test("cờ tỷ phú: để quá giờ thì máy bấm hộ: đổ, bỏ qua mua
   assert.equal(game.stage, "end");
   assert.equal(game.props[1], undefined);
   assert.equal(an.cash, cash);
-  assert.ok(game.log.includes("An timed out and does not buy Lima."));
+  assert.ok(game.log.includes("An timed out and does not buy São Paulo."));
 
   game.again = true;
   const rolls = game.rolls;
@@ -444,11 +444,11 @@ test("cờ tỷ phú: nộp phạt hoặc dùng thẻ để ra trước khi đ�
 
 test("cờ tỷ phú: thẻ đi tới, lùi, bến gần nhất trả gấp đôi, vào tạm giữ, giữ thẻ ra tù", () => {
   const game = started();
-  const an = rollAs(game, 3, 4, draws(["chance", /Abuja/]));
+  const an = rollAs(game, 3, 4, draws(["chance", /Tokyo/]));
   assert.equal(an.position, 24);
   assert.equal(game.stage, "buy");
   assert.deepEqual(game.card, { deck: "chance", index: 1 });
-  assert.match(viewFor(game, "p1", { code: "ABCD", online: new Set(), now: T0 }).card!.text, /Abuja/);
+  assert.match(viewFor(game, "p1", { code: "ABCD", online: new Set(), now: T0 }).card!.text, /Tokyo/);
   skipBuying(game, an.id);
   endTurn(game, an.id);
 
@@ -575,7 +575,7 @@ test("cờ tỷ phú: đổi đất và tiền, người nhận đồng ý thì 
   give(game, "p0", 1);
   game.props[1].houses = 1;
   proposeTrade(game, "p0", { to: "p1", give: [1], take: [], giveCash: 0, takeCash: 10 });
-  assert.equal(game.trade, null, "Lima đang có nhà");
+  assert.equal(game.trade, null, "São Paulo đang có nhà");
   proposeTrade(game, "p0", { to: "p1", give: [], take: [], giveCash: 0, takeCash: 0 });
   assert.equal(game.trade, null, "không đổi gì");
   proposeTrade(game, "p0", { to: "p1", give: [39], take: [], giveCash: 0, takeCash: 99_999 });
@@ -607,7 +607,7 @@ test("cờ tỷ phú: hết giờ thì chơi nốt vòng rồi xếp hạng theo
   }
   assert.equal(game.phase, "ended");
   assert.equal(game.result!.reason, "time");
-  assert.equal(game.result!.ranking[0], "p2", "Hanoi làm Chi giàu nhất");
+  assert.equal(game.result!.ranking[0], "p2", "Monaco làm Chi giàu nhất");
   assert.equal(netWorth(game, "p2"), player(game, 2).cash + 400);
 });
 

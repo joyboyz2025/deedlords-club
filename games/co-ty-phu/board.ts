@@ -1,4 +1,4 @@
-// Bàn cờ và thẻ của Cờ tỷ phú. The data (world capitals, English card texts) lives in `shared/board.json`, shared with
+// Bàn cờ và thẻ của Cờ tỷ phú. The data (world cities ranked by real prime property prices, English card texts) lives in `shared/board.json`, shared with
 // the Rust engine in `contracts/`; this file re-exports it with types and keeps the formulas of docs/ENGINE-RULES.md §6.
 // Pure data, used by both the server and the browser.
 

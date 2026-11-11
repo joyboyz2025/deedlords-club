@@ -61,7 +61,7 @@ export function ChainHome() {
       <header className="dl-hero">
         <BoardArt />
         <h1 className="dl-logo">Deedlords</h1>
-        <p className="dl-tagline">Buy capitals, collect rent, take the pot. The rules, the dice and the stakes live in a NEAR contract.</p>
+        <p className="dl-tagline">Buy the world's priciest cities, collect rent, take the pot. The rules, the dice and the stakes live in a NEAR contract.</p>
         <p className="dl-chips">
           <span className="dl-chip">{CHAIN.contractId}</span>
           <span className="dl-chip">NEAR {CHAIN.network}</span>

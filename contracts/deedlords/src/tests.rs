@@ -607,7 +607,7 @@ fn force_debt(t: &mut T, id: &str, cash: i64, debt: i64, props: &[(u8, u8, bool)
 fn timeout_in_debt_sells_houses_then_mortgages_then_pays() {
     let mut t = T::new();
     started_pair(&mut t, MANY_ROUNDS);
-    // Owes 300 with 10 cash; Singapore (37, no houses) and Hanoi (39, two houses at 200 each).
+    // Owes 300 with 10 cash; Hong Kong (37, no houses) and Monaco (39, two houses at 200 each).
     let player = force_debt(&mut t, "m", 10, 300, &[(37, 0, false), (39, 2, false)]);
     t.now = t.m("m").turn_deadline + 1;
     t.call(CAROL, 0);
