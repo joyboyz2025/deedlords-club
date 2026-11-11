@@ -1,0 +1,173 @@
+// Puts a new build of the Deedlords contract over the one that is live, when the new build reads the stored state as
+// it is (no `migrate`): what `resign` and hosted matches needed. Refuses mainnet.
+//
+//   node upgrade.js dry    a rehearsal on a LOCAL near-sandbox: the code that is live on testnet right now is fetched
+//                          and deployed there, matches are opened and played on it, the new wasm is deployed over it,
+//                          and those same matches must read the same and play on. Nothing is sent to testnet.
+//   node upgrade.js run    the deploy on testnet, signed by the game account (its key is in ~/.near-credentials).
+//
+// DEEDLORDS_PARENT (default deedlords.testnet), NEAR_RPC (default FastNEAR testnet), and the wasm path as last argument
+// (default ../target/wasm32-unknown-unknown/release/deedlords.wasm).
+
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const crypto = require("node:crypto");
+const assert = require("node:assert/strict");
+const { connect, keyStores, KeyPair, utils } = require("near-api-js");
+
+const PARENT = process.env.DEEDLORDS_PARENT ?? "deedlords.testnet";
+const GAME = `game.${PARENT}`;
+const RPC = process.env.NEAR_RPC ?? "https://test.rpc.fastnear.com";
+const WASM = process.argv[3] ?? path.join(__dirname, "../target/wasm32-unknown-unknown/release/deedlords.wasm");
+const TGAS = 10n ** 12n;
+const GAS = 300n * TGAS;
+const Y = 10n ** 24n;
+const hashOf = (bytes) => utils.serialize.base_encode(crypto.createHash("sha256").update(bytes).digest());
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function liveCode() {
+  const response = await fetch(RPC, {
+    method: "POST",
+    headers: { "content-type": "application/json", "user-agent": "deedlords-dev/0.1" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query", params: { request_type: "view_code", finality: "final", account_id: GAME } }),
+  });
+  const { result, error } = await response.json();
+  if (!result) throw new Error(`cannot read the code of ${GAME}: ${JSON.stringify(error)}`);
+  return { bytes: Buffer.from(result.code_base64, "base64"), hash: result.hash };
+}
+
+async function dry(wasm) {
+  const { Sandbox, DEFAULT_ACCOUNT_ID, DEFAULT_PRIVATE_KEY } = require("near-sandbox");
+  const live = await liveCode();
+  console.log(`live on ${GAME}: ${live.bytes.length} bytes, hash ${live.hash}`);
+  console.log("booting a local near-sandbox...");
+  const sandbox = await Sandbox.start({});
+  const stop = async () => {
+    const child = sandbox.childProcess;
+    child.kill("SIGKILL");
+    await sleep(500);
+    await fs.promises.rm(sandbox.homeDir, { recursive: true, force: true }).catch(() => {});
+  };
+  try {
+    const keyStore = new keyStores.InMemoryKeyStore();
+    await keyStore.setKey("sandbox", DEFAULT_ACCOUNT_ID, KeyPair.fromString(DEFAULT_PRIVATE_KEY));
+    const near = await connect({ networkId: "sandbox", nodeUrl: sandbox.rpcUrl, keyStore });
+    const root = await near.account(DEFAULT_ACCOUNT_ID);
+    const make = async (name, amount) => {
+      const id = `${name}.${DEFAULT_ACCOUNT_ID}`;
+      const key = KeyPair.fromRandom("ed25519");
+      await keyStore.setKey("sandbox", id, key);
+      await root.createAccount(id, key.getPublicKey(), BigInt(amount) * Y);
+      return near.account(id);
+    };
+    const game = await make("game", 30);
+    const [owner, house, alice, bob, carol] = [await make("owner", 5), await make("house", 5), await make("alice", 20), await make("bob", 20), await make("carol", 20)];
+    const contractId = game.accountId;
+    const call = (who, methodName, args, deposit = 0n) => who.functionCall({ contractId, methodName, args, gas: GAS, attachedDeposit: deposit });
+    const view = (methodName, args = {}) => game.viewFunction({ contractId, methodName, args });
+    const rules = { salary: 200, cash: 1500, blitz: false, max_rounds: 6 };
+    const open = (who, id, extra = {}) => call(who, "create_match", { id, seats: 2, stake: String(Y / 10n), split: [7000, 3000], rules, solo_player: null, turn_seconds: 60, ...extra }, Y / 10n);
+    const plan = { buy_reserve: 150, build: [], keep_reserve: 150, bail: false, liquidate: [] };
+    const seatOf = (match, account) => match.meta.seats.find((seat) => seat.backer === account.accountId).seat;
+    const playTurn = async (id) => {
+      const match = await view("get_match", { id });
+      const who = [alice, bob, carol].find((account) => match.meta.seats[match.meta.current_seat].backer === account.accountId);
+      await call(who, "turn", { id, seat: match.meta.current_seat, plan });
+    };
+
+    // The code that is live today, and what people have open on it: a lobby, and a game some turns in.
+    await game.deployContract(live.bytes);
+    await call(game, "new", { owner: owner.accountId, house: house.accountId, max_stake: String(10n * Y), fee_bps: 250 });
+    await open(alice, "lobby");
+    await call(alice, "join", { id: "lobby", seat: 0 }, Y / 10n);
+    await open(alice, "running");
+    await call(alice, "join", { id: "running", seat: 0 }, Y / 10n);
+    await call(bob, "join", { id: "running", seat: 1 }, Y / 10n);
+    for (let i = 0; i < 5; i++) await playTurn("running");
+    const before = { lobby: await view("get_match", { id: "lobby" }), running: await view("get_match", { id: "running" }), config: await view("get_config") };
+    assert.equal(before.running.meta.status, "playing");
+    assert.ok(before.running.log.length > 0);
+
+    // The new build over it: a plain deploy, no migrate.
+    await game.deployContract(wasm);
+    const withoutHost = (match) => ({ ...match, meta: Object.fromEntries(Object.entries(match.meta).filter(([key]) => key !== "host")) });
+    const after = { lobby: await view("get_match", { id: "lobby" }), running: await view("get_match", { id: "running" }), config: await view("get_config") };
+    assert.deepEqual(withoutHost(after.lobby), before.lobby, "the lobby reads as it was");
+    assert.deepEqual(withoutHost(after.running), before.running, "the game in progress reads as it was, log included");
+    assert.equal(after.lobby.meta.host, null, "a match opened before hosts existed has none");
+    assert.deepEqual(after.config, before.config);
+    console.log("  the open lobby and the game in progress read the same after the deploy");
+
+    // They play on: the old lobby still starts by itself, the old game takes turns, and a player can now give up.
+    await call(bob, "join", { id: "lobby", seat: 1 }, Y / 10n);
+    assert.equal((await view("get_match", { id: "lobby" })).meta.status, "playing", "an old lobby still starts with its last seat");
+    await playTurn("running");
+    const running = await view("get_match", { id: "running" });
+    const waiting = running.meta.current_seat === seatOf(running, alice) ? bob : alice;
+    const resigned = await call(waiting, "play", { id: "running", seat: seatOf(running, waiting), actions: ["Resign"] });
+    assert.ok(resigned.receipts_outcome.some((receipt) => receipt.outcome.logs.some((log) => log.includes('"kind":"resign"'))), "the resign shows in the events");
+    assert.equal(await view("get_match", { id: "running" }), null);
+    const result = await view("get_result", { id: "running" });
+    assert.equal(result.reason, "last");
+    assert.equal(result.backers[0], waiting === alice ? bob.accountId : alice.accountId, "whoever stayed wins");
+    console.log("  an old game played on, and giving up settled it");
+
+    // A hosted match: full is not started; only the host starts it, also with a key that can only call `play`.
+    await open(alice, "room", { host: alice.accountId, seats: 3, split: [6000, 3000, 1000] });
+    assert.equal((await view("get_match", { id: "room" })).meta.host, alice.accountId);
+    await call(alice, "join", { id: "room", seat: 0 }, Y / 10n);
+    await call(bob, "join", { id: "room", seat: 1 }, Y / 10n);
+    await call(carol, "join", { id: "room", seat: 2 }, Y / 10n);
+    assert.equal((await view("get_match", { id: "room" })).meta.status, "lobby", "a hosted match waits for its host");
+    await assert.rejects(call(bob, "start", { id: "room" }), /only the host may start/);
+    const sessionKey = KeyPair.fromRandom("ed25519");
+    await alice.addKey(sessionKey.getPublicKey(), contractId, ["play", "turn", "timeout", "set_driver", "leave"], Y / 4n);
+    const session = await (await connect({ networkId: "sandbox", nodeUrl: sandbox.rpcUrl, keyStore: (() => { const store = new keyStores.InMemoryKeyStore(); store.setKey("sandbox", alice.accountId, sessionKey); return store; })() })).account(alice.accountId);
+    await session.functionCall({ contractId, methodName: "play", args: { id: "room", seat: 0, actions: ["Start"] }, gas: 100n * TGAS });
+    const room = await view("get_match", { id: "room" });
+    assert.deepEqual([room.meta.status, room.meta.host, room.game.order.length], ["playing", null, 3]);
+    await playTurn("room");
+    console.log("  a hosted room of three waited for its host, who started it with a session key");
+    console.log("DRY RUN PASSED: the new build can be deployed over the live one");
+  } finally {
+    await stop();
+  }
+}
+
+async function run(wasm) {
+  if (!PARENT.endsWith(".testnet")) throw new Error("DEEDLORDS_PARENT must be a .testnet account: this script never runs on mainnet");
+  const keyStore = new keyStores.UnencryptedFileSystemKeyStore(path.join(os.homedir(), ".near-credentials"));
+  const near = await connect({ networkId: "testnet", nodeUrl: RPC, keyStore, headers: { "user-agent": "deedlords-dev/0.1" } });
+  if ((await near.connection.provider.status()).chain_id !== "testnet") throw new Error("the RPC is not testnet's");
+  if (!(await keyStore.getKey("testnet", GAME))) throw new Error(`no key for ${GAME} in ~/.near-credentials/testnet`);
+  const game = await near.account(GAME);
+  const live = await liveCode();
+  const next = hashOf(wasm);
+  console.log(`${GAME}: live ${live.hash} (${live.bytes.length} bytes) -> new ${next} (${wasm.length} bytes)`);
+  if (live.hash === next) return console.log("That build is already live: nothing to do.");
+  const view = (methodName, args = {}) => game.viewFunction({ contractId: GAME, methodName, args });
+  const open = await view("list_matches", { from_index: 0, limit: 50 });
+  const deployed = await game.deployContract(wasm);
+  console.log(`deployed: ${deployed.transaction.hash}`);
+  for (let i = 0; i < 10 && (await liveCode()).hash !== next; i++) await sleep(700);
+  const now = await liveCode();
+  assert.equal(now.hash, next, "the new code is live");
+  const still = await view("list_matches", { from_index: 0, limit: 50 });
+  assert.deepEqual(still.map((match) => match.id), open.map((match) => match.id), "every open match is still there");
+  for (const meta of still) assert.ok(await view("get_match", { id: meta.id }), `${meta.id} still reads`);
+  console.log(`config: ${JSON.stringify(await view("get_config"))}`);
+  console.log(`open matches, all still readable: ${still.map((match) => `${match.id} (${match.status})`).join(", ") || "none"}`);
+}
+
+(async () => {
+  const mode = process.argv[2];
+  const wasm = fs.readFileSync(WASM);
+  console.log(`wasm: ${WASM} (${wasm.length} bytes, hash ${hashOf(wasm)})`);
+  if (mode === "dry") await dry(wasm);
+  else if (mode === "run") await run(wasm);
+  else console.log("usage: node upgrade.js dry | run");
+})().catch((error) => {
+  console.error(error && error.stack ? error.stack : String(error));
+  process.exit(1);
+});

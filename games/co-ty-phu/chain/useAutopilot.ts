@@ -6,6 +6,7 @@ import { advise, type Advice } from "../agent/advise";
 import type { AgentNote } from "../agent/book";
 import type { Plan } from "../agent/plan";
 import type { RoomState } from "./room";
+import { instructions } from "../agent/roster";
 import { readAgent, type AgentProfile } from "./useAgent";
 
 // Handing one's own seat to an agent, in the tab: the plan comes from the agent's desk (/api/agent: a model, or the rule
@@ -27,7 +28,8 @@ export type Autopilot = {
 };
 
 async function askDesk(id: string, seat: number, agent: AgentProfile): Promise<Advice> {
-  const order = { id, seat, model: agent.model, playbook: agent.playbook, style: agent.wish || undefined };
+  // The owner's prompt and rules ride with the question and go no further: the desk keeps none of it.
+  const order = { id, seat, model: agent.model, playbook: agent.playbook, style: instructions(agent) || undefined };
   const response = await fetch("/api/agent", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(order) });
   if (!response.ok) throw new Error(`the agent's desk answered ${response.status}`);
   return (await response.json()) as Advice;

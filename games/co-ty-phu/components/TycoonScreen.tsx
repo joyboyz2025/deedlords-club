@@ -234,6 +234,8 @@ export type ChainStage = {
   autopilot?: { on: boolean; thinking: boolean; toggle: () => void; note: string | null } | null;
   /** The match's transactions, opened from the menu. */
   ledger?: (onClose: () => void) => ReactNode;
+  /** Gives up the match for the viewer's seat. Absent for somebody without a seat. */
+  resign?: () => void;
 };
 
 export type AgentTag = { driver: string; reason: string; fallback: boolean };
@@ -579,6 +581,7 @@ function Game({
             mode={camera}
             insets={insets}
             focus={selling ? offers : null}
+            rolling={chain?.busy ?? false}
             onTile={tap}
             onArrive={onArrive}
             onBroken={onBroken}
@@ -670,6 +673,19 @@ function Game({
                 <button type="button" className="tp-btn" onClick={() => setSheet({ kind: "rules" })}>
                   Rules
                 </button>
+                {chain?.resign && active && view.phase === "playing" && (
+                  <button
+                    type="button"
+                    className="tp-btn tp-btn--quit"
+                    onClick={() => {
+                      if (!window.confirm("Give up this match? Your cities go back to the bank and you take the last place. This cannot be undone.")) return;
+                      chain.resign?.();
+                      close();
+                    }}
+                  >
+                    Give up
+                  </button>
+                )}
                 {view.phase === "ended" && !showResult && (
                   <button
                     type="button"
@@ -704,7 +720,7 @@ function Game({
 
   return (
     <div className="tp-game">
-      <Board2D view={view} send={send} selected={selected} onSelect={pick}>
+      <Board2D view={view} send={send} selected={selected} onSelect={pick} busy={chain?.busy ?? false}>
         {result}
       </Board2D>
       <div className="tp-side">
@@ -839,7 +855,7 @@ function TurnControls({
     corner = (
       <div className="tp-turn">
         <span className="tp-turn__note" aria-live="polite">
-          {view.current !== mine.id ? (autopilot.note ?? "The AI plays your seat") : autopilot.thinking ? "The AI is planning…" : "The AI is moving on NEAR…"}
+          {view.current !== mine.id ? (autopilot.note ?? "The AI plays your seat") : autopilot.thinking ? "The AI is planning…" : "The AI is playing…"}
         </span>
         <button type="button" className="tp-btn" onClick={autopilot.toggle}>
           Take back
@@ -886,15 +902,8 @@ function TurnControls({
         </button>
       </div>
     );
-  } else if (busy && view.current === mine.id) {
-    corner = (
-      <div className="tp-turn">
-        <span className="tp-turn__note" aria-live="polite">
-          Rolling on NEAR…
-        </span>
-      </div>
-    );
   }
+  // A roll on its way shows as the dice themselves, tumbling until their numbers come: no words over the table.
   return (
     <>
       {center.length > 0 && <div className="tp-center">{center}</div>}
@@ -910,13 +919,13 @@ function useAutoLeft(view: View): number | null {
 }
 
 /** Bàn cờ 2D cho máy không vẽ được 3D: ô quanh viền, bảng điều khiển ở giữa bàn. */
-function Board2D({ view, send, selected, onSelect, children }: { view: View; send: Send; selected: number | null; onSelect: (index: number) => void; children: ReactNode }) {
+function Board2D({ view, send, selected, onSelect, busy, children }: { view: View; send: Send; selected: number | null; onSelect: (index: number) => void; busy: boolean; children: ReactNode }) {
   const landscape = useLandscape();
   const positions = useWalkingTokens(view);
   return (
     <div className="tp-board-wrap">
       <Board view={view} cols={landscape ? 13 : 9} rows={landscape ? 9 : 13} positions={positions} selected={selected} onSelect={onSelect}>
-        {selected !== null ? <SquareDetail view={view} index={selected} onClose={() => onSelect(selected)} /> : <Panel view={view} send={send} />}
+        {selected !== null ? <SquareDetail view={view} index={selected} onClose={() => onSelect(selected)} /> : <Panel view={view} send={send} busy={busy} />}
       </Board>
       {children}
     </div>
@@ -924,8 +933,8 @@ function Board2D({ view, send, selected, onSelect, children }: { view: View; sen
 }
 
 /** Xúc xắc trong bảng của bàn 2D. Bàn 3D đã có xúc xắc tung trong mâm nên không vẽ thêm. */
-function Dice({ view }: { view: View }) {
-  const [rolling, setRolling] = useState(false);
+function Dice({ view, busy = false }: { view: View; busy?: boolean }) {
+  const [thrown, setRolling] = useState(false);
   const [faces, setFaces] = useState<[number, number]>([1, 1]);
   const seen = useRef(view.rolls);
 
@@ -945,6 +954,14 @@ function Dice({ view }: { view: View }) {
     };
   }, [view.rolls]);
 
+  // A roll on its way: the faces keep changing until its numbers come.
+  useEffect(() => {
+    if (!busy) return;
+    const shake = setInterval(() => setFaces([1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)]), 70);
+    return () => clearInterval(shake);
+  }, [busy]);
+
+  const rolling = thrown || busy;
   const shown = rolling ? faces : view.dice;
   if (!shown) return null;
   return (
@@ -969,7 +986,7 @@ function Die({ face }: { face: number }) {
 }
 
 /** Bảng điều khiển giữa bàn 2D: tới lượt ai, xúc xắc, thẻ vừa rút, và các nút của người đang tới lượt. Bàn 3D dùng `TurnControls`. */
-function Panel({ view, send }: { view: View; send: Send }) {
+function Panel({ view, send, busy = false }: { view: View; send: Send; busy?: boolean }) {
   const current = view.players.find((p) => p.id === view.current);
   const mine = me(view);
   const myTurn = view.phase === "playing" && current?.id === mine.id && !view.pause;
@@ -984,7 +1001,7 @@ function Panel({ view, send }: { view: View; send: Send }) {
           {myTurn ? "Your turn" : `${current.name}'s turn`}
         </p>
       )}
-      <Dice view={view} />
+      <Dice view={view} busy={busy} />
       {view.card && (
         <div className={`tp-card tp-card--${view.card.deck}`}>
           <strong>{DECK_NAMES[view.card.deck]}</strong>
@@ -1327,7 +1344,7 @@ function PlayerCards({
                       AI · {agent.driver}
                       {agent.fallback ? " (fallback)" : ""}
                     </b>
-                    <span>{agent.reason}</span>
+                    {agent.reason && <span>{agent.reason}</span>}
                   </p>
                 )}
               </li>

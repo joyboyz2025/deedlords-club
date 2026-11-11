@@ -649,6 +649,27 @@ export function declareBankruptcy(game: Game, playerId: string): void {
   goBankrupt(game, player, game.debt.length === 1 && creditors.length === 1 ? creditors[0].id : null);
 }
 
+/**
+ * Giving up (ENGINE-RULES §7, `resign`): any player still in the game, at any time. They leave the way a bankrupt
+ * player does. In debt on their own turn the creditor is paid as in `declareBankruptcy`, so giving up is never a way
+ * around a debt; at any other moment everything goes back to the bank. A debt the current player owes to somebody
+ * who gives up is owed to the bank.
+ */
+export function resign(game: Game, playerId: string): void {
+  const player = find(game, playerId);
+  if (game.phase !== "playing" || !player || player.bankrupt || player.color === null) return;
+  note(game, `${player.name} gives up.`);
+  if (currentPlayer(game)?.id === player.id) {
+    if (game.stage === "debt" && game.debt) {
+      const creditors = game.debt.filter((payee) => payee.id !== null);
+      return goBankrupt(game, player, game.debt.length === 1 && creditors.length === 1 ? creditors[0].id : null);
+    }
+  } else if (game.debt) {
+    for (const payee of game.debt) if (payee.id === player.id) payee.id = null;
+  }
+  goBankrupt(game, player, null);
+}
+
 /** Người đang tới lượt rời ván quá lâu: bị loại, đất về ngân hàng. */
 export function removeAbsent(game: Game, playerId: string): void {
   const player = find(game, playerId);

@@ -27,10 +27,19 @@ export class ContractFailure extends Error {
   }
 }
 
+/**
+ * Whether `error` is a `ContractFailure`, by what it carries and not by its class: a server keeps one sender for all
+ * its routes, and the routes may each have been given their own copy of this file.
+ */
+export function isContractFailure(error: unknown): error is ContractFailure {
+  return error instanceof Error && error.name === "ContractFailure" && typeof (error as { hash?: unknown }).hash === "string";
+}
+
 type CallResult = { result?: number[]; error?: string };
+type Status = { SuccessValue?: string; Failure?: unknown };
 type TxResult = {
-  status?: { SuccessValue?: string; Failure?: unknown };
-  receipts_outcome?: { outcome: { logs: string[] } }[];
+  status?: Status;
+  receipts_outcome?: { outcome: { logs: string[]; executor_id?: string; status?: Status } }[];
 };
 
 /** What a relayer answers once the calls it was handed have run: what they returned, or the contract's refusal. */
@@ -176,6 +185,30 @@ export class ChainClient {
   }
 
   /**
+   * Sends a transaction somebody else signed (NEAR Auth, for an account whose key is not here) and waits until it
+   * has run. Throws `ContractFailure` when it was refused on chain, `RpcError` when the node would not take it.
+   */
+  async broadcast(bytes: Uint8Array, hash: string, signerId: string): Promise<Outcome> {
+    const { rpcUrl } = this.config;
+    try {
+      // Sending the same signed transaction twice is harmless (same hash), so a rate limit here is simply retried.
+      const result = await rpc<TxResult>(rpcUrl, "send_tx", { signed_tx_base64: toBase64(bytes), wait_until: "EXECUTED_OPTIMISTIC" }, { timeoutMs: 60_000, retryTimeout: false });
+      return outcomeOf(result, hash);
+    } catch (error) {
+      if (!(error instanceof RpcError && (error.code === "TIMEOUT_ERROR" || error.code === "TIMEOUT"))) throw error;
+    }
+    for (const until = Date.now() + 90_000; ;) {
+      try {
+        return outcomeOf(await rpc<TxResult>(rpcUrl, "tx", { tx_hash: hash, sender_account_id: signerId, wait_until: "EXECUTED_OPTIMISTIC" }, { timeoutMs: 30_000 }), hash);
+      } catch (error) {
+        const pending = error instanceof RpcError && (error.code === "TIMEOUT_ERROR" || error.code === "UNKNOWN_TRANSACTION" || error.code === "TIMEOUT");
+        if (!pending || Date.now() > until) throw error;
+        await sleep(300);
+      }
+    }
+  }
+
+  /**
    * `pipelined`: a transaction is only handed to the node before the next one may be signed, and its result is waited
    * for apart, so several can be on their way at once. For an account many requests send from (a server's).
    */
@@ -224,11 +257,16 @@ export class Session {
     return this.sendTo(this.client.config.contractId, calls);
   }
 
-  /** One transaction to any account: a transfer, or a player's delegate action sent to that player's own account. */
-  sendTo(receiverId: string, actions: Action[]): Promise<Outcome> {
+  /**
+   * One transaction to any account: a transfer, or a player's delegate action sent to that player's own account.
+   * `delegatedTo`: the account the delegate action inside calls. The transaction itself only hands the action over
+   * and succeeds whatever becomes of it, so what the call returned, or why it was refused, is read from the receipt
+   * it turned into.
+   */
+  sendTo(receiverId: string, actions: Action[], about: { delegatedTo?: string } = {}): Promise<Outcome> {
     if (!this.pipelined) return this.inTurn(() => this.retried((fresh) => this.sendOnce(receiverId, actions, fresh, true)));
     const handed = this.inTurn(() => this.retried((fresh) => this.sendOnce(receiverId, actions, fresh, false)));
-    return handed.then(({ hash }) => this.wait(hash).then((result) => outcomeOf(result, hash)));
+    return handed.then(({ hash }) => this.wait(hash).then((result) => outcomeOf(result, hash, about.delegatedTo)));
   }
 
   /**
@@ -355,10 +393,21 @@ export class Session {
   }
 }
 
-/** What a transaction that has run returned, or `ContractFailure` when it was refused. */
-function outcomeOf(result: TxResult, hash: string): Outcome {
+/**
+ * What a transaction that has run returned, or `ContractFailure` when it was refused. `delegatedTo`: the transaction
+ * carried a delegate action that calls that account; the answer and the refusal are then those of the call inside.
+ */
+function outcomeOf(result: TxResult, hash: string, delegatedTo?: string): Outcome {
   if (result.status?.Failure !== undefined) throw new ContractFailure(failureText(result.status.Failure), hash);
-  const returned = utf8.decode(fromBase64(result.status?.SuccessValue ?? ""));
+  let answered = result.status;
+  if (delegatedTo !== undefined) {
+    const receipts = result.receipts_outcome ?? [];
+    const refused = receipts.find((receipt) => receipt.outcome.status?.Failure !== undefined);
+    if (refused) throw new ContractFailure(failureText(refused.outcome.status!.Failure), hash);
+    // The first receipt is the hand-over itself; the call is the next one that runs on the account it names.
+    answered = receipts.slice(1).find((receipt) => receipt.outcome.executor_id === delegatedTo)?.outcome.status ?? {};
+  }
+  const returned = utf8.decode(fromBase64(answered?.SuccessValue ?? ""));
   let value: unknown = null;
   try {
     value = returned ? JSON.parse(returned) : null;

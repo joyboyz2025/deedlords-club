@@ -4,13 +4,13 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { chainClient } from "@/lib/chain/shared";
 import { formatBps, formatNear } from "../chain/adapt";
-import { FREE_GUEST_SEAT, joinCalls, near, neededToOpen, newMatchId, openDuelCalls, SMALLEST_STAKE, STORAGE_DEPOSIT } from "../chain/calls";
+import { FREE_GUEST_SEAT, joinCalls, near, neededToOpen, newMatchId, openDuelCalls, SEAT_COUNTS, SMALLEST_STAKE, SPLITS, STORAGE_DEPOSIT } from "../chain/calls";
 import { devCreateMatch, useDevConfig, type DevConfig, type NewMatch } from "../chain/devSession";
 import { openFreeTable, requestFreeTable, type FreeOpponent } from "../chain/free";
 import type { ChainListed } from "../chain/types";
 import { armAgent, useAgent } from "../chain/useAgent";
 import { useFreeSponsor } from "../chain/useFree";
-import { canStake, sendStake, usePlayer, type Player } from "../chain/usePlayer";
+import { approvesInWindow, sendStake, usePlayer, type Player } from "../chain/usePlayer";
 import { Arrow } from "@/components/landing/icons";
 import { AgentStub, DeparturesBoard, Hall, PassengerStub } from "./Desk";
 
@@ -61,7 +61,7 @@ export function ChainHome() {
   const boarding = matches?.filter((match) => match.status === "lobby" && match.seats.some((seat) => seat.backer === null)).length ?? 0;
 
   return (
-    <Hall>
+    <Hall page="play" account={player === undefined ? undefined : player && { accountId: player.accountId, balance: state.balance }}>
       <div className="fd-hall">
         <section className="fd-wall">
           <h1 className="fd-line">Pick a flight, or open one.</h1>
@@ -115,6 +115,7 @@ function FlightStub({
   const [chosen, setChosen] = useState<number | null>(null);
   const [opponent, setOpponent] = useState<FreeOpponent>("agent");
   const [rounds, setRounds] = useState(ROUNDS[1]);
+  const [seatCount, setSeatCount] = useState(SEAT_COUNTS[0]);
   const [opening, setOpening] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -157,29 +158,33 @@ function FlightStub({
     );
   }
 
-  // A Google account's key here cannot attach NEAR: free tables are the ones it can open.
-  const staked = canStake(player) ? STAKES.filter((amount) => limits === null || near(amount) <= BigInt(limits.max_stake)) : [];
-  const stakes = [...(sponsor ? [0] : []), ...staked];
+  const stakes = [...(sponsor ? [0] : []), ...STAKES.filter((amount) => limits === null || near(amount) <= BigInt(limits.max_stake))];
   const stake = chosen !== null && stakes.includes(chosen) ? chosen : (stakes[0] ?? STAKES[0]);
   const free = stake === 0;
   const cost = near(stake) + STORAGE_DEPOSIT;
+  // Against the house agent: two seats, and the game starts as soon as the visitor sits. Any other table is a room:
+  // whoever opens it hosts it, the seats fill as people come, and the game starts when the host says so.
+  const room = !(free && opponent === "agent");
+  const seats = room ? seatCount : 2;
   const terms = {
     stake: near(stake),
     maxRounds: rounds,
     turnSeconds: TURN_SECONDS,
+    seats,
+    host: room ? (player?.accountId ?? null) : null,
   };
   // What the account must hold: enough for the node to take the transaction, and enough left to make moves after it.
   const needed = neededToOpen(terms);
   // A wallet shows its own balance and refuses what it cannot pay; a game account is checked here.
   const short = !free && player?.via === "key" && balance !== undefined && (balance === null || balance < needed);
-  const pot = near(stake) * 2n;
+  const pot = near(stake) * BigInt(seats);
   const fee = limits ? (pot * BigInt(limits.fee_bps)) / 10_000n : 0n;
   const open = () =>
     run(async () => {
       if (free) {
         // The sponsor opens the table. A game account sits through the sponsor too; a wallet account signs its own seat.
-        if (player!.via === "key") return openFreeTable(player!.session, rounds, opponent);
-        const id = await requestFreeTable(rounds, opponent);
+        if (player!.via === "key") return openFreeTable(player!.session, rounds, opponent, seats);
+        const id = await requestFreeTable(rounds, opponent, { host: player!.accountId, seats });
         await sendStake(player!, joinCalls(id, FREE_GUEST_SEAT, 0n));
         return id;
       }
@@ -214,6 +219,18 @@ function FlightStub({
           </div>
         </div>
       )}
+      {room && (
+        <div className="fd-pick">
+          <span id="fd-seats">Seats</span>
+          <div className="fd-segments" role="group" aria-labelledby="fd-seats">
+            {SEAT_COUNTS.map((count) => (
+              <button key={count} type="button" aria-pressed={count === seatCount} onClick={() => setSeatCount(count)}>
+                {count}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="fd-pick">
         <span id="fd-rounds">Rounds</span>
         <div className="fd-segments" role="group" aria-labelledby="fd-rounds">
@@ -238,7 +255,7 @@ function FlightStub({
       ) : (
         <dl className="fd-sum">
           <div>
-            <dt>Pot for two seats</dt>
+            <dt>Pot for {seats} seats</dt>
             <dd>
               {formatNear(pot.toString())} <small>NEAR</small>
             </dd>
@@ -246,7 +263,7 @@ function FlightStub({
           <div>
             <dt>Winner takes</dt>
             <dd>
-              {formatNear((((pot - fee) * 70n) / 100n).toString(), 3)} <small>NEAR</small>
+              {formatNear((((pot - fee) * BigInt(SPLITS[seats][0])) / 10_000n).toString(), 3)} <small>NEAR</small>
             </dd>
           </div>
         </dl>
@@ -259,9 +276,11 @@ function FlightStub({
           : opening
             ? player.via === "wallet"
               ? "Waiting for your wallet…"
-              : free
-                ? "Opening your table…"
-                : "Opening the match…"
+              : approvesInWindow(player) && !free
+                ? "Waiting for your approval…"
+                : free
+                  ? "Opening your table…"
+                  : "Opening the match…"
             : free
               ? "Open a free table"
               : `Open for ${formatNear(cost.toString())} NEAR`}
@@ -271,14 +290,14 @@ function FlightStub({
         <p className="fd-fine">
           {opponent === "agent"
             ? "The same contract, the same dice, every move a transaction. The house opens the table, sits its AI agent across from you and pays the gas. Nothing is staked, so nothing is won."
-            : "The house opens the table and pays the gas; you get a link to send to a friend. Nothing is staked, so nothing is won."}
+            : "The house opens the table and pays the gas. You host the room: send its link, and start the game when everybody is in. Nothing is staked, so nothing is won."}
         </p>
       )}
       {player && !free && (
         <p className="fd-fine">
           {short
             ? `Your game account needs ${formatNear(needed.toString(), 2)} NEAR: the ${formatNear(near(stake).toString())} stake, a ${formatNear(STORAGE_DEPOSIT.toString())} storage deposit and about ${formatNear((needed - cost).toString(), 2)} the network holds for gas while you play. The deposit and the hold come back.`
-            : `Your stake and a ${formatNear(STORAGE_DEPOSIT.toString())} NEAR storage deposit, which comes back when the match is settled, less about 0.012. You get a link to send to a friend.`}
+            : `Your stake and a ${formatNear(STORAGE_DEPOSIT.toString())} NEAR storage deposit, which comes back when the match is settled, less about 0.012. ${approvesInWindow(player) ? "You approve the stake in the sign-in window. " : ""}You host the room: send its link, and start the game when everybody is in.`}
         </p>
       )}
       {problem && (

@@ -18,12 +18,14 @@ type Props = {
   onTile: (index: number) => void;
   /** Xúc xắc đã dừng và quân người vừa đổ đã tới nơi. */
   onArrive: (rolls: number) => void;
+  /** A roll of the viewer's is on its way and its numbers are not known yet: the dice tumble until they are. */
+  rolling?: boolean;
   /** Máy không vẽ được 3D: dùng bàn cờ 2D thay cho cảnh. */
   onBroken: () => void;
 };
 
 /** Khung vẽ bàn cờ 3D. Three.js chỉ tải khi vào ván, dùng chung bản đã tải với Ma Sói và thị trấn. */
-export function Board3D({ view, cash, selected, mode, insets, focus, onTile, onArrive, onBroken }: Props) {
+export function Board3D({ view, cash, selected, mode, insets, focus, rolling = false, onTile, onArrive, onBroken }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const scene = useRef<TycoonScene | null>(null);
   const latest = useRef({ view, selected, mode, insets, focus, onTile, onArrive, onBroken });
@@ -60,6 +62,11 @@ export function Board3D({ view, cash, selected, mode, insets, focus, onTile, onA
   useEffect(() => {
     scene.current?.update(view);
   }, [view]);
+
+  // After `update`, in this order: the numbers of a roll that has just landed are thrown before the tumbling stops.
+  useEffect(() => {
+    scene.current?.setRolling(rolling);
+  }, [rolling]);
 
   useEffect(() => {
     scene.current?.select(selected);

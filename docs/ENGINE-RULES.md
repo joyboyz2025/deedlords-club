@@ -86,11 +86,17 @@ In the contract, `die()` and `below()` are derived from `env::random_seed()` mix
 | `card` | `useFreeCard` | current player |
 | `pay` | `payDebt` | current player |
 | `bankrupt` | `declareBankruptcy` | current player |
+| `resign` | `resign` | **any** non-bankrupt player, any time while playing |
 | `build` (index) | `build` | current player |
 | `sell` (index) | `sellHouse` | **any** non-bankrupt player, any time while playing |
 | `mortgage` (index) | `mortgage` | **any** non-bankrupt player, any time while playing |
 | `redeem` (index) | `redeem` | **any** non-bankrupt player, any time while playing |
 | `auto` | `autoAct` | anyone (acts for the current player) |
+
+`resign` (giving up): a `resign` log event, then the player goes bankrupt. On their own turn in `debt` the creditor
+is decided exactly as by `bankrupt`; at any other moment everything goes to the bank (`creditor` null). If the current
+player is in `debt` and a payee is the player who gives up, that payee's `id` becomes null (owed to the bank); amounts
+are unchanged. The turn passes only if the player giving up held it; one player left ends the game (`last`).
 
 An action that is not allowed leaves the state unchanged. TS returns silently; Rust returns `Err(EngineError)`. An action is "ok" if and only if it changed the snapshot.
 

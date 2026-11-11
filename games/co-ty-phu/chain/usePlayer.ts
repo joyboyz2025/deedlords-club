@@ -7,14 +7,16 @@ import { chainClient } from "@/lib/chain/shared";
 import type { FunctionCall } from "@/lib/chain/transaction";
 import { readStored, writeStored } from "@/lib/storage";
 import { AS_KEY, openDevSession } from "./devSession";
-import { confirmGrant, identify, prepareGrant, resumeGoogle, type PendingGrant } from "./googleSession";
+import { GRANT_METHODS } from "./calls";
+import { confirmGrant, identify, prepareGrant, resumeGoogle, sendWithNearAuth, type PendingGrant } from "./googleSession";
 import { hasKeyAccount, type KeySource, openKeySession, signInAsGuest, signInWithEvm, signOutOfKey } from "./keySession";
 import { hasWalletAccount, openWalletSession, sendWithWallet, signInWithNearWallet, signOutOfWallet } from "./walletSession";
 
 /**
  * Whoever this browser plays as.
  * `key`: a game account whose key is here (from an EVM wallet's signature, or a guest's). It signs everything itself.
- *   A Google account (`source: "google"`) is one too, with a lesser key: it moves a seat and cannot stake.
+ *   A Google account (`source: "google"`) is one too, with a lesser key here: it moves a seat, and what spends the
+ *   account's NEAR (a stake, a withdrawal) is approved in the sign-in window each time.
  * `wallet`: an account of a NEAR wallet; a session key here signs the moves, the wallet approves the stakes.
  * `helper`: a test account of the local helper, which signs what carries a deposit.
  */
@@ -28,17 +30,30 @@ type Choice = { via: "helper"; accountId: string } | { via: "key" } | { via: "wa
 const text = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const BALANCE_EVERY_MS = 6_000;
 
-/** Whether this player can attach NEAR to a call: everybody but a Google account, whose key here cannot. */
-export const canStake = (player: Player | null): boolean => !(player?.via === "key" && player.source === "google");
+/** Whether this player's stakes and withdrawals are approved in the NEAR Auth window, one by one. */
+export const approvesInWindow = (player: Player | null): boolean => player?.via === "key" && player.source === "google";
 
 /**
  * Signs and sends calls that carry a deposit, the way this player can: a game account with its own key, a wallet
  * account through the wallet. A helper's test account does not come here: the helper has its own requests.
  */
 export async function sendStake(player: Player, calls: FunctionCall[]): Promise<void> {
-  if (player.via === "key") await player.session.transact(calls);
+  // What the browser's key of a Google account can sign itself (a seat that costs nothing) needs no approval.
+  const withinGrant = calls.every((call) => call.deposit === 0n && (GRANT_METHODS as readonly string[]).includes(call.method));
+  if (approvesInWindow(player) && !withinGrant) await sendWithNearAuth(player.accountId, CHAIN.contractId, calls);
+  else if (player.via === "key") await player.session.transact(calls);
   else if (player.via === "wallet") await sendWithWallet(player.accountId, calls);
   else throw new Error("a helper's test account stakes through the helper");
+}
+
+/**
+ * Sends NEAR out of a game account, to any NEAR account. A guest's or an EVM wallet's key signs it here; a Google
+ * account's is approved in the sign-in window. Resolves to the transaction's hash.
+ */
+export async function withdraw(player: Player, receiverId: string, amount: bigint): Promise<string> {
+  if (player.via !== "key") throw new Error("a wallet account withdraws in its wallet");
+  const sent = approvesInWindow(player) ? sendWithNearAuth(player.accountId, receiverId, [{ transfer: amount }]) : player.session.sendTo(receiverId, [{ transfer: amount }]);
+  return (await sent).hash;
 }
 
 /**

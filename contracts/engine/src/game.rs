@@ -151,6 +151,8 @@ pub enum Release {
 
 /// Structured log entry for the UI (the last [`MAX_LOG`] are kept). Not part of the snapshot.
 /// Serialized with a `kind` tag, e.g. `{ "kind": "rent", "player": "p1", "owner": "p0", "square": 3, "amount": 5 }`.
+/// New kinds go last: the logs of matches stored before a kind existed must still read. `Resign` (the player gave up
+/// the game) is always followed by a `Bankrupt`: that is how a player leaves.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Event {
@@ -172,6 +174,7 @@ pub enum Event {
     Bankrupt { player: String, creditor: Option<String> },
     Auto { player: String },
     End { reason: Reason },
+    Resign { player: String },
 }
 
 /// Rent modifier from a "nearest" card.
@@ -204,12 +207,14 @@ pub enum Action {
     Redeem(u8),
     /// Act for the current player after a timeout: roll, skip buying, or end the turn. Never acts in `debt`.
     Auto,
+    /// Give up the game: any player still in it, at any time. The player goes bankrupt; see `resign`.
+    Resign,
 }
 
 impl Action {
     /// The op names used in trace files, in [`Action`] order.
-    pub const OPS: [&'static str; 14] =
-        ["start", "roll", "buy", "skip", "end", "bail", "card", "pay", "bankrupt", "build", "sell", "mortgage", "redeem", "auto"];
+    pub const OPS: [&'static str; 15] =
+        ["start", "roll", "buy", "skip", "end", "bail", "card", "pay", "bankrupt", "build", "sell", "mortgage", "redeem", "auto", "resign"];
 
     /// Trace op name.
     pub fn op(&self) -> &'static str {
@@ -228,6 +233,7 @@ impl Action {
             Action::Mortgage(_) => "mortgage",
             Action::Redeem(_) => "redeem",
             Action::Auto => "auto",
+            Action::Resign => "resign",
         }
     }
 
@@ -261,6 +267,7 @@ impl Action {
             "mortgage" => Action::Mortgage(index?),
             "redeem" => Action::Redeem(index?),
             "auto" => Action::Auto,
+            "resign" => Action::Resign,
             _ => return None,
         })
     }
@@ -535,6 +542,7 @@ impl Game {
             Action::Card,
             Action::Pay,
             Action::Bankrupt,
+            Action::Resign,
         ];
         for action in simple {
             if self.check(Some(actor), action).is_ok() {
@@ -587,6 +595,7 @@ impl Game {
             }
             Action::Pay => self.pay_debt(p, rng),
             Action::Bankrupt => self.declare_bankruptcy(p),
+            Action::Resign => self.resign(p),
             Action::Build(index) => self.build(p, index),
             Action::Sell(index) => self.sell(p, index),
             Action::Mortgage(index) => self.mortgage(p, index),
@@ -652,6 +661,12 @@ impl Game {
             Action::Bankrupt => {
                 let p = self.turn_of(actor)?;
                 ensure(self.stage == Stage::Debt && self.debt.is_some(), E::WrongStage)?;
+                Ok(p)
+            }
+            Action::Resign => {
+                ensure(self.phase == Phase::Playing, E::NotPlaying)?;
+                let p = actor.and_then(|id| self.index_of(id)).ok_or(E::UnknownPlayer)?;
+                ensure(!self.players[p].bankrupt, E::Bankrupt)?;
                 Ok(p)
             }
             Action::Build(index) => {
@@ -1100,6 +1115,24 @@ impl Game {
         if let Some(steps) = self.pending_move.take() {
             self.move_by(p, steps, rng);
         }
+    }
+
+    /// Giving up (ENGINE-RULES §7, `resign`). The player leaves the way a bankrupt one does. In debt on their own turn
+    /// the creditor is paid as in `declare_bankruptcy`, so giving up is never a way around a debt; at any other moment
+    /// everything goes back to the bank. A debt the current player owes to somebody who gives up is owed to the bank.
+    fn resign(&mut self, p: usize) {
+        let id = self.players[p].id.clone();
+        self.note(Event::Resign { player: id.clone() });
+        if self.current_index() == Some(p) {
+            if self.stage == Stage::Debt && self.debt.is_some() {
+                return self.declare_bankruptcy(p);
+            }
+        } else if let Some(debt) = self.debt.as_mut() {
+            for payee in debt.iter_mut().filter(|payee| payee.id.as_deref() == Some(id.as_str())) {
+                payee.id = None;
+            }
+        }
+        self.go_bankrupt(p, None);
     }
 
     fn declare_bankruptcy(&mut self, p: usize) {

@@ -73,14 +73,14 @@ export async function relay(session: Session, calls: FunctionCall[]): Promise<Ou
 }
 
 /** Asks the sponsor for a new free table. Resolves to the match's id; nobody sits at it yet but the house agent, if asked for. */
-export async function requestFreeTable(rounds: number, opponent: FreeOpponent): Promise<string> {
-  return (await post<{ id: string }>("/api/free", { rounds, opponent })).id;
+export async function requestFreeTable(rounds: number, opponent: FreeOpponent, room: { host: string; seats: number } | null = null): Promise<string> {
+  return (await post<{ id: string }>("/api/free", { rounds, opponent, ...(opponent === "friend" && room ? room : {}) })).id;
 }
 
 /** The sponsor opens a free table and this game account takes its first seat. Resolves to the match's id. */
-export async function openFreeTable(session: Session, rounds: number, opponent: FreeOpponent): Promise<string> {
+export async function openFreeTable(session: Session, rounds: number, opponent: FreeOpponent, seats = 2): Promise<string> {
   // A new guest's account is opened while the table is: two transactions of the sponsor's, side by side.
-  const [id] = await Promise.all([requestFreeTable(rounds, opponent), ensureOpen(session)]);
+  const [id] = await Promise.all([requestFreeTable(rounds, opponent, { host: session.accountId, seats }), ensureOpen(session)]);
   await takeFreeSeat(session, id, FREE_GUEST_SEAT);
   return id;
 }

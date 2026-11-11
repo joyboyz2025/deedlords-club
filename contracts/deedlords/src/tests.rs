@@ -18,8 +18,8 @@ use near_sdk::{env, testing_env, AccountId, Gas, NearToken};
 use crate::autoplay::{apply_logged, liquidation_step, play_turn, resolve_debt, timeout_step, Plan, Step};
 use crate::rng::{below_from_u32, below_limit, die_from_byte, near_sha256, ChainRng};
 use crate::{
-    current_seat, fee_of, split_pot, Contract, ContractV1, Match, RulesArg, Status, ABANDON_AFTER_NS, DEFAULT_TURN_SECONDS,
-    MAX_FEE_BPS, MAX_STAKE, MIN_MOVE_GAS, STORAGE_RESERVE_BYTES,
+    current_seat, fee_of, split_pot, Contract, ContractV1, Match, RulesArg, Status, ABANDON_AFTER_NS, DEFAULT_TURN_SECONDS, MAX_FEE_BPS,
+    MAX_STAKE, MIN_MOVE_GAS, STORAGE_RESERVE_BYTES,
 };
 
 // ----- Environment helpers -------------------------------------------------------------------------------------------
@@ -104,7 +104,7 @@ impl T {
 
     fn create(&mut self, id: &str, seats: u8, split: Vec<u16>, rules: RulesArg, solo: Option<&str>) {
         self.call(ALICE, STORAGE);
-        self.c.create_match(id.into(), seats, U128(STAKE), split, rules, solo.map(acc), None);
+        self.c.create_match(id.into(), seats, U128(STAKE), split, rules, solo.map(acc), None, None);
     }
 
     fn join(&mut self, id: &str, who: &str, seat: u8) {
@@ -148,11 +148,8 @@ fn blitz(max_rounds: u8) -> RulesArg {
 
 fn expect_panic<R, F: FnOnce() -> R>(f: F, needle: &str) {
     let error = catch_unwind(AssertUnwindSafe(f)).err().expect("expected the call to panic");
-    let message = error
-        .downcast_ref::<String>()
-        .cloned()
-        .or_else(|| error.downcast_ref::<&str>().map(|s| s.to_string()))
-        .unwrap_or_default();
+    let message =
+        error.downcast_ref::<String>().cloned().or_else(|| error.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default();
     assert!(message.contains(needle), "panic message {message:?} does not contain {needle:?}");
 }
 
@@ -265,30 +262,30 @@ fn create_match_validates_its_arguments() {
     ];
     for (id, seats, split, rules, deposit, needle) in cases {
         t.call(ALICE, deposit);
-        expect_panic(|| t.c.create_match(id.into(), seats, U128(STAKE), split, rules, None, None), needle);
+        expect_panic(|| t.c.create_match(id.into(), seats, U128(STAKE), split, rules, None, None, None), needle);
     }
     t.call(ALICE, STORAGE);
-    expect_panic(|| t.c.create_match("x".into(), 2, U128(STAKE), vec![10000], classic(MANY_ROUNDS), None, Some(0)), "turn_seconds");
+    expect_panic(|| t.c.create_match("x".into(), 2, U128(STAKE), vec![10000], classic(MANY_ROUNDS), None, Some(0), None), "turn_seconds");
     // The stake cap of the deployment, and the house as the solo player.
     t.call(ALICE, STORAGE);
     expect_panic(
-        || t.c.create_match("x".into(), 2, U128(CAP + 1), vec![10000], classic(MANY_ROUNDS), None, None),
+        || t.c.create_match("x".into(), 2, U128(CAP + 1), vec![10000], classic(MANY_ROUNDS), None, None, None),
         &format!("stake too large: this contract allows at most {CAP} yoctoNEAR"),
     );
     t.call(ALICE, STORAGE);
     expect_panic(
-        || t.c.create_match("x".into(), 2, U128(STAKE), vec![10000], classic(MANY_ROUNDS), Some(acc(HOUSE)), None),
+        || t.c.create_match("x".into(), 2, U128(STAKE), vec![10000], classic(MANY_ROUNDS), Some(acc(HOUSE)), None, None),
         "the house cannot be the solo player",
     );
     assert!(t.c.matches.get("x").is_none(), "a rejected create leaves nothing behind");
     t.call(ALICE, STORAGE);
-    t.c.create_match("cap".into(), 2, U128(CAP), vec![10000], classic(1), None, None);
+    t.c.create_match("cap".into(), 2, U128(CAP), vec![10000], classic(1), None, None, None);
     assert_eq!(t.m("cap").stake.as_yoctonear(), CAP, "a stake of exactly the cap is accepted");
     // Blitz with exactly enough cash, and the camelCase rules field, are accepted.
     let rules: RulesArg = near_sdk::serde_json::from_str(r#"{"salary":200,"cash":1670,"blitz":true,"maxRounds":3}"#).unwrap();
     assert_eq!(rules.max_rounds, 3);
     t.call(ALICE, STORAGE);
-    t.c.create_match("ok".into(), 4, U128(STAKE), vec![6000, 3000, 1000], rules, None, Some(5));
+    t.c.create_match("ok".into(), 4, U128(STAKE), vec![6000, 3000, 1000], rules, None, Some(5), None);
     assert_eq!(t.m("ok").turn_seconds, 5);
 }
 
@@ -614,8 +611,10 @@ fn timeout_in_debt_sells_houses_then_mortgages_then_pays() {
     t.c.timeout("m".into());
     let steps: Vec<Value> = event("actions")["data"]["steps"].as_array().unwrap().iter().map(|s| s["action"].clone()).collect();
     // Default order is ascending board index: 37 has no house, so both houses of 39 go first, then 37 is mortgaged.
-    let expected: Vec<Value> =
-        [Action::Sell(39), Action::Sell(39), Action::Mortgage(37), Action::Pay].iter().map(|a| near_sdk::serde_json::to_value(a).unwrap()).collect();
+    let expected: Vec<Value> = [Action::Sell(39), Action::Sell(39), Action::Mortgage(37), Action::Pay]
+        .iter()
+        .map(|a| near_sdk::serde_json::to_value(a).unwrap())
+        .collect();
     assert_eq!(steps, expected);
     let g = &t.m("m").game;
     assert_eq!(g.stage, Stage::End);
@@ -797,7 +796,7 @@ fn settlement_pays_backers_forfeits_house_shares_records_stats_and_settles_once(
     assert_eq!(t.c.get_forfeited().0, forfeited);
     assert_eq!(t.c.get_fees().0, fee, "a refused second settlement takes no second fee");
     t.call(ALICE, STORAGE);
-    expect_panic(|| t.c.create_match("s".into(), 2, U128(STAKE), vec![10000], classic(1), None, None), "already used");
+    expect_panic(|| t.c.create_match("s".into(), 2, U128(STAKE), vec![10000], classic(1), None, None, None), "already used");
 }
 
 /// Plays a 2-seat match where `rich` seat gets a 100,000 cash lead, ending after one round.
@@ -855,7 +854,7 @@ fn storage_reserve_covers_a_full_match() {
     t.c.matches.flush();
     let base = stored_bytes();
     t.call(&a, STORAGE);
-    t.c.create_match("x".repeat(32), 4, U128(STAKE), vec![4000, 3000, 2000, 1000], blitz(3), None, None);
+    t.c.create_match("x".repeat(32), 4, U128(STAKE), vec![4000, 3000, 2000, 1000], blitz(3), None, None, None);
     let id = "x".repeat(32);
     let measured_in_call = event("create_match");
     assert_eq!(measured_in_call["data"]["id"], id);
@@ -1028,9 +1027,9 @@ fn migrate_adds_the_fee_to_a_deployment_of_the_first_layout() {
     assert_eq!(c.tokens.nft_token("old-2".into()).expect("an old deed").owner_id, acc(ALICE));
     // And the upgraded contract works: a used id stays used, a new match can be opened.
     context(ALICE, STORAGE, NOW0 + 2 * SEC, seed(8));
-    expect_panic(|| c.create_match("old-1".into(), 2, U128(STAKE), vec![10000], classic(1), None, None), "already used");
+    expect_panic(|| c.create_match("old-1".into(), 2, U128(STAKE), vec![10000], classic(1), None, None, None), "already used");
     context(ALICE, STORAGE, NOW0 + 2 * SEC, seed(9));
-    c.create_match("new".into(), 2, U128(STAKE), vec![10000], classic(1), None, None);
+    c.create_match("new".into(), 2, U128(STAKE), vec![10000], classic(1), None, None, None);
     assert_eq!(c.get_match("new".into()).unwrap()["meta"]["fee_bps"], 250);
     // The new layout is not the first one: migrating twice is refused (near-sdk fails to read the state as `ContractV1`).
     env::state_write(&c);
@@ -1086,9 +1085,9 @@ fn the_stake_cap_is_set_once_at_deployment() {
     let mut t = T::new();
     t.c = Contract::new(acc(OWNER), acc(HOUSE), U128(0), FEE_BPS);
     t.call(ALICE, STORAGE);
-    expect_panic(|| t.c.create_match("paid".into(), 2, U128(1), vec![10000], classic(1), None, None), "stake too large");
+    expect_panic(|| t.c.create_match("paid".into(), 2, U128(1), vec![10000], classic(1), None, None, None), "stake too large");
     t.call(ALICE, STORAGE);
-    t.c.create_match("free".into(), 2, U128(0), vec![10000], classic(1), None, None);
+    t.c.create_match("free".into(), 2, U128(0), vec![10000], classic(1), None, None, None);
 }
 
 // ----- Rng ---------------------------------------------------------------------------------------------------------------
@@ -1285,7 +1284,8 @@ fn apply_logged_keeps_the_engine_log_and_reports_each_actions_events() {
     let mut events_seen = 0;
     while logged.phase == Phase::Playing {
         let seat = logged.current_player().unwrap().to_string();
-        let legal = logged.legal_actions(&seat);
+        // Everything but giving up: this game has to run long enough for the log to wrap around.
+        let legal: Vec<Action> = logged.legal_actions(&seat).into_iter().filter(|action| *action != Action::Resign).collect();
         let action = legal[(chooser.next() % legal.len() as u64) as usize];
         let before = steps.len();
         apply_logged(&mut logged, Some(&seat), action, &mut rng_a, &mut steps).unwrap();
@@ -1349,4 +1349,102 @@ fn liquidation_follows_the_plan_order_then_the_board_order() {
     assert_eq!(actions, vec![Action::Sell(39), Action::Sell(39), Action::Pay]);
     assert_eq!(game.props[&39].houses, 1);
     assert_eq!(game.player(&me).unwrap().cash, 50);
+}
+
+// ----- A hosted match, and giving up -------------------------------------------------------------------------------------
+
+#[test]
+fn a_hosted_match_waits_for_its_host_and_nobody_else_starts_it() {
+    let mut t = T::new();
+    t.call(ALICE, STORAGE);
+    t.c.create_match("room".into(), 3, U128(STAKE), vec![6000, 3000, 1000], classic(MANY_ROUNDS), None, None, Some(acc(ALICE)));
+    assert_eq!(t.c.get_match("room".into()).unwrap()["meta"]["host"], ALICE);
+    t.join("room", ALICE, 0);
+    t.join("room", BOB, 1);
+    // Not every seat is taken yet: not even the host starts it.
+    t.call(ALICE, 0);
+    expect_panic(|| t.c.start("room".into()), "every seat must be taken");
+    t.join("room", CAROL, 2);
+    assert_eq!(t.m("room").status, Status::Lobby, "the last seat does not start a hosted match");
+    assert_eq!(t.m("room").turn_deadline, 0);
+    // Only the host says go, by `start` or by playing `Start`.
+    t.call(BOB, 0);
+    expect_panic(|| t.c.start("room".into()), "only the host may start");
+    t.call(BOB, 0);
+    expect_panic(|| t.c.play("room".into(), 1, vec![Action::Start]), "only the host may start");
+    // A move before the start is refused as it always was.
+    t.call(ALICE, 0);
+    expect_panic(|| t.c.play("room".into(), 0, vec![Action::Roll]), "the match is not being played");
+    // Seats can still be left while everybody waits; the host starts once they are all taken again.
+    t.call(CAROL, 0);
+    t.c.leave("room".into(), 2);
+    t.call(ALICE, 0);
+    expect_panic(|| t.c.play("room".into(), 0, vec![Action::Start]), "every seat must be taken");
+    t.join("room", CAROL, 2);
+    t.call(ALICE, 0);
+    assert_eq!(t.c.play("room".into(), 0, vec![Action::Start])["applied"], 1);
+    assert_eq!(t.m("room").status, Status::Playing);
+    assert!(t.m("room").turn_deadline > t.now);
+    assert_eq!(event("start")["data"]["id"], "room");
+    let meta = t.c.get_match("room".into()).unwrap()["meta"].clone();
+    assert_eq!(meta["host"], Value::Null, "the host's record is gone once the game runs");
+    assert!(env::storage_read(b"host:room").is_none());
+    // Started is started.
+    t.call(ALICE, 0);
+    expect_panic(|| t.c.start("room".into()), "already started");
+    t.call(ALICE, 0);
+    expect_panic(|| t.c.play("room".into(), 0, vec![Action::Start]), "not playable");
+}
+
+#[test]
+fn a_match_with_no_host_starts_by_itself_and_an_abandoned_room_leaves_no_host_behind() {
+    let mut t = T::new();
+    t.create("auto", 2, vec![10000], classic(MANY_ROUNDS), None);
+    assert_eq!(t.c.get_match("auto".into()).unwrap()["meta"]["host"], Value::Null);
+    t.join("auto", ALICE, 0);
+    t.call(ALICE, 0);
+    expect_panic(|| t.c.start("auto".into()), "this match has no host");
+    t.join("auto", BOB, 1);
+    assert_eq!(t.m("auto").status, Status::Playing);
+
+    // A host and a solo player do not go together: the house would wait for somebody to start it.
+    t.call(ALICE, STORAGE);
+    expect_panic(
+        || t.c.create_match("solo".into(), 2, U128(STAKE), vec![10000], classic(1), Some(acc(ALICE)), None, Some(acc(ALICE))),
+        "a solo match starts by itself",
+    );
+
+    // The host may be somebody other than who opened and paid for the room.
+    t.call(ALICE, STORAGE);
+    t.c.create_match("gift".into(), 2, U128(STAKE), vec![10000], classic(1), None, None, Some(acc(BOB)));
+    assert_eq!(t.c.get_match("gift".into()).unwrap()["meta"]["host"], BOB);
+    t.join("gift", BOB, 0);
+    t.now += ABANDON_AFTER_NS + 1;
+    t.call(CAROL, 0);
+    t.c.abandon("gift".into());
+    assert!(env::storage_read(b"host:gift").is_none());
+}
+
+#[test]
+fn a_player_gives_up_through_play_and_the_match_is_settled() {
+    let mut t = T::new();
+    t.create("duel", 2, vec![7000, 3000], classic(MANY_ROUNDS), None);
+    t.join("duel", ALICE, 0);
+    t.join("duel", BOB, 1);
+    let (current, _) = t.current("duel");
+    // The seat that is NOT to move gives up: no need to wait for one's turn.
+    let (quitter, who) = if current == 0 { (1u8, BOB) } else { (0u8, ALICE) };
+    let stayer = if who == BOB { ALICE } else { BOB };
+    // Nobody gives up for somebody else.
+    t.call(stayer, 0);
+    expect_panic(|| t.c.play("duel".into(), quitter, vec![Action::Resign]), "only the backer or the driver");
+    t.call(who, 0);
+    let outcome = t.c.play("duel".into(), quitter, vec![Action::Resign]);
+    assert_eq!(outcome["applied"], 1);
+    assert_eq!(outcome["rejected"], Value::Null);
+    assert!(t.c.matches.get("duel").is_none(), "one player left: settled in the same call");
+    let result = t.c.get_result("duel".into()).unwrap();
+    assert_eq!(result["reason"], "last");
+    assert_eq!(result["ranking"], near_sdk::serde_json::json!([1 - quitter, quitter]));
+    assert_eq!(result["backers"][0], stayer);
 }

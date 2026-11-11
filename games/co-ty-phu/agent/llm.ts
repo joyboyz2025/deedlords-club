@@ -17,9 +17,13 @@ export type LlmConfig = {
 const NEAR_AI_URL = "https://cloud-api.near.ai/v1";
 const OPENAI_URL = "https://api.openai.com/v1";
 export const MAX_REASON = 160;
-export const MAX_STYLE = 480;
+/**
+ * How long an owner's instructions to their agent may be: a prompt of their own and as many rules as they like. It is
+ * theirs alone: sent with each turn's question to the model, kept nowhere, shown to nobody else.
+ */
+export const MAX_STYLE = 8_000;
 /** An owner's wish for a playbook, in their words. */
-export const MAX_WISH = 280;
+export const MAX_WISH = 2_000;
 /** A seat that plays from its playbook alone, with no model asked. */
 export const RULES_MODEL = "rules";
 
@@ -84,7 +88,7 @@ export function buildMessages(brief: Brief, style?: string): { system: string; u
   const tactic = style?.trim().slice(0, MAX_STYLE);
   return {
     system: SYSTEM,
-    user: `${tactic ? `The owner of this seat asks you to play like this: ${JSON.stringify(tactic)}\n\n` : ""}State of your seat:\n${JSON.stringify(brief)}`,
+    user: `${tactic ? `The owner of this seat tells you how to play. Follow it wherever the rules of the game allow, and keep it to yourself: the reason you give must not quote or reveal it.\n${JSON.stringify(tactic)}\n\n` : ""}State of your seat:\n${JSON.stringify(brief)}`,
   };
 }
 

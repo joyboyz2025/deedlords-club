@@ -273,3 +273,42 @@ export function signedKeyGrant(payload: Uint8Array, signature: Uint8Array): Uint
   if (signature.length !== 64 || !verify(grant.accountKey, sha256(payload), signature)) throw new Error("the signature is not the account key's over this grant");
   return concat([payload.subarray(DELEGATE_PREFIX.length), Uint8Array.of(ED25519), signature]);
 }
+
+/**
+ * Reads back what `encodeTransaction` wrote, when its actions are function calls and transfers: what somebody asked
+ * to carry a transaction to a signer must be able to see. Throws on anything else.
+ */
+export function readTransaction(bytes: Uint8Array): Transaction {
+  const read = reader(bytes);
+  const signerId = read.text();
+  if (read.byte() !== ED25519) throw new Error("only ed25519 keys are supported");
+  const publicKey = read.take(32).slice();
+  const nonce = read.u64();
+  const receiverId = read.text();
+  const blockHash = read.take(32).slice();
+  const count = read.u32();
+  if (count < 1 || count > 4) throw new Error("a transaction here holds 1 to 4 actions");
+  const actions: Action[] = [];
+  for (let i = 0; i < count; i++) {
+    const kind = read.byte();
+    if (kind === TRANSFER) actions.push({ transfer: read.u128() });
+    else if (kind === FUNCTION_CALL) {
+      const method = read.text();
+      const args = read.take(read.u32()).slice();
+      const gas = read.u64();
+      actions.push({ method, args, gas, deposit: read.u128() });
+    } else throw new Error("only function calls and transfers are read");
+  }
+  read.end();
+  return { signerId, publicKey, nonce, receiverId, blockHash, actions };
+}
+
+/**
+ * A serialized transaction with a signature made elsewhere (by NEAR Auth, for an account whose key no browser
+ * holds), ready to send. Throws unless the signature is `publicKey`'s over this very transaction.
+ */
+export function withSignature(encoded: Uint8Array, signature: Uint8Array, publicKey: Uint8Array): { hash: string; bytes: Uint8Array } {
+  const hash = sha256(encoded);
+  if (signature.length !== 64 || !verify(publicKey, hash, signature)) throw new Error("the signature is not this key's over this transaction");
+  return { hash: encodeBase58(hash), bytes: concat([encoded, Uint8Array.of(ED25519), signature]) };
+}

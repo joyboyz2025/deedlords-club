@@ -3,59 +3,52 @@
 import { useCallback, useEffect, useState } from "react";
 import { readStored, writeStored } from "@/lib/storage";
 import { RULES_MODEL } from "../agent/llm";
-import { DEFAULT_PLAYBOOK, cleanPlaybook, type Playbook } from "../agent/playbook";
+import { cleanPlaybook } from "../agent/playbook";
+import { FIRST_ROSTER, MAX_AGENTS, cleanRoster, flyingAgent, newAgent, type Agent, type Roster } from "../agent/roster";
 
-// An account's own agent: which model it asks, the playbook it plays by, and what its owner wished for. Kept in this
-// browser, under the account's name. Nothing of it is on chain: the agent plays from the owner's tab and signs with
-// the owner's own game key (see useAutopilot).
+// An account's own agents (see agent/roster.ts), kept in this browser under the account's name. Nothing of them is on
+// chain: the one that flies plays from the owner's tab and signs with the owner's own game key (see useAutopilot).
 
-export type AgentProfile = {
-  /** A model the server offers, or `rules`: the playbook alone, no model asked. */
-  model: string;
-  playbook: Playbook;
-  /** The owner's wish in their words, as last sent to a model. */
-  wish: string;
-  /** Who wrote the playbook last and what it said about it. `null`: a preset, or the owner's own hand. */
-  written: { by: string; reason: string } | null;
-  /** Take the owner's seat from the first roll of every match they open or join here. */
-  auto: boolean;
-};
+/** The agent that flies the owner's seat, and whether it does so from the first roll. */
+export type AgentProfile = Agent & { auto: boolean };
 
-export const NO_AGENT: AgentProfile = {
-  model: RULES_MODEL,
-  playbook: DEFAULT_PLAYBOOK,
-  wish: "",
-  written: null,
-  auto: false,
-};
-
-const AGENT_KEY = (accountId: string) => `deedlords:agent:${accountId}`;
+const ROSTER_KEY = (accountId: string) => `deedlords:agents:${accountId}`;
+/** Where an account's single agent was kept before it could have several. */
+const LEGACY_KEY = (accountId: string) => `deedlords:agent:${accountId}`;
 const AUTO_KEY = (matchId: string) => `deedlords:auto:${matchId}`;
 
-/** The saved agent of `accountId`, or the default one. */
+export function readRoster(accountId: string | null): Roster {
+  if (!accountId) return FIRST_ROSTER;
+  return cleanRoster(readStored<unknown>(ROSTER_KEY(accountId)), readStored<unknown>(LEGACY_KEY(accountId)));
+}
+
+/** The agent of `accountId` that flies, or the default one. */
 export function readAgent(accountId: string | null): AgentProfile {
-  const stored = accountId ? readStored<Partial<AgentProfile>>(AGENT_KEY(accountId)) : null;
-  const playbook = cleanPlaybook(stored?.playbook);
-  if (!stored || !playbook) return NO_AGENT;
-  return {
-    model: typeof stored.model === "string" && stored.model ? stored.model : RULES_MODEL,
-    playbook,
-    wish: typeof stored.wish === "string" ? stored.wish : "",
-    written: stored.written && typeof stored.written.by === "string" && typeof stored.written.reason === "string" ? stored.written : null,
-    auto: stored.auto === true,
-  };
+  const roster = readRoster(accountId);
+  return { ...flyingAgent(roster), auto: roster.auto };
 }
 
 /** The owner asked their agent to fly from the first roll: the match `matchId` starts with the autopilot on. */
 export function armAgent(matchId: string, accountId: string | null): void {
-  if (readAgent(accountId).auto) writeStored(AUTO_KEY(matchId), true);
+  if (readRoster(accountId).auto) writeStored(AUTO_KEY(matchId), true);
 }
 
 export type AgentDesk = {
-  agent: AgentProfile;
+  agents: Agent[];
+  /** The agent being looked at, which is also the one that flies. */
+  agent: Agent;
+  auto: boolean;
   /** Models this server offers; empty when none is configured. `null` while asking. */
   models: string[] | null;
-  save: (change: Partial<AgentProfile>) => void;
+  /** Changes the agent being looked at. */
+  save: (change: Partial<Omit<Agent, "id">>) => void;
+  /** Looks at, and flies, another of the owner's agents. */
+  pick: (id: string) => void;
+  /** A new agent with that name, which becomes the one looked at. `false`: there are too many already. */
+  add: (name: string) => boolean;
+  /** Deletes the agent being looked at, unless it is the last one. */
+  remove: () => void;
+  setAuto: (auto: boolean) => void;
   /** Ask the chosen model for a playbook from `wish`. */
   write: (wish: string) => Promise<void>;
   writing: boolean;
@@ -63,12 +56,12 @@ export type AgentDesk = {
 };
 
 export function useAgent(accountId: string | null): AgentDesk {
-  const [agent, setAgent] = useState<AgentProfile>(NO_AGENT);
+  const [roster, setRoster] = useState<Roster>(FIRST_ROSTER);
   const [models, setModels] = useState<string[] | null>(null);
   const [writing, setWriting] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
-  useEffect(() => setAgent(readAgent(accountId)), [accountId]);
+  useEffect(() => setRoster(readRoster(accountId)), [accountId]);
 
   useEffect(() => {
     let stopped = false;
@@ -82,44 +75,54 @@ export function useAgent(accountId: string | null): AgentDesk {
     };
   }, []);
 
-  const save = useCallback(
-    (change: Partial<AgentProfile>) => {
-      setAgent((before) => {
-        const next = { ...before, ...change };
-        if (accountId) writeStored(AGENT_KEY(accountId), next);
+  const change = useCallback(
+    (make: (before: Roster) => Roster) => {
+      setRoster((before) => {
+        const next = make(before);
+        if (accountId && next !== before) writeStored(ROSTER_KEY(accountId), next);
         return next;
       });
     },
     [accountId],
   );
 
+  const save = useCallback(
+    (edit: Partial<Omit<Agent, "id">>) => change((before) => ({ ...before, agents: before.agents.map((agent) => (agent.id === before.flying ? { ...agent, ...edit } : agent)) })),
+    [change],
+  );
+  const pick = useCallback((id: string) => change((before) => (before.agents.some((agent) => agent.id === id) ? { ...before, flying: id } : before)), [change]);
+  const add = useCallback(
+    (name: string) => {
+      if (roster.agents.length >= MAX_AGENTS) return false;
+      const id = `a${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
+      change((before) => ({ ...before, agents: [...before.agents, newAgent(id, name.trim() || `Agent ${before.agents.length + 1}`)], flying: id }));
+      return true;
+    },
+    [change, roster.agents.length],
+  );
+  const remove = useCallback(
+    () =>
+      change((before) => {
+        if (before.agents.length < 2) return before;
+        const agents = before.agents.filter((agent) => agent.id !== before.flying);
+        return { ...before, agents, flying: agents[0].id };
+      }),
+    [change],
+  );
+  const setAuto = useCallback((auto: boolean) => change((before) => ({ ...before, auto })), [change]);
+
+  const agent = flyingAgent(roster);
   const write = useCallback(
     async (wish: string) => {
       setWriting(true);
       setProblem(null);
       try {
         const model = agent.model === RULES_MODEL ? undefined : agent.model;
-        const response = await fetch("/api/agent/playbook", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ wish, model }),
-        });
-        const answer = (await response.json()) as {
-          playbook?: unknown;
-          reason?: string;
-          driver?: string;
-          error?: string;
-        };
+        const response = await fetch("/api/agent/playbook", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ wish, model }) });
+        const answer = (await response.json()) as { playbook?: unknown; reason?: string; driver?: string; error?: string };
         const playbook = cleanPlaybook(answer.playbook);
         if (!response.ok || !playbook) throw new Error(answer.error ?? `the agent's desk answered ${response.status}`);
-        save({
-          playbook,
-          wish,
-          written: {
-            by: answer.driver ?? "model",
-            reason: answer.reason ?? "",
-          },
-        });
+        save({ playbook, written: { by: answer.driver ?? "model", reason: answer.reason ?? "" } });
       } catch (error) {
         setProblem(error instanceof Error ? error.message : String(error));
       }
@@ -128,5 +131,5 @@ export function useAgent(accountId: string | null): AgentDesk {
     [agent.model, save],
   );
 
-  return { agent, models, save, write, writing, problem };
+  return { agents: roster.agents, agent, auto: roster.auto, models, save, pick, add, remove, setAuto, write, writing, problem };
 }

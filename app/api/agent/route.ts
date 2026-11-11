@@ -55,10 +55,13 @@ export async function POST(request: Request): Promise<Response> {
   if (match.meta.status !== "playing" || match.meta.current_seat !== seat) return refuse(409, "it is not this seat's turn");
 
   const turnKey = `${match.game.rolls}:${match.game.round}:${match.game.stage}`;
-  const known = book.recall(id, seat, turnKey);
+  // The advice is kept under the instructions it was asked with: the owner asking again gets the same answer, and
+  // nobody else can read it or leave one of their own in its place (see book.ts).
+  const brief = await digest(JSON.stringify([llm?.model ?? RULES_MODEL, playbook ?? null, typeof style === "string" ? style : ""]));
+  const known = book.recall(id, seat, turnKey, brief);
   if (known) return Response.json(known, { headers: { "cache-control": "no-store" } });
   // Asked again while the model is still thinking: the same answer, not a second request.
-  const ticket = `${id}:${seat}:${turnKey}`;
+  const ticket = `${id}:${seat}:${turnKey}:${brief}`;
   let pending = asking.get(ticket);
   if (!pending) {
     // Over budget: the playbook or the rule bot plays this turn instead of a model, same as a model that failed.
@@ -67,7 +70,7 @@ export async function POST(request: Request): Promise<Response> {
     pending = advise(live, seat, { llm: overBudget ? null : llm, style: style as string | undefined, playbook })
       .then((advice) => {
         if (advice && overBudget) Object.assign(advice, { fallback: true, problem: "the model is answering too many requests right now" });
-        if (advice) book.remember(id, seat, turnKey, live.game.round, advice, Date.now());
+        if (advice) book.remember(id, seat, turnKey, live.game.round, advice, Date.now(), { brief });
         return advice;
       })
       .finally(() => asking.delete(ticket));
@@ -76,6 +79,11 @@ export async function POST(request: Request): Promise<Response> {
   const advice = await pending;
   if (!advice) return refuse(409, "this seat is not in the game");
   return Response.json(advice, { headers: { "cache-control": "no-store" } });
+}
+
+async function digest(text: string): Promise<string> {
+  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
+  return Array.from(hash.subarray(0, 12), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 export function GET(request: Request): Response {

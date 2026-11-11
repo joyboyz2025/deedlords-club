@@ -1073,15 +1073,19 @@ fn legal_actions_at_the_start() {
     let lobby = Game::new(Rules::default(), ids(2));
     assert_eq!(lobby.legal_actions("p0"), [Action::Start]);
     let game = started(2);
-    assert_eq!(game.legal_actions("p0"), [Action::Roll, Action::Auto]);
-    assert_eq!(game.legal_actions("p1"), [Action::Auto]);
+    // Giving up is open to every player still in the game, on anybody's turn.
+    assert_eq!(game.legal_actions("p0"), [Action::Roll, Action::Resign, Action::Auto]);
+    assert_eq!(game.legal_actions("p1"), [Action::Resign, Action::Auto]);
     let blitz = started_with(blitz_rules(), 2);
-    let mut expected = vec![Action::Roll];
+    let mut expected = vec![Action::Roll, Action::Resign];
     expected.extend([1, 3, 6, 8].map(Action::Build));
     expected.extend([1, 3, 5, 6, 8].map(Action::Mortgage));
     expected.push(Action::Auto);
     assert_eq!(blitz.legal_actions("p0"), expected);
-    assert_eq!(blitz.legal_actions("p1"), [9, 11, 12, 13, 14].map(Action::Mortgage).into_iter().chain([Action::Auto]).collect::<Vec<_>>());
+    assert_eq!(
+        blitz.legal_actions("p1"),
+        [Action::Resign].into_iter().chain([9, 11, 12, 13, 14].map(Action::Mortgage)).chain([Action::Auto]).collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -1337,7 +1341,7 @@ fn legal_actions_match_apply_exactly() {
                     let mut brute = Vec::new();
                     let candidates = [Action::Start, Action::Roll, Action::Buy, Action::Skip, Action::End, Action::Bail, Action::Card]
                         .into_iter()
-                        .chain([Action::Pay, Action::Bankrupt])
+                        .chain([Action::Pay, Action::Bankrupt, Action::Resign])
                         .chain((0..=45).map(Action::Build))
                         .chain((0..=45).map(Action::Sell))
                         .chain((0..=45).map(Action::Mortgage))
@@ -1354,4 +1358,68 @@ fn legal_actions_match_apply_exactly() {
             bot_step(&mut game, &mut r, &mut dice);
         }
     }
+}
+
+// ----- Giving up -----------------------------------------------------------------------------------------------------
+
+#[test]
+fn a_player_gives_up_on_anybodys_turn_and_leaves_as_a_bankrupt_one_does() {
+    // Three players; p1 gives up while it is p0's turn. p1's square goes back to the bank, p0 keeps the turn.
+    let mut game = started(3);
+    roll_as(&mut game, 1, 2);
+    act(&mut game, "p0", Action::Buy).unwrap();
+    act(&mut game, "p0", Action::End).unwrap();
+    roll_as(&mut game, 2, 3);
+    act(&mut game, "p1", Action::Buy).unwrap();
+    act(&mut game, "p1", Action::End).unwrap();
+    assert_eq!(game.current_player(), Some("p2"));
+    let owned_by_p1: Vec<u8> = game.props.iter().filter(|(_, o)| o.owner == "p1").map(|(&i, _)| i).collect();
+    assert_eq!(owned_by_p1.len(), 1);
+    act(&mut game, "p1", Action::Resign).unwrap();
+    assert!(game.players[1].bankrupt);
+    assert_eq!(game.players[1].out_at, Some(1));
+    assert_eq!(game.players[1].cash, 0);
+    assert!(!game.props.contains_key(&owned_by_p1[0]), "the square is the bank's again");
+    assert_eq!(game.current_player(), Some("p2"), "the turn stays where it was");
+    assert_eq!(
+        &game.log[game.log.len() - 2..],
+        [Event::Resign { player: "p1".into() }, Event::Bankrupt { player: "p1".into(), creditor: None }]
+    );
+    // Out is out: nothing more from p1, and not twice.
+    assert_eq!(act(&mut game, "p1", Action::Resign), Err(EngineError::Bankrupt));
+    assert_eq!(act(&mut game, "ghost", Action::Resign), Err(EngineError::UnknownPlayer));
+
+    // The current player gives up: the turn passes on.
+    act(&mut game, "p2", Action::Resign).unwrap();
+    assert_eq!(game.phase, Phase::Ended, "one player left: the game is over");
+    assert_eq!(
+        game.result.as_ref().map(|r| (r.reason, r.ranking.clone())),
+        Some((Reason::Last, vec!["p0".to_string(), "p2".to_string(), "p1".to_string()]))
+    );
+}
+
+#[test]
+fn giving_up_is_no_way_around_a_debt_and_a_debt_to_a_leaver_is_the_banks() {
+    // p0 owes p1 more than p0 has and gives up on its own turn: p1 is paid as in a bankruptcy.
+    let mut game = started(3);
+    game.stage = Stage::Debt;
+    game.debt = Some(vec![Payee { id: Some("p1".into()), amount: 5000 }]);
+    let cash = game.players[0].cash;
+    let had = game.players[1].cash;
+    act(&mut game, "p0", Action::Resign).unwrap();
+    assert_eq!(game.players[1].cash, had + cash);
+    assert_eq!(game.log.last(), Some(&Event::Bankrupt { player: "p0".into(), creditor: Some("p1".into()) }));
+    assert_eq!(game.current_player(), Some("p1"));
+
+    // p0 owes p2; p2 gives up before being paid: the debt stands, owed to the bank.
+    let mut game = started(3);
+    game.stage = Stage::Debt;
+    game.debt = Some(vec![Payee { id: Some("p2".into()), amount: 40 }, Payee { id: Some("p1".into()), amount: 10 }]);
+    act(&mut game, "p2", Action::Resign).unwrap();
+    assert_eq!(game.debt, Some(vec![Payee { id: None, amount: 40 }, Payee { id: Some("p1".into()), amount: 10 }]));
+    assert_eq!(game.current_player(), Some("p0"));
+    let had = game.players[1].cash;
+    act(&mut game, "p0", Action::Pay).unwrap();
+    assert_eq!(game.players[1].cash, had + 10);
+    assert_eq!(game.players[2].cash, 0, "nothing is paid to somebody who has left");
 }

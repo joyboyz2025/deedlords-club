@@ -16,6 +16,7 @@ import {
   payBail,
   payDebt,
   redeem,
+  resign,
   sellHouse,
   skipBuying,
   useFreeCard,
@@ -120,6 +121,8 @@ export function logLine(event: ChainEvent, nameOf: (playerId: string) => string)
       return `${nameOf(event.player)} goes bankrupt.`;
     case "auto":
       return `${nameOf(event.player)} timed out; the game moves for them.`;
+    case "resign":
+      return `${nameOf(event.player)} gives up.`;
     case "end":
       return event.reason === "time" ? "Time is up: net worth decides." : "Only one player is left.";
   }
@@ -205,6 +208,8 @@ export function toAction(message: ClientMessage): ContractAction | null {
       return "Pay";
     case "bankrupt":
       return "Bankrupt";
+    case "resign":
+      return "Resign";
     case "build":
       return isSquare(message.square) ? { Build: message.square } : null;
     case "sell":
@@ -258,6 +263,7 @@ export function applyAction(game: Game, playerId: string, action: ContractAction
   else if (action === "Card") useFreeCard(game, playerId);
   else if (action === "Pay") payDebt(game, playerId, NO_DICE);
   else if (action === "Bankrupt") declareBankruptcy(game, playerId);
+  else if (action === "Resign") resign(game, playerId);
   else if (typeof action === "string") return false;
   else if ("Build" in action) build(game, playerId, action.Build);
   else if ("Sell" in action) sellHouse(game, playerId, action.Sell);

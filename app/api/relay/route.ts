@@ -10,7 +10,7 @@ import { clientKey } from "@/games/co-ty-phu/agent/rateLimit";
 import { isGrantedKey, isSponsored, jsonAnswer, limits } from "@/games/co-ty-phu/chain/freeDesk";
 import { Refused, relayable } from "@/games/co-ty-phu/chain/relayRules";
 import { fromBase64 } from "@/lib/chain/base58";
-import { ContractFailure } from "@/lib/chain/client";
+import { isContractFailure } from "@/lib/chain/client";
 import { CHAIN } from "@/lib/chain/config";
 import { implicitAccountId } from "@/lib/chain/evmKey";
 import { parsePublicKey } from "@/lib/chain/keys";
@@ -68,9 +68,9 @@ export async function POST(request: Request): Promise<Response> {
   try {
     // To the player's own account: that is where a delegate action is checked (key, nonce, expiry) and turned into
     // the player's call to the game contract.
-    return jsonAnswer(200, await paying.session.sendTo(action.senderId, [{ delegate: bytes }]));
+    return jsonAnswer(200, await paying.session.sendTo(action.senderId, [{ delegate: bytes }], { delegatedTo: action.receiverId }));
   } catch (error) {
-    if (error instanceof ContractFailure) return jsonAnswer(200, { hash: error.hash, failed: error.message });
+    if (isContractFailure(error)) return jsonAnswer(200, { hash: error.hash, failed: error.message });
     return jsonAnswer(502, { error: `the sponsor could not send it: ${text(error)}` });
   }
 }

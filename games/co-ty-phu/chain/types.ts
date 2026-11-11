@@ -30,6 +30,8 @@ export type ChainMeta = {
   rules: ChainRules;
   solo_player: string | null;
   creator: string;
+  /** The account that starts the game once every seat is taken; `null`: it starts by itself. Only in the lobby. */
+  host?: string | null;
   storage_deposit: string;
   /** Block times, in nanoseconds. */
   created_at: string;
@@ -92,7 +94,8 @@ export type ChainEvent =
   | { kind: "paidDebt"; player: string; amount: number }
   | { kind: "bankrupt"; player: string; creditor: string | null }
   | { kind: "auto"; player: string }
-  | { kind: "end"; reason: "last" | "time" };
+  | { kind: "end"; reason: "last" | "time" }
+  | { kind: "resign"; player: string };
 
 /** `get_match`: `null` once the match is settled, abandoned or never existed. */
 export type ChainMatch = { meta: ChainMeta; game: ChainGame; log: ChainEvent[] };
@@ -133,6 +136,7 @@ export type ContractAction =
   | "Card"
   | "Pay"
   | "Bankrupt"
+  | "Resign"
   | { Build: number }
   | { Sell: number }
   | { Mortgage: number }

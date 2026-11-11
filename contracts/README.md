@@ -146,11 +146,12 @@ Change methods (all panic with a readable message on invalid input):
 |---|---|---|
 | `new(owner, house, max_stake: U128, fee_bps: u16)` | contract account (init) | `max_stake`: the most yoctoNEAR one seat may stake in this deployment, at most 1,000,000 NEAR. `fee_bps`: the contract's fee on every pot in basis points, at most 500. Both fixed for the life of the contract. |
 | `migrate(fee_bps: u16)` | contract account, together with the deploy | upgrades a deployment made before the fee (above) |
-| `create_match(id, seats, stake: U128, split: Vec<u16>, rules, solo_player: Option<AccountId>, turn_seconds: Option<u32>)` | anyone, payable (storage) | `id`: 1–32 chars `[A-Za-z0-9_-]`, unique forever once settled. `seats` 2..=4. `stake` ≤ `max_stake`. `split`: 1..=seats basis points per rank, sum 10000. `rules`: `{ salary, cash, blitz, max_rounds }` (`maxRounds` also accepted); `max_rounds` is required, 1..=255, so every match ends; Blitz needs `cash >= 1670`. `solo_player` may not be the house. |
-| `join(id, seat)` | anyone, payable exactly `stake`. Solo match: the solo player (one seat) and the house (all the others; it cannot take the last free seat while the solo player is not seated) | backs a free seat; the last one starts the game |
+| `create_match(id, seats, stake: U128, split: Vec<u16>, rules, solo_player: Option<AccountId>, turn_seconds: Option<u32>, host: Option<AccountId>)` | anyone, payable (storage) | `id`: 1–32 chars `[A-Za-z0-9_-]`, unique forever once settled. `seats` 2..=4. `stake` ≤ `max_stake`. `split`: 1..=seats basis points per rank, sum 10000. `rules`: `{ salary, cash, blitz, max_rounds }` (`maxRounds` also accepted); `max_rounds` is required, 1..=255, so every match ends; Blitz needs `cash >= 1670`. `solo_player` may not be the house. `host`: the match is a room that only this account starts (`start`); not with `solo_player`. Kept under its own storage key, so matches stored before hosts existed read unchanged. |
+| `join(id, seat)` | anyone, payable exactly `stake`. Solo match: the solo player (one seat) and the house (all the others; it cannot take the last free seat while the solo player is not seated) | backs a free seat; the last one starts the game, unless the match has a host |
+| `start(id)` | the host, once every seat is taken, ≥ 100 Tgas | starts a hosted match (draws the turn order); `play(id, seat, ["Start"])` does the same, so a session key can send it |
 | `leave(id, seat)` | the seat's backer, lobby only | refunds the stake |
 | `set_driver(id, seat, driver: Option<AccountId>)` | the seat's backer | |
-| `play(id, seat, actions: Vec<Action>)` | backer or driver of `seat` | 1..=32 engine actions in order: `"Roll"`, `"Buy"`, `"Skip"`, `"End"`, `"Bail"`, `"Card"`, `"Pay"`, `"Bankrupt"`, `{"Build": i}`, `{"Sell": i}`, `{"Mortgage": i}`, `{"Redeem": i}`. `Sell`/`Mortgage`/`Redeem` work out of turn as the engine allows. `Start`/`Auto` are refused. Returns `{ "applied": n, "rejected": null \| { "index", "action", "error" } }`: read `rejected`, a call that rolled succeeds even when a later action was refused ("No re-rolls"). |
+| `play(id, seat, actions: Vec<Action>)` | backer or driver of `seat` | 1..=32 engine actions in order: `"Roll"`, `"Buy"`, `"Skip"`, `"End"`, `"Bail"`, `"Card"`, `"Pay"`, `"Bankrupt"`, `"Resign"`, `{"Build": i}`, `{"Sell": i}`, `{"Mortgage": i}`, `{"Redeem": i}`. `Sell`/`Mortgage`/`Redeem` work out of turn as the engine allows; so does `Resign` (giving up, any time: the seat goes bankrupt, see ENGINE-RULES §7). `Auto` is refused, and `Start` except alone from a hosted match's host (`start`). Returns `{ "applied": n, "rejected": null \| { "index", "action", "error" } }`: read `rejected`, a call that rolled succeeds even when a later action was refused ("No re-rolls"). |
 | `turn(id, seat, plan)` | backer or driver of the current seat | whole agent turn in one transaction (below) |
 | `timeout(id)` | anyone, after the deadline | engine `Auto` for the current player; in debt, the deterministic liquidation |
 | `abandon(id)` | anyone, lobby only, 15 min after creation | refunds every stake and the storage deposit |
@@ -291,6 +292,14 @@ call. Stakes 0.05 NEAR per seat. Times run from sending the transaction until th
   first run. The second run deleted the session keys the first one left and finished its match.
 - Small samples from one machine and one RPC provider: read the times as an order of magnitude. Nothing here was
   measured on mainnet.
+
+### Upgrade of 2026-11-12: giving up, and hosted rooms
+
+`game.deedlords.testnet` was upgraded in place (code hash `CRBA9Sf1…` → `GWbj4WHw…`, 531,595 bytes, tx
+`FHX5j1i9GEpfmXHsJsfP28QAzeaEs1wmFiYHiHsWxeAU`) with a plain deploy, no `migrate`: `Action::Resign` and
+`Event::Resign` were added at the end of their enums, and a match's host lives under its own key (`host:<id>`), so
+every stored match reads as before. `sandbox/upgrade.js dry` rehearses exactly this on a local sandbox, starting from
+the code fetched from testnet, with a lobby and a game in progress opened on it; `sandbox/upgrade.js run` deploys.
 
 ## Known limits
 

@@ -7,7 +7,7 @@
 // a key that can only make those same calls (`grantable`).
 
 import { implicitAccountId } from "../../../lib/chain/evmKey.ts";
-import type { DelegateAction, KeyGrant } from "../../../lib/chain/transaction.ts";
+import type { DelegateAction, KeyGrant, Transaction } from "../../../lib/chain/transaction.ts";
 import { GRANT_METHODS, SESSION_ALLOWANCE } from "./calls.ts";
 
 /** The calls of a seat: taking it, leaving it, handing it to a driver, moving it, and forcing a late turn. */
@@ -63,4 +63,29 @@ export function grantable(grant: KeyGrant, contractId: string): void {
   if (grant.methods.length === 0 || grant.methods.some((method) => !(GRANT_METHODS as readonly string[]).includes(method)))
     throw new Refused("the key may only call a seat's methods");
   if (grant.allowance === null || grant.allowance > BigInt(SESSION_ALLOWANCE)) throw new Refused("the key's allowance is too large");
+}
+
+/** What an account signed in through NEAR Auth does with its own NEAR at the game: opening a match, taking a seat. */
+export const STAKE_METHODS = ["create_match", "join"] as const;
+
+/**
+ * A transaction the sponsor may carry to NEAR Auth for signing. The account's own NEAR is what moves, and the
+ * account sends and pays for the transaction itself: all the sponsor pays is the call that gets it signed. It is
+ * still not a signing service for anything at all: a stake at the game contract (`stake`), or one plain transfer
+ * out of the account (`withdraw`). Throws `Refused` for any other.
+ */
+export function signable(tx: Transaction, contractId: string): "stake" | "withdraw" {
+  if (!/^[0-9a-f]{64}$/.test(tx.signerId) || tx.signerId !== implicitAccountId(tx.publicKey)) throw new Refused("only a game account's own transactions are signed");
+  if (tx.actions.length === 1 && "transfer" in tx.actions[0]) {
+    if (tx.actions[0].transfer <= 0n) throw new Refused("nothing to send");
+    if (tx.receiverId === tx.signerId) throw new Refused("a withdrawal goes to another account");
+    return "withdraw";
+  }
+  if (tx.receiverId !== contractId) throw new Refused(`only stakes at ${contractId} and withdrawals are signed`);
+  if (tx.actions.length > 2) throw new Refused("too many calls");
+  for (const action of tx.actions) {
+    if (!("method" in action) || !(STAKE_METHODS as readonly string[]).includes(action.method)) throw new Refused("only opening a match and taking a seat are signed");
+    if (action.args.length > RELAY_MAX_ARGS) throw new Refused("the call is too long");
+  }
+  return "stake";
 }

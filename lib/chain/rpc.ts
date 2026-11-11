@@ -1,5 +1,9 @@
 // One JSON-RPC request to a NEAR node, with patience for what is transient: a rate limit (HTTP 429), a gateway error,
 // a dropped connection. Errors the node reports about the request itself are thrown at once.
+//
+// The address may name several nodes, separated by commas. Requests go to one of them; when it turns a request away
+// for a transient reason the next one takes over, for this request and those after it. A free public node limits how
+// much one address may ask, and a page that polls a match, with a second tab open, gets there.
 
 export class RpcError extends Error {
   /** The node's error name (`TIMEOUT_ERROR`, `INVALID_TRANSACTION`, `UNKNOWN_ACCESS_KEY`…), or `HTTP`, `NETWORK`, `TIMEOUT`. */
@@ -54,14 +58,28 @@ async function once<T>(url: string, method: string, params: unknown, timeoutMs: 
   return body.result as T;
 }
 
+/** Which node of a list is in use, by the list as written. */
+const inUse = new Map<string, number>();
+
 export async function rpc<T>(url: string, method: string, params: unknown, options: RpcOptions = {}): Promise<T> {
   const { timeoutMs = 15_000, tries = 5, retryTimeout = true } = options;
+  const nodes = url.includes(",")
+    ? url
+        .split(",")
+        .map((node) => node.trim())
+        .filter(Boolean)
+    : [url];
   for (let i = 0; ; i++) {
+    const at = (inUse.get(url) ?? 0) % nodes.length;
     try {
-      return await once<T>(url, method, params, timeoutMs);
+      return await once<T>(nodes[at], method, params, timeoutMs);
     } catch (error) {
       const retry = error instanceof RpcError && error.transient && (retryTimeout || error.code !== "TIMEOUT");
       if (!retry || i + 1 >= tries) throw error;
+      // Another node to ask: move on to it at once, and wait only after each has had its turn.
+      const moved = nodes.length > 1 && error.code !== "TIMEOUT";
+      if (moved) inUse.set(url, at + 1);
+      if (moved && (i + 1) % nodes.length !== 0) continue;
       await sleep(Math.min(60_000, error.retryAfterMs ?? Math.min(30_000, 500 * 2 ** i)) + Math.random() * 250);
     }
   }

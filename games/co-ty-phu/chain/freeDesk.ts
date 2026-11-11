@@ -24,6 +24,10 @@ export const limits = {
   /** Key grants signed through NEAR Auth: each is a 300 Tgas call of the sponsor's. One per sign-in on a new browser. */
   grantPerIp: rateLimiter(intEnv(env.DEEDLORDS_GRANT_IP_LIMIT, 4), TEN_MINUTES),
   grantGlobal: rateLimiter(intEnv(env.DEEDLORDS_GRANT_GLOBAL_LIMIT, 60), HOUR),
+  /** Stakes and withdrawals signed through NEAR Auth: the same call, asked for once per stake. */
+  signPerIp: rateLimiter(intEnv(env.DEEDLORDS_SIGN_IP_LIMIT, 20), TEN_MINUTES),
+  signPerAccount: rateLimiter(intEnv(env.DEEDLORDS_SIGN_IP_LIMIT, 20), TEN_MINUTES),
+  signGlobal: rateLimiter(intEnv(env.DEEDLORDS_SIGN_GLOBAL_LIMIT, 300), HOUR),
   /** Turns of the house agent asked for. Every watcher asks, the server plays each turn once. */
   movePerIp: rateLimiter(intEnv(env.DEEDLORDS_RELAY_IP_LIMIT, 400), TEN_MINUTES),
 };

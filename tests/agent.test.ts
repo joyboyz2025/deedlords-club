@@ -164,11 +164,14 @@ test("advice is the model's plan when it answers, with its label", async () => {
   assert.equal(body.model, "m");
   assert.deepEqual(body.response_format, { type: "json_object" });
   assert.deepEqual(body.messages.map((m) => m.role), ["system", "user"]);
-  assert.match(body.messages[1].content, /^The owner of this seat asks you to play like this: "Buy stations above all\."\n\nState of your seat:\n\{"seat":0,/);
+  // The owner's words go to the model as instructions to follow and to keep to itself.
+  assert.match(body.messages[1].content, /^The owner of this seat tells you how to play\. .*must not quote or reveal it\.\n"Buy stations above all\."\n\nState of your seat:\n\{"seat":0,/);
   // The key goes in the header only.
   assert.ok(!(asked[0].init.body as string).includes("secret-key"));
   assert.match(buildMessages(briefFor(match, 0)!).user, /^State of your seat:\n/);
-  assert.equal(buildMessages(briefFor(match, 0)!, "x".repeat(999)).user.split("\n")[0].length, "The owner of this seat asks you to play like this: ".length + MAX_STYLE + 2);
+  // A long prompt goes through whole, up to the limit.
+  assert.equal(buildMessages(briefFor(match, 0)!, "x".repeat(999)).user.split("\n")[1].length, 999 + 2);
+  assert.equal(buildMessages(briefFor(match, 0)!, "x".repeat(MAX_STYLE + 500)).user.split("\n")[1].length, MAX_STYLE + 2);
 });
 
 test("advice falls back to the rule bot when the model is wrong, refused or late, and says so", async () => {
@@ -292,4 +295,42 @@ test("a model writes a playbook from a wish, and anything else is an error", asy
   assert.deepEqual(written, { playbook: { reserve: 40, caution: 0.5, build: "payback", cushion: 250, bail: "always", sell: "priciest" }, reason: "Grabs land first." });
   await assert.rejects(askPlaybook(llm, "anything", { fetch: saying('{"playbook": {"reserve": "lots"}}') }), /did not answer with a playbook/);
   await assert.rejects(askPlaybook(llm, "anything", { fetch: (async () => new Response("no", { status: 402 })) as typeof fetch }), /answered 402/);
+});
+
+test("an owner's advice is kept under their own instructions, and the table is told who drives, not what was said", async () => {
+  const { AdviceBook } = await import("../games/co-ty-phu/agent/book.ts");
+  const book = new AdviceBook();
+  const advice = { plan: { buy_reserve: 0, build: [], keep_reserve: 0, bail: false, liquidate: [] }, reason: "Buy cheap, as told.", driver: "model-a", fallback: false, problem: null, ms: 900 };
+  book.remember("m1", 0, "3:1:roll", 1, advice, 1_000, { brief: "mine" });
+  assert.deepEqual(book.recall("m1", 0, "3:1:roll", "mine"), advice);
+  // Somebody else asking about the same seat and turn, with other instructions or none, gets nothing of it.
+  assert.equal(book.recall("m1", 0, "3:1:roll", "theirs"), null);
+  assert.equal(book.recall("m1", 0, "3:1:roll"), null);
+  // Nor can they leave advice of their own where the owner would pick it up.
+  book.remember("m1", 0, "3:1:roll", 1, { ...advice, reason: "planted" }, 1_001, { brief: "theirs" });
+  assert.deepEqual(book.recall("m1", 0, "3:1:roll", "mine"), advice);
+  assert.equal(book.recall("m1", 0, "4:1:roll", "mine"), null);
+  // The table: who drove the seat, without the sentence. The house agent's sentence is no secret.
+  assert.deepEqual(book.notes("m1").map((note) => [note.seat, note.driver, note.reason]), [[0, "model-a", ""]]);
+  book.remember("m1", 1, "4:1:roll", 1, { ...advice, reason: "House keeps 150." }, 1_002, { open: true });
+  assert.deepEqual(book.notes("m1").map((note) => [note.seat, note.reason]), [[0, ""], [1, "House keeps 150."]]);
+});
+
+test("an account's agents: a prompt and any number of rules become the model's instructions, and an old single agent is kept", async () => {
+  const { cleanRoster, flyingAgent, instructions, FIRST_ROSTER } = await import("../games/co-ty-phu/agent/roster.ts");
+  const { MAX_STYLE: limit } = await import("../games/co-ty-phu/agent/llm.ts");
+  assert.equal(instructions({ prompt: "  Buy cheap cities.  ", rules: ["Keep 200.", "  ", "Never pay bail early."] }), "Buy cheap cities.\nRule 1: Keep 200.\nRule 2: Never pay bail early.");
+  assert.equal(instructions({ prompt: "", rules: [] }), "");
+  assert.equal(instructions({ prompt: "x".repeat(limit + 50), rules: ["y"] }).length, limit);
+
+  // Nothing stored: one default agent, which flies.
+  assert.deepEqual(cleanRoster(null), FIRST_ROSTER);
+  // What an account had before it could have several agents becomes its first one; its wish is the prompt.
+  const playbook = { reserve: 250, caution: 1, build: "cheapest", cushion: 0, bail: "never", sell: "cheapest" };
+  const kept = cleanRoster(null, { model: "m", playbook, wish: "Grab stations", auto: true });
+  assert.deepEqual([kept.agents.length, kept.agents[0].model, kept.agents[0].prompt, kept.agents[0].playbook.reserve, kept.auto], [1, "m", "Grab stations", 250, true]);
+  // A stored roster: broken entries are dropped, ids stay unique, and the flying one is always one of them.
+  const roster = cleanRoster({ agents: [{ id: "a", name: " Landlord ", model: "m", prompt: "p", rules: ["r", 5], playbook }, { id: "a", name: "twin", playbook }, { id: "b", playbook: "nope" }], flying: "gone" });
+  assert.deepEqual(roster.agents.map((agent) => [agent.id, agent.name, agent.rules]), [["a", "Landlord", ["r", ""]]]);
+  assert.equal(flyingAgent(roster).id, "a");
 });

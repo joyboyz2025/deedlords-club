@@ -161,6 +161,11 @@ export class TycoonScene {
   private throwAt = -Infinity;
   private hits = HITS.length;
   private diceResting = true;
+  /** A roll is on its way to the chain: the dice tumble in the air above the tray until their numbers come. */
+  private shaking = false;
+  private shakeAt = 0;
+  /** Where each die was when the shaking began, to rise from there. `null`: it was not on the table. */
+  private shakeFrom: (THREE.Vector3 | null)[] = [null, null];
   /** Quân chỉ được đi sau lúc này: chờ xúc xắc dừng và mọi người kịp nhìn số. */
   private holdUntil = 0;
   private held = false;
@@ -424,12 +429,63 @@ export class TycoonScene {
     token.chibi.assign(token.actor, VIEW_YAW, new THREE.Vector2(next.x, next.z), waiting ? TRAY_SPOT : null);
   }
 
+  /**
+   * A roll whose numbers are not known yet (the transaction is on its way): the dice lift off and tumble above the
+   * tray. When the numbers come, `update` drops them from where they are. Turned off with no new roll (the roll was
+   * refused), they go back to how they lay.
+   */
+  setRolling(on: boolean): void {
+    if (on === this.shaking) return;
+    this.shaking = on;
+    if (on) {
+      this.shakeAt = performance.now();
+      this.shakeFrom = this.dice.map((die) => (die.visible ? die.position.clone() : null));
+      for (const mesh of [...this.dice, ...this.diceShadows]) mesh.visible = true;
+      this.diceResting = true;
+    } else if (this.flights.length === this.dice.length) {
+      this.flights.forEach((flight, i) => {
+        this.dice[i].position.copy(flight.to);
+        this.dice[i].quaternion.copy(flight.rest);
+        this.diceShadows[i].position.set(flight.to.x, TRAY_TOP + 0.003, flight.to.z);
+        this.diceShadows[i].scale.setScalar(1);
+      });
+    } else {
+      for (const mesh of [...this.dice, ...this.diceShadows]) mesh.visible = false;
+    }
+    this.busy = true;
+  }
+
+  /** The dice in the air, turning over and over. Returns whether they are. */
+  private poseShake(now: number): boolean {
+    if (!this.shaking) return false;
+    const seconds = (now - this.shakeAt) / 1000;
+    const rise = easeOut(seconds / 0.28);
+    // As high as a throw begins (`bounceHeight(0)`), so the drop that follows starts exactly here.
+    const height = TRAY_TOP + DIE_SIZE / 2 + bounceHeight(0);
+    this.dice.forEach((die, i) => {
+      const side = i === 0 ? -1 : 1;
+      const bob = this.calm ? 0 : Math.sin(seconds * 7 + i * 1.7) * 0.22;
+      const hover = new THREE.Vector3((side * DICE_APART) / 2 + Math.sin(seconds * 3.1 + i) * 0.12, height + bob, Math.cos(seconds * 2.6 + i * 2) * 0.12);
+      die.position.copy(this.shakeFrom[i] ? this.shakeFrom[i]!.clone().lerp(hover, rise) : hover);
+      const speed = this.calm ? 0.35 : 1;
+      die.quaternion.setFromEuler(new THREE.Euler(seconds * 9.5 * speed + i * 2.1, seconds * 6.3 * speed + i, seconds * 4.7 * speed));
+      const shadow = this.diceShadows[i];
+      shadow.visible = true;
+      shadow.position.set(die.position.x, TRAY_TOP + 0.003, die.position.z);
+      shadow.scale.setScalar(1 / (1 + (die.position.y - TRAY_TOP - DIE_SIZE / 2) * 0.4));
+    });
+    return true;
+  }
+
   /** Có lượt đổ mới thì tung xúc xắc từ phía người đổ vào mâm. Lần đầu vào xem thì đặt sẵn số vừa đổ, không tung. */
   private throwDice(view: View): void {
     if (view.rolls === this.rolls) return;
     const first = this.rolls === null;
     this.rolls = view.rolls;
     const values = view.dice;
+    // Tumbling in the air while the roll was on its way: they fall from where they are instead of flying in.
+    const midair = this.shaking && !first && values !== null ? this.dice.map((die) => die.position.clone()) : null;
+    this.shaking = false;
     for (const mesh of [...this.dice, ...this.diceShadows]) mesh.visible = values !== null;
     if (!values) return;
     // Bay vào từ cạnh bàn người đổ đang đứng, nằm lại thành hàng ngang trước mặt người đó.
@@ -442,7 +498,7 @@ export class TycoonScene {
     this.flights = values.map((value, i) => {
       const side = i === 0 ? -1 : 1;
       return {
-        from: toward.clone().multiplyScalar(THROW_FROM).addScaledVector(across, side * 0.4).setY(restY),
+        from: midair ? midair[i].setY(restY) : toward.clone().multiplyScalar(THROW_FROM).addScaledVector(across, side * 0.4).setY(restY),
         // Lệch ít thôi để hai con không chạm nhau.
         to: across.clone().multiplyScalar((side * DICE_APART) / 2 + jitter(0.08)).addScaledVector(toward, jitter(0.24)).setY(restY),
         rest: restQuaternion(value, yaw + jitter(0.3)),
@@ -789,7 +845,7 @@ export class TycoonScene {
         this.events.onArrive(this.rolls ?? 0);
       }
     }
-    const rolling = this.poseDice(now);
+    const rolling = this.poseDice(now) || this.poseShake(now);
     const growing = this.poseBuildings(now);
     const drifting = this.drift(dt);
     this.busy =

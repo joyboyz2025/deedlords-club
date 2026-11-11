@@ -44,7 +44,9 @@ export const CHAIN: ChainConfig =
       }
     : {
         network,
-        rpcUrl: process.env.NEXT_PUBLIC_NEAR_RPC ?? "https://test.rpc.fastnear.com",
+        // Three public nodes: when one limits this address the next takes over (see rpc.ts). A deployment that expects
+        // visitors names a node of its own here.
+        rpcUrl: process.env.NEXT_PUBLIC_NEAR_RPC ?? "https://test.rpc.fastnear.com,https://near-testnet.drpc.org,https://rpc.testnet.near.org",
         contractId: process.env.NEXT_PUBLIC_DEEDLORDS_CONTRACT ?? "game.deedlords.testnet",
         devUrl: helperUrl,
         wallets: true,

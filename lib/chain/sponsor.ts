@@ -17,7 +17,8 @@ export type Sponsor = { accountId: string; session: Session };
 
 const ACCOUNT_ID = /^(?=.{2,64}$)[a-z0-9]+(?:[-_.][a-z0-9]+)*$/;
 // One session for the process: it owns the key's nonce. Kept across the reloads of a dev server.
-const shelf = globalThis as { deedlordsSponsor?: { at: string; sponsor: Sponsor | null } };
+// The name carries a version: a dev server that reloads this file must not keep a session made by older code.
+const shelf = globalThis as { deedlordsSponsorV2?: { at: string; sponsor: Sponsor | null } };
 
 function secretKey(accountId: string): string | null {
   const fromEnv = process.env.DEEDLORDS_SPONSOR_KEY?.trim();
@@ -34,7 +35,7 @@ function secretKey(accountId: string): string | null {
 export function sponsor(): Sponsor | null {
   const accountId = process.env.DEEDLORDS_SPONSOR_ACCOUNT?.trim() ?? "";
   const at = `${CHAIN.network}:${accountId}`;
-  if (shelf.deedlordsSponsor?.at === at) return shelf.deedlordsSponsor.sponsor;
+  if (shelf.deedlordsSponsorV2?.at === at) return shelf.deedlordsSponsorV2.sponsor;
   let made: Sponsor | null = null;
   if (ACCOUNT_ID.test(accountId)) {
     const key = secretKey(accountId);
@@ -44,6 +45,6 @@ export function sponsor(): Sponsor | null {
       made = null; // not a key: sponsor nothing rather than fail every request
     }
   }
-  shelf.deedlordsSponsor = { at, sponsor: made };
+  shelf.deedlordsSponsorV2 = { at, sponsor: made };
   return made;
 }

@@ -5,7 +5,8 @@
 import type { Advice } from "./advise.ts";
 import { AdviceBook } from "./book.ts";
 
-const shelf = globalThis as { deedlordsAdvice?: AdviceBook; deedlordsAsking?: Map<string, Promise<Advice | null>> };
+// The names carry the book's version: a dev server that reloads this file must not keep a book made by older code.
+const shelf = globalThis as { deedlordsAdviceV2?: AdviceBook; deedlordsAskingV2?: Map<string, Promise<Advice | null>> };
 
-export const book = (shelf.deedlordsAdvice ??= new AdviceBook());
-export const asking = (shelf.deedlordsAsking ??= new Map());
+export const book = (shelf.deedlordsAdviceV2 ??= new AdviceBook());
+export const asking = (shelf.deedlordsAskingV2 ??= new Map());

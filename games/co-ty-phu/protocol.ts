@@ -39,6 +39,8 @@ export type ClientMessage =
   | { t: "card" }
   | { t: "pay" }
   | { t: "bankrupt" }
+  /** Give up the game, at any time (on-chain matches). */
+  | { t: "resign" }
   /** Người chơi nào cũng làm được với đất của mình, bất cứ lúc nào trong ván. */
   | { t: "build"; square: number }
   | { t: "sell"; square: number }

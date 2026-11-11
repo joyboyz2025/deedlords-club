@@ -6,15 +6,15 @@ import { Arrow, Bot, Copy, Seat } from "@/components/landing/icons";
 import { CHAIN } from "@/lib/chain/config";
 import { TOKEN_COLORS } from "../board";
 import { accountLabel, formatBps, formatNear, seatNames, shortAccount } from "../chain/adapt";
-import { MOVE_HOLD, joinCalls, near, upfront } from "../chain/calls";
+import { MOVE_HOLD, joinCalls, near, startCall, upfront } from "../chain/calls";
 import { devJoin, devSeatAgent, useDevConfig, type DevConfig } from "../chain/devSession";
 import type { ChainMatch, ChainResult } from "../chain/types";
 import { armAgent, useAgent } from "../chain/useAgent";
 import { useAgentNotes, useAutopilot } from "../chain/useAutopilot";
 import { useChainRoom } from "../chain/useChainRoom";
-import { isFreeTable, takeFreeSeat } from "../chain/free";
+import { isFreeTable, seatCaller, takeFreeSeat } from "../chain/free";
 import { useFreeSponsor, useHouseAgent } from "../chain/useFree";
-import { canStake, sendStake, usePlayer, type PlayerState } from "../chain/usePlayer";
+import { approvesInWindow, sendStake, usePlayer, type PlayerState } from "../chain/usePlayer";
 import { AgentStub, Flap, Hall, PassengerStub } from "./Desk";
 import { Ledger } from "./Ledger";
 import { useSeatPortraits } from "./LobbyArt";
@@ -142,6 +142,8 @@ function Table({ id, state, helper }: { id: string; state: PlayerState; helper: 
             note: autopilot.last ? `AI · ${autopilot.last.driver}: ${autopilot.last.reason}` : null,
           },
           ledger,
+          // Giving up is a move like any other: the contract takes it on anybody's turn and settles what is left.
+          resign: seat === null ? undefined : () => send({ t: "resign" }),
           result: (onClose) =>
             result ? (
               <div className="tp-result" role="dialog" aria-label="Result of the match">
@@ -203,6 +205,7 @@ function Lobby({
   const [failed, setFailed] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [inviting, setInviting] = useState(false);
+  const [starting, setStarting] = useState(false);
   const seated = accountId !== null && meta.seats.some((seat) => seat.backer === accountId);
   // In a match against the house the last free seat is the solo player's.
   const mayJoin = player !== null && !seated && (meta.solo_player === null || meta.solo_player === accountId);
@@ -212,8 +215,6 @@ function Lobby({
   const unstaked = stake === 0n;
   const sponsored = isFreeTable(meta, sponsor);
   const relayed = sponsored && player?.via === "key";
-  // A Google account's key in this browser cannot attach a stake, and without the sponsor it has no gas either.
-  const freeOnly = !canStake(player) && !sponsored;
   const free = meta.seats.find((seat) => seat.backer === null) ?? null;
   const open = meta.seats.filter((seat) => seat.backer === null).length;
   // What a game account must hold to sit: enough for the node to take the join, and enough left to make moves after it.
@@ -223,7 +224,7 @@ function Lobby({
     return hold > after ? hold : after;
   })();
   // A wallet shows its own balance and refuses what it cannot pay; a game account is checked here.
-  const short = !relayed && !freeOnly && player?.via === "key" && state.balance !== undefined && (state.balance === null || state.balance < needed);
+  const short = !relayed && player?.via === "key" && state.balance !== undefined && (state.balance === null || state.balance < needed);
 
   const inviteAgent = async () => {
     setInviting(true);
@@ -263,20 +264,50 @@ function Lobby({
     }
   };
 
-  const line = open === 0 ? "Every seat is taken." : seated ? "You are in. One seat to fill." : mayJoin ? "A seat is open. Sit down." : "Boarding now.";
+  // A hosted room: the seats fill as people come, and nothing starts until its host says so.
+  const host = meta.host ?? null;
+  const isHost = host !== null && host === accountId;
+  const toFill = `${open} ${open === 1 ? "seat" : "seats"} to fill`;
+  const line =
+    open === 0
+      ? host
+        ? isHost
+          ? "Everybody is in. Start the game."
+          : "Everybody is in. Waiting for the host."
+        : "Every seat is taken."
+      : seated
+        ? `You are in. ${toFill[0].toUpperCase()}${toFill.slice(1)}.`
+        : mayJoin
+          ? "A seat is open. Sit down."
+          : "Boarding now.";
+  const start = async () => {
+    if (!player) return;
+    setStarting(true);
+    setFailed(null);
+    try {
+      const mine = meta.seats.find((seat) => seat.backer === accountId)?.seat ?? 0;
+      const { method, args } = startCall(meta.id, mine);
+      await seatCaller(player.session).call(method, args, { stake: meta.stake, creator: meta.creator });
+      await onJoined();
+    } catch (error) {
+      setFailed(problemText(error));
+    }
+    setStarting(false);
+  };
 
   return (
-    <Hall gate>
+    <Hall page="gate" account={player && { accountId: player.accountId, balance: state.balance }}>
       <div className="fd-hall">
         <section className="fd-wall">
           <h1 className="fd-line">{line}</h1>
           <p className="fd-lede">
-            Match <code className="fd-code">{meta.id}</code>, held by {CHAIN.contractId}. The game starts by itself when the last seat is taken.
+            Room <code className="fd-code">{meta.id}</code>, held by {CHAIN.contractId}.{" "}
+            {host ? "Its host starts the game once every seat is taken." : "The game starts by itself when the last seat is taken."}
           </p>
           <section className="fd-board" aria-label={`Seats of match ${meta.id}`}>
             <h2 className="fd-board__title">
               <Seat size={24} /> Gate
-              <span className="fd-board__state">{open === 0 ? <Flap text="STARTING" /> : <span className="fd-chip">Boarding · {open} open</span>}</span>
+              <span className="fd-board__state">{open === 0 ? <Flap text={host ? "READY" : "STARTING"} /> : <span className="fd-chip">Boarding · {open} open</span>}</span>
             </h2>
             <ul className="fd-seats">
               {meta.seats.map((seat) => {
@@ -288,7 +319,7 @@ function Lobby({
                       <small>Seat {seat.seat + 1}</small>
                       <strong>{empty ? "Open" : seat.backer === accountId ? `${names[seat.seat]} (you)` : names[seat.seat]}</strong>
                     </p>
-                    <Flap text={empty ? "WAITING" : seat.house ? "THE HOUSE" : sponsored && seat.backer === sponsor ? "AI AGENT" : "SEATED"} />
+                    <Flap text={empty ? "WAITING" : seat.house ? "THE HOUSE" : sponsored && seat.backer === sponsor ? "AI AGENT" : seat.backer === host ? "HOST" : "SEATED"} />
                   </li>
                 );
               })}
@@ -365,13 +396,15 @@ function Lobby({
               </>
             )}
             {free && mayJoin && (
-              <button type="button" className="fd-go" disabled={joining || short || freeOnly} onClick={() => take(free.seat)}>
+              <button type="button" className="fd-go" disabled={joining || short} onClick={() => take(free.seat)}>
                 {joining
                   ? player?.via === "wallet"
                     ? "Waiting for your wallet…"
-                    : unstaked
-                      ? "Taking the seat…"
-                      : "Staking…"
+                    : approvesInWindow(player) && !unstaked
+                      ? "Waiting for your approval…"
+                      : unstaked
+                        ? "Taking the seat…"
+                        : "Staking…"
                   : unstaked
                     ? `Take seat ${free.seat + 1} · Free`
                     : `Take seat ${free.seat + 1} · ${formatNear(meta.stake)} NEAR`}
@@ -379,9 +412,6 @@ function Lobby({
               </button>
             )}
             {free && !player && <p className="fd-small">Check in below to take the open seat.</p>}
-            {free && mayJoin && freeOnly && (
-              <p className="fd-fine">A Google account plays free tables. This seat asks for a stake: open a free table from the departures board instead.</p>
-            )}
             {short && free && mayJoin && (
               <p className="fd-fine">
                 Your game account needs {formatNear(needed.toString(), 2)} NEAR to sit here: the {formatNear(meta.stake)} stake and about{" "}
@@ -396,6 +426,18 @@ function Lobby({
                     .
                   </>
                 )}
+              </p>
+            )}
+            {isHost && open === 0 && (
+              <button type="button" className="fd-go" disabled={starting} onClick={start}>
+                {starting ? "Starting…" : "Start the game"}
+                {!starting && <Arrow size={20} />}
+              </button>
+            )}
+            {host && !isHost && open === 0 && <p className="fd-small">Everybody is in. The host starts the game.</p>}
+            {host && open > 0 && seated && (
+              <p className="fd-small">
+                {isHost ? "You host this room: the game starts when you say so, once every seat is taken." : "The host starts the game once every seat is taken."}
               </p>
             )}
             {seated && open > 0 && (
@@ -452,7 +494,7 @@ function Payout({
     <>
       <img className="tp-result__trophy" src={TROPHY_ART} alt="" width={132} height={132} />
       <p className="tp-result__title">{winner === accountId ? "You win!" : `${names[result.ranking[0]] ?? shortAccount(winner)} wins`}</p>
-      <p className="tp-result__line">{result.reason === "time" ? "Out of rounds: ranked by net worth." : "Everybody else went bankrupt."}</p>
+      <p className="tp-result__line">{result.reason === "time" ? "Out of rounds: ranked by net worth." : "Everybody else went bankrupt or gave up."}</p>
       <ol className="tp-ranking">
         {result.ranking.map((seat, rank) => (
           <li key={seat}>

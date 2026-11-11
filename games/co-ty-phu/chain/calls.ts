@@ -37,25 +37,43 @@ const GAS_HOLD = 1_010_000_000n;
  */
 export const STORAGE_DEPOSIT = 60_000_000_000_000_000_000_000n;
 
-export type DuelTerms = { stake: bigint; maxRounds: number; turnSeconds: number };
+/**
+ * `seats`: 2 when not said. `host`: the account that starts the game once every seat is taken; without one the game
+ * starts by itself with the last seat.
+ */
+export type DuelTerms = { stake: bigint; maxRounds: number; turnSeconds: number; seats?: number; host?: string | null };
 
-/** Opens a two-seat match. Whoever sends it pays the storage deposit and gets it back at settlement. */
+/** How the pot is shared by rank, in basis points, for a table of that many seats. */
+export const SPLITS: Record<number, number[]> = { 2: [7000, 3000], 3: [6000, 3000, 1000], 4: [5000, 3000, 1500, 500] };
+export const SEAT_COUNTS = [2, 3, 4];
+
+/** Opens a match. Whoever sends it pays the storage deposit and gets it back at settlement. */
 export function createDuelCall(id: string, terms: DuelTerms): FunctionCall {
+  const seats = terms.seats ?? 2;
   const create = {
     id,
-    seats: 2,
+    seats,
     stake: terms.stake.toString(),
-    split: [7000, 3000],
+    split: SPLITS[seats] ?? SPLITS[2],
     rules: { salary: 200, cash: 1500, blitz: false, max_rounds: terms.maxRounds },
     solo_player: null,
     turn_seconds: terms.turnSeconds,
+    ...(terms.host ? { host: terms.host } : {}),
   };
   return { method: "create_match", args: jsonArgs(create), gas: CREATE_GAS, deposit: STORAGE_DEPOSIT };
 }
 
-/** One transaction, two calls: open a two-seat match and take its first seat. */
+/** One transaction, two calls: open a match and take its first seat. */
 export function openDuelCalls(id: string, terms: DuelTerms): FunctionCall[] {
   return [createDuelCall(id, terms), ...joinCalls(id, 0, terms.stake)];
+}
+
+/**
+ * The host of a hosted match says go, once every seat is taken. Sent as a move (`play` with the one action `Start`),
+ * so a key that may only make moves, a session key, can send it.
+ */
+export function startCall(id: string, seat: number): { method: "play"; args: { id: string; seat: number; actions: ["Start"] } } {
+  return { method: "play", args: { id, seat, actions: ["Start"] } };
 }
 
 /** The seat a free table's opener leaves to its guest; the house agent, when there is one, takes the other. */
@@ -64,10 +82,11 @@ export const FREE_AGENT_SEAT = 1;
 
 /**
  * A free table, as the sponsor opens it (see free.ts): nothing is staked, so nothing is won. `withAgent`: the sponsor
- * also sits in the second seat, which its agent plays.
+ * also sits in the second seat, which its agent plays. `room`: a table for friends, of that many seats, which the
+ * visitor who asked for it hosts: it starts when they say so.
  */
-export function freeTableCalls(id: string, maxRounds: number, turnSeconds: number, withAgent: boolean): FunctionCall[] {
-  const create = createDuelCall(id, { stake: 0n, maxRounds, turnSeconds });
+export function freeTableCalls(id: string, maxRounds: number, turnSeconds: number, withAgent: boolean, room: { host: string; seats: number } | null = null): FunctionCall[] {
+  const create = createDuelCall(id, { stake: 0n, maxRounds, turnSeconds, seats: room?.seats, host: room?.host });
   return withAgent ? [create, ...joinCalls(id, FREE_AGENT_SEAT, 0n)] : [create];
 }
 

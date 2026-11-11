@@ -4,13 +4,26 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { freeTableCalls, FREE_AGENT_SEAT, STORAGE_DEPOSIT } from "../games/co-ty-phu/chain/calls.ts";
-import { grantable, Refused, relayable, RELAY_MAX_GAS } from "../games/co-ty-phu/chain/relayRules.ts";
+import { freeTableCalls, FREE_AGENT_SEAT, joinCalls, near, openDuelCalls, STORAGE_DEPOSIT } from "../games/co-ty-phu/chain/calls.ts";
+import { tokenSubject } from "../games/co-ty-phu/chain/authDesk.ts";
+import { grantable, Refused, relayable, RELAY_MAX_GAS, signable } from "../games/co-ty-phu/chain/relayRules.ts";
 import { ed25519Signature } from "../lib/chain/nearAuth.ts";
 import { encodeBase58 } from "../lib/chain/base58.ts";
 import { implicitAccountId } from "../lib/chain/evmKey.ts";
 import { parseSecretKey } from "../lib/chain/keys.ts";
-import { type DelegateAction, type FunctionCall, jsonArgs, type KeyGrant, readSignedDelegate, signDelegateAction } from "../lib/chain/transaction.ts";
+import {
+  type DelegateAction,
+  encodeTransaction,
+  type FunctionCall,
+  jsonArgs,
+  type KeyGrant,
+  readSignedDelegate,
+  readTransaction,
+  signDelegateAction,
+  signTransaction,
+  type Transaction,
+  withSignature,
+} from "../lib/chain/transaction.ts";
 
 const CONTRACT = "game.deedlords.testnet";
 const pair = parseSecretKey(`ed25519:${encodeBase58(new Uint8Array(32).fill(7))}`);
@@ -120,4 +133,88 @@ test("the 64 bytes are read out of either shape NEAR Auth's sign has answered in
   // The contract answers `null` when its guard refuses the token.
   for (const nothing of [null, undefined, "", {}, { signature: bytes.slice(1) }, { signature: [...bytes.slice(1), 256] }, { big_r: { affine_point: "zz" }, s: { scalar: "00" } }])
     assert.equal(ed25519Signature(nothing), null);
+});
+
+const tx = (over: Partial<Transaction> = {}): Transaction => ({
+  signerId: guest,
+  publicKey: pair.publicKey,
+  nonce: 9n,
+  receiverId: CONTRACT,
+  blockHash: new Uint8Array(32).fill(3),
+  actions: openDuelCalls("m-1", { stake: near(0.05), maxRounds: 6, turnSeconds: 60 }),
+  ...over,
+});
+
+test("a transaction is read back whole, and takes only its own key's signature", () => {
+  for (const made of [tx(), tx({ receiverId: "alice.testnet", actions: [{ transfer: near(0.25) }] })]) assert.deepEqual(readTransaction(encodeTransaction(made)), made);
+  const encoded = encodeTransaction(tx());
+  assert.throws(() => readTransaction(encoded.subarray(0, encoded.length - 1)), /stops short/);
+  assert.throws(() => readTransaction(Uint8Array.from([...encoded, 0])), /left over/);
+  // What the account's key signs here and what comes back signed from elsewhere are the same bytes.
+  const here = signTransaction(tx(), pair);
+  assert.deepEqual(withSignature(encoded, here.bytes.subarray(here.bytes.length - 64), pair.publicKey), here);
+  assert.throws(() => withSignature(encoded, signTransaction(tx(), session).bytes.subarray(-64), pair.publicKey), /not this key's/);
+  assert.throws(() => withSignature(encodeTransaction(tx({ nonce: 10n })), here.bytes.subarray(here.bytes.length - 64), pair.publicKey), /not this key's/);
+});
+
+test("the sponsor carries to NEAR Auth a stake at the game or a withdrawal, and nothing else", () => {
+  assert.equal(signable(tx(), CONTRACT), "stake");
+  assert.equal(signable(tx({ actions: joinCalls("m-1", 1, near(0.05)) }), CONTRACT), "stake");
+  assert.equal(signable(tx({ receiverId: "alice.testnet", actions: [{ transfer: near(0.25) }] }), CONTRACT), "withdraw");
+  const refused = (made: Transaction, why: RegExp) =>
+    assert.throws(
+      () => signable(made, CONTRACT),
+      (error) => error instanceof Refused && why.test(error.message),
+    );
+  // Somebody else's account, or a named one: the sponsor pays for the signing call, so it is not for everybody.
+  refused(tx({ signerId: "alice.testnet" }), /game account's own/);
+  refused(tx({ signerId: "ab".repeat(32) }), /game account's own/);
+  refused(tx({ receiverId: "elsewhere.testnet" }), /only stakes at/);
+  refused(tx({ actions: [{ method: "withdraw_fees", args: jsonArgs({}), gas: 1n, deposit: 1n }] }), /opening a match and taking a seat/);
+  refused(tx({ actions: [...joinCalls("m-1", 0, 0n), ...joinCalls("m-2", 0, 0n), ...joinCalls("m-3", 0, 0n)] }), /too many calls/);
+  // A transfer rides alone, to somebody else, and is of something.
+  refused(tx({ receiverId: "alice.testnet", actions: [{ transfer: 1n }, { transfer: 1n }] }), /only stakes at/);
+  refused(tx({ receiverId: guest, actions: [{ transfer: 1n }] }), /another account/);
+  refused(tx({ receiverId: "alice.testnet", actions: [{ transfer: 0n }] }), /nothing to send/);
+});
+
+test("a signing token is believed only if the sign-in service signed it, for this payload, and it has not expired", async () => {
+  const { publicKey, privateKey } = await crypto.subtle.generateKey(
+    { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
+    true,
+    ["sign", "verify"],
+  );
+  const jwk = await crypto.subtle.exportKey("jwk", publicKey);
+  const url = (bytes: Uint8Array) =>
+    btoa(String.fromCharCode(...bytes))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+  const part = (value: unknown) => url(new TextEncoder().encode(JSON.stringify(value)));
+  const mint = async (claims: Record<string, unknown>, key = privateKey, header: Record<string, unknown> = { alg: "RS256", kid: "k1" }) => {
+    const signed = `${part(header)}.${part(claims)}`;
+    return `${signed}.${url(new Uint8Array(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(signed))))}`;
+  };
+  const payload = encodeTransaction(tx());
+  const now = 1_800_000_000_000;
+  const expected = { issuer: "https://login.example/", audience: "guard.testnet", keys: [{ kid: "k1", kty: "RSA", n: jwk.n, e: jwk.e }], now };
+  const claims = { iss: expected.issuer, aud: ["guard.testnet", "https://login.example/userinfo"], exp: now / 1000 + 60, sub: "google-oauth2|1", fatxn: Array.from(payload) };
+  assert.equal(await tokenSubject(await mint(claims), payload, expected), "google-oauth2|1");
+
+  const refused = async (token: string, why: RegExp, over: Partial<typeof expected> = {}, signedFor = payload) =>
+    assert.rejects(tokenSubject(token, signedFor, { ...expected, ...over }), why);
+  const other = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, [
+    "sign",
+    "verify",
+  ]);
+  await refused(await mint(claims, other.privateKey), /not signed by the sign-in service/);
+  await refused(await mint(claims, privateKey, { alg: "none", kid: "k1" }), /not signed by the sign-in service/);
+  await refused(await mint(claims, privateKey, { alg: "RS256", kid: "unknown" }), /not signed by the sign-in service/);
+  await refused(await mint({ ...claims, exp: now / 1000 - 1 }), /expired/);
+  await refused(await mint({ ...claims, aud: "https://login.example/userinfo" }), /not a signing approval/);
+  await refused(await mint({ ...claims, iss: "https://evil.example/" }), /another sign-in service/);
+  // Approved, but for another transaction: a token cannot be reused to get something else signed.
+  await refused(await mint(claims), /something else/, {}, encodeTransaction(tx({ nonce: 10n })));
+  await refused(await mint({ ...claims, fatxn: undefined }), /something else/);
+  await refused("a.b.c", /cannot be read/);
 });

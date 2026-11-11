@@ -39,8 +39,8 @@ use near_sdk::serde_json::{self, json, Value};
 use near_sdk::store::{IterableMap, LookupMap};
 use near_sdk::{assert_one_yocto, env, near, require, AccountId, Gas, NearToken, PanicOnDefault, Promise, PromiseOrValue};
 
-pub use autoplay::{Plan, Step};
 use autoplay::{apply_logged, play_turn, timeout_step, MAX_PLAN_LIST};
+pub use autoplay::{Plan, Step};
 use rng::{near_sha256, ChainRng};
 
 /// Engine player id of each seat.
@@ -211,10 +211,7 @@ fn storage_cost(bytes: u64) -> u128 {
 /// First check of every call that may draw randomness (see [`MIN_MOVE_GAS`]).
 fn require_move_gas() {
     if env::prepaid_gas() < MIN_MOVE_GAS {
-        panic_msg(format!(
-            "attach at least {} Tgas: a call that may roll dice must not be able to run out of gas",
-            MIN_MOVE_GAS.as_tgas()
-        ));
+        panic_msg(format!("attach at least {} Tgas: a call that may roll dice must not be able to run out of gas", MIN_MOVE_GAS.as_tgas()));
     }
 }
 
@@ -295,6 +292,17 @@ fn restarts_clock(game: &Game, s: usize, seat_before: Option<usize>, rolls_befor
     current_seat(game) != seat_before || (seat_before == Some(s) && game.rolls > rolls_before)
 }
 
+/// A hosted match keeps its host under a storage key of its own, outside [`Match`]: matches opened before hosts
+/// existed read as they were written, with no host, and start by themselves as they always did.
+fn host_key(id: &str) -> Vec<u8> {
+    [b"host:".as_slice(), id.as_bytes()].concat()
+}
+
+/// The account that starts the match `id`, if it is a hosted one still in the lobby.
+fn host_of(id: &str) -> Option<AccountId> {
+    env::storage_read(&host_key(id)).and_then(|bytes| String::from_utf8(bytes).ok()).and_then(|account| account.parse().ok())
+}
+
 fn transfer_all(transfers: BTreeMap<AccountId, u128>) {
     for (account, amount) in transfers {
         if amount > 0 {
@@ -354,6 +362,7 @@ impl Match {
             "rules": self.rules,
             "solo_player": self.solo_player,
             "creator": self.creator,
+            "host": if self.status == Status::Lobby { host_of(id) } else { None },
             "storage_deposit": yocto_json(self.storage_deposit),
             "created_at": u64_json(self.created_at),
             "last_activity": u64_json(self.last_activity),
@@ -426,17 +435,16 @@ impl Contract {
         rules: RulesArg,
         solo_player: Option<AccountId>,
         turn_seconds: Option<u32>,
+        host: Option<AccountId>,
     ) {
         validate_id(&id);
         require!(!self.matches.contains_key(&id) && !self.results.contains_key(&id), "match id already used");
         require!((MIN_SEATS..=MAX_SEATS).contains(&seats), "seats must be 2..=4");
         if stake.0 > self.max_stake.as_yoctonear() {
-            panic_msg(format!(
-                "stake too large: this contract allows at most {} yoctoNEAR per seat",
-                self.max_stake.as_yoctonear()
-            ));
+            panic_msg(format!("stake too large: this contract allows at most {} yoctoNEAR per seat", self.max_stake.as_yoctonear()));
         }
         require!(solo_player.as_ref() != Some(&self.house), "the house cannot be the solo player");
+        require!(host.is_none() || solo_player.is_none(), "a solo match starts by itself: it has no host");
         validate_split(&split, seats);
         let rules = validate_rules(rules);
         let turn_seconds = turn_seconds.unwrap_or(DEFAULT_TURN_SECONDS);
@@ -462,9 +470,12 @@ impl Contract {
             draws: 0,
             game: Game::new(rules, players),
         };
-        let data = json!({ "id": id, "meta": new_match.meta_json(&id, &self.house, self.fee_bps) });
-
         let before = env::storage_usage();
+        // Inside what is measured: the creator's deposit pays for the host's record too.
+        if let Some(host) = &host {
+            env::storage_write(&host_key(&id), host.as_bytes());
+        }
+        let data = json!({ "id": id, "meta": new_match.meta_json(&id, &self.house, self.fee_bps) });
         let id_for_error = id.clone();
         self.matches.insert(id, new_match);
         self.matches.flush();
@@ -472,6 +483,7 @@ impl Contract {
         let required = storage_cost(measured + STORAGE_RESERVE_BYTES);
         if deposit.as_yoctonear() < required {
             // The receipt reverts anyway; removing keeps unit-test state consistent too.
+            env::storage_remove(&host_key(&id_for_error));
             self.matches.remove(&id_for_error);
             self.matches.flush();
             panic_msg(format!(
@@ -513,27 +525,18 @@ impl Contract {
         m.last_activity = now;
         emit("join", json!({ "id": id, "seat": s, "backer": caller }));
 
-        if m.seats.iter().all(|seat| seat.backer.is_some()) {
-            let mut steps = Vec::new();
-            let mut rng = ChainRng::new(env::random_seed_array(), &id, &mut m.draws, near_sha256);
-            if let Err(error) = apply_logged(&mut m.game, None, Action::Start, &mut rng, &mut steps) {
-                panic_msg(format!("cannot start: {error}"));
-            }
-            m.status = Status::Playing;
-            m.turn_deadline = now + u64::from(m.turn_seconds) * 1_000_000_000;
-            let order: Vec<usize> = m.game.order.iter().map(|p| seat_of(p)).collect();
-            emit(
-                "start",
-                json!({
-                    "id": id,
-                    "order": order,
-                    "props": m.game.props,
-                    "steps": steps,
-                    "turn_deadline": u64_json(m.turn_deadline),
-                }),
-            );
+        // A hosted match waits here, every seat taken, until its host says go (`start`).
+        if m.seats.iter().all(|seat| seat.backer.is_some()) && host_of(&id).is_none() {
+            begin(&id, &mut m, now);
         }
         self.matches.insert(id, m);
+    }
+
+    /// The host of a hosted match starts the game once every seat is taken: the turn order is drawn (and the Blitz
+    /// deal), as `join` does for a match with no host. Needs [`MIN_MOVE_GAS`] attached.
+    pub fn start(&mut self, id: String) {
+        require_move_gas();
+        self.start_hosted(id);
     }
 
     /// Gives up a seat before the game starts; the backer gets the stake back.
@@ -575,9 +578,16 @@ impl Contract {
     ///
     /// `Sell`/`Mortgage`/`Redeem` work out of turn exactly as the engine allows. `Start` and `Auto` are not accepted
     /// (`Auto` is what `timeout` does).
+    ///
+    /// One exception to the last: `["Start"]` alone, from the host of a hosted match still in the lobby, is `start`.
+    /// A key that may only call the moves of a match (a session key) can then start one as well.
     pub fn play(&mut self, id: String, seat: u8, actions: Vec<Action>) -> Value {
         require_move_gas();
         require!(!actions.is_empty() && actions.len() <= MAX_ACTIONS_PER_CALL, "send 1..=32 actions");
+        if actions == [Action::Start] && self.matches.get(&id).is_some_and(|m| m.status == Status::Lobby) {
+            self.start_hosted(id);
+            return json!({ "applied": 1, "rejected": null });
+        }
         let mut m = self.load_playing(&id);
         let s = m.seat_index(seat);
         let caller = m.authorize(s);
@@ -631,9 +641,9 @@ impl Contract {
         };
         // The driver checks every optional action first, so no error is expected after the roll; the rule of `play`
         // applies all the same.
-        let rejected = played.err().map(|error| {
-            keep_or_revert(m.draws != draws_before, format!("turn failed: {error}"), json!({ "error": error.to_string() }))
-        });
+        let rejected = played
+            .err()
+            .map(|error| keep_or_revert(m.draws != draws_before, format!("turn failed: {error}"), json!({ "error": error.to_string() })));
         let reset = restarts_clock(&m.game, s, seat_before, rolls_before);
         self.after_moves(id, m, "turn", s, caller, steps, rejected, reset);
     }
@@ -673,6 +683,7 @@ impl Contract {
             panic_msg(format!("a lobby can be abandoned 15 minutes after creation (at {})", m.created_at + ABANDON_AFTER_NS));
         }
         self.matches.remove(&id);
+        env::storage_remove(&host_key(&id));
         let mut transfers: BTreeMap<AccountId, u128> = BTreeMap::new();
         let mut refunds = Vec::new();
         for (k, seat) in m.seats.iter().enumerate() {
@@ -716,7 +727,9 @@ impl Contract {
     /// (ENGINE-RULES §8, same field names as the TS `Game`); the last 30 structured engine events. `null` when the
     /// match does not exist or is finished (see `get_result`).
     pub fn get_match(&self, id: String) -> Option<Value> {
-        self.matches.get(&id).map(|m| json!({ "meta": m.meta_json(&id, &self.house, self.fee_bps), "game": m.game.snapshot(), "log": m.game.log }))
+        self.matches
+            .get(&id)
+            .map(|m| json!({ "meta": m.meta_json(&id, &self.house, self.fee_bps), "game": m.game.snapshot(), "log": m.game.log }))
     }
 
     /// Unfinished matches (lobby or playing), `limit` defaults to 20 (at most 50).
@@ -797,7 +810,44 @@ impl Contract {
 
 // ----- Internals -------------------------------------------------------------------------------------------------------
 
+/// Starts the game of a match whose seats are all taken: draws the turn order (and the Blitz deal) and sets the first
+/// deadline. The host's record, if there was one, has done its work and is removed.
+fn begin(id: &str, m: &mut Match, now: u64) {
+    let mut steps = Vec::new();
+    let mut rng = ChainRng::new(env::random_seed_array(), id, &mut m.draws, near_sha256);
+    if let Err(error) = apply_logged(&mut m.game, None, Action::Start, &mut rng, &mut steps) {
+        panic_msg(format!("cannot start: {error}"));
+    }
+    m.status = Status::Playing;
+    m.turn_deadline = now + u64::from(m.turn_seconds) * 1_000_000_000;
+    env::storage_remove(&host_key(id));
+    let order: Vec<usize> = m.game.order.iter().map(|p| seat_of(p)).collect();
+    emit(
+        "start",
+        json!({
+            "id": id,
+            "order": order,
+            "props": m.game.props,
+            "steps": steps,
+            "turn_deadline": u64_json(m.turn_deadline),
+        }),
+    );
+}
+
 impl Contract {
+    /// `start`, and `play(["Start"])`: the host says go.
+    fn start_hosted(&mut self, id: String) {
+        let mut m = self.load(&id);
+        require!(m.status == Status::Lobby, "the game has already started");
+        let Some(host) = host_of(&id) else { env::panic_str("this match has no host: it starts when its last seat is taken") };
+        require!(env::predecessor_account_id() == host, "only the host may start the game");
+        require!(m.seats.iter().all(|seat| seat.backer.is_some()), "every seat must be taken before the game starts");
+        let now = env::block_timestamp();
+        m.last_activity = now;
+        begin(&id, &mut m, now);
+        self.matches.insert(id, m);
+    }
+
     fn load(&self, id: &str) -> Match {
         match self.matches.get(id) {
             Some(m) => m.clone(),

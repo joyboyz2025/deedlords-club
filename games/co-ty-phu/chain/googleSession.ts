@@ -6,17 +6,21 @@
 //   2. `confirmGrant`: the person approves one thing, a key grant: this browser gets a key that can only move a seat
 //      in the game. The sponsor has NEAR Auth sign it and adds it to the account (/api/relay/session).
 //
-// After that the browser's key signs every move, and the sponsor relays it: no window, no wallet, no NEAR. The grant
-// is asked for once per browser: signing out parks the key, signing in again finds it (keySession.ts).
+// After that the browser's key signs every move: no window, no wallet, and at a free table no NEAR. The grant is
+// asked for once per browser: signing out parks the key, signing in again finds it (keySession.ts).
+//
+// The account is a NEAR account like any other: NEAR can be sent to it. Spending that NEAR is the one thing the
+// browser's key cannot do, so a stake or a withdrawal is approved in the window each time (`sendWithNearAuth`).
 
 import type { Auth0Client } from "@auth0/auth0-spa-js";
-import { toBase64 } from "@/lib/chain/base58";
+import { fromBase64, toBase64 } from "@/lib/chain/base58";
+import type { Outcome } from "@/lib/chain/client";
 import { CHAIN } from "@/lib/chain/config";
 import { implicitAccountId } from "@/lib/chain/evmKey";
 import { generateKeyPair, type KeyPair, parsePublicKey, publicKeyText } from "@/lib/chain/keys";
 import { MPC_ED25519_DOMAIN, mpcPath, NEAR_AUTH, type NearAuth } from "@/lib/chain/nearAuth";
 import { chainClient } from "@/lib/chain/shared";
-import { encodeKeyGrant } from "@/lib/chain/transaction";
+import { encodeKeyGrant, encodeTransaction, type FunctionCall, type Transfer, withSignature } from "@/lib/chain/transaction";
 import { GRANT_METHODS, SESSION_ALLOWANCE } from "./calls";
 import { post } from "./free";
 import { keepGoogleAccount, parkedGoogleKey } from "./keySession";
@@ -125,27 +129,72 @@ export async function prepareGrant(identity: GoogleIdentity): Promise<PendingGra
   return { identity, payload, sessionPair };
 }
 
-/** Step 2, from a click: the person approves the grant, the sponsor has it signed and added, and this browser plays. */
-export async function confirmGrant(pending: PendingGrant): Promise<void> {
-  const auth = setUp();
-  const popup = openWindow();
-  let token: string;
+/**
+ * One approval: the window asks the person to approve exactly `payload` (a key grant, or a transaction), and Auth0
+ * answers with a token that names it. The token is what the NEAR Auth contract checks before anything is signed.
+ */
+async function approve(auth: NearAuth, popup: Window, payload: Uint8Array, as: "delegateAction" | "transaction"): Promise<string> {
   try {
     const client = await auth0(auth);
-    // The payload rides in the request; the token that comes back names it, and the contract checks that it does.
-    await client.loginWithPopup({ authorizationParams: { audience: auth.signingAudience, scope: "transaction:sign", delegateAction: Array.from(pending.payload) } }, { popup });
+    await client.loginWithPopup({ authorizationParams: { audience: auth.signingAudience, scope: "transaction:sign", [as]: Array.from(payload) } }, { popup });
     // The window has just put the token in the library's cache; ask the cache first, so nothing has to reach Auth0 again.
     const cached = await client.getTokenSilently({ authorizationParams: { audience: auth.signingAudience, scope: "transaction:sign" }, cacheMode: "cache-only" });
-    const issued = cached ?? (await client.getTokenSilently({ authorizationParams: { audience: auth.signingAudience } }));
-    if (!issued) throw new Error("the approval gave no token");
-    token = issued;
+    const token = cached ?? (await client.getTokenSilently({ authorizationParams: { audience: auth.signingAudience } }));
+    if (!token) throw new Error("the approval gave no token");
+    // A token kept from an earlier approval names an earlier payload: the contract would refuse it, so say so here.
+    if (!names(token, payload)) throw new Error("the approval that came back is for something else; try once more");
+    return token;
   } catch (error) {
     if (!popup.closed) popup.close();
     throw readable(error);
   }
+}
+
+/** Whether the signing token is for this payload (its `fatxn` claim). A token that cannot be read is left to the contract. */
+function names(token: string, payload: Uint8Array): boolean {
+  try {
+    const body = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const claimed = (JSON.parse(atob(body)) as { fatxn?: unknown }).fatxn;
+    if (!Array.isArray(claimed)) return true;
+    return claimed.length === payload.length && claimed.every((byte, i) => byte === payload[i]);
+  } catch {
+    return true;
+  }
+}
+
+/** Step 2, from a click: the person approves the grant, the sponsor has it signed and added, and this browser plays. */
+export async function confirmGrant(pending: PendingGrant): Promise<void> {
+  const auth = setUp();
+  const token = await approve(auth, openWindow(), pending.payload, "delegateAction");
   await post("/api/relay/session", { token, payload: toBase64(pending.payload) });
   const { accountId, label } = pending.identity;
   const session = chainClient.session(accountId, pending.sessionPair);
   for (let i = 0; i < 20 && !(await session.ready()); i++) await sleep(300);
   keepGoogleAccount(accountId, pending.sessionPair, label);
+}
+
+/**
+ * From a click: a transaction of the account's own, with its own NEAR in it (a stake, a withdrawal). The key this
+ * browser holds cannot sign that, so the person approves this one transaction in the sign-in window, NEAR Auth signs
+ * it, and the browser sends it: the account pays its own gas and whatever the transaction attaches.
+ */
+export async function sendWithNearAuth(accountId: string, receiverId: string, actions: (FunctionCall | Transfer)[]): Promise<Outcome> {
+  const auth = setUp();
+  const popup = openWindow();
+  let payload: Uint8Array;
+  let accountKey: Uint8Array;
+  try {
+    // An account signed in this way is named after its key: the name is the key, in hex.
+    accountKey = Uint8Array.from(accountId.match(/../g)!.map((pair) => Number.parseInt(pair, 16)));
+    const nonce = await chainClient.accessKeyNonce(accountId, accountKey);
+    if (nonce === null) throw new Error("this account is not on NEAR yet");
+    payload = encodeTransaction({ signerId: accountId, publicKey: accountKey, nonce: nonce + 1n, receiverId, blockHash: await chainClient.blockHash(true), actions });
+  } catch (error) {
+    popup.close();
+    throw error;
+  }
+  const token = await approve(auth, popup, payload, "transaction");
+  const { signature } = await post<{ signature: string }>("/api/relay/sign", { token, payload: toBase64(payload) });
+  const { hash, bytes } = withSignature(payload, fromBase64(signature), accountKey);
+  return chainClient.broadcast(bytes, hash, accountId);
 }

@@ -9,26 +9,21 @@
 // What may be granted is decided by relayRules.ts `grantable`: a key that can only move a seat on the game contract.
 
 import { clientKey } from "@/games/co-ty-phu/agent/rateLimit";
+import { askNearAuth, isSigningToken } from "@/games/co-ty-phu/chain/authDesk";
 import { jsonAnswer, limits } from "@/games/co-ty-phu/chain/freeDesk";
 import { grantable, Refused } from "@/games/co-ty-phu/chain/relayRules";
 import { fromBase64 } from "@/lib/chain/base58";
-import { ContractFailure } from "@/lib/chain/client";
+import { isContractFailure } from "@/lib/chain/client";
 import { CHAIN } from "@/lib/chain/config";
-import { ed25519Signature, NEAR_AUTH } from "@/lib/chain/nearAuth";
+import { NEAR_AUTH } from "@/lib/chain/nearAuth";
 import { chainClient } from "@/lib/chain/shared";
 import { sponsor } from "@/lib/chain/sponsor";
-import { jsonArgs, type KeyGrant, readKeyGrant, signedKeyGrant } from "@/lib/chain/transaction";
+import { type KeyGrant, readKeyGrant, signedKeyGrant } from "@/lib/chain/transaction";
 
 export const dynamic = "force-dynamic";
 
-/** A signing token is a JWT of about 1,500 characters; a grant about 350 bytes. */
-const TOKEN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
-const MAX_TOKEN = 6_000;
+/** A grant is about 350 bytes. */
 const MAX_PAYLOAD_TEXT = 1_024;
-/** What NEAR Auth's own SDK attaches to `sign`: the token is verified (RSA) and the MPC network asked, all on chain. */
-const SIGN_GAS = 300_000_000_000_000n;
-/** The MPC network asks for a token deposit; the contract sends it back. */
-const SIGN_DEPOSIT = 1n;
 const text = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 export async function POST(request: Request): Promise<Response> {
@@ -43,7 +38,7 @@ export async function POST(request: Request): Promise<Response> {
     return jsonAnswer(400, { error: "send JSON: { token, payload }" });
   }
   const { token, payload: payloadText } = body;
-  if (typeof token !== "string" || token.length > MAX_TOKEN || !TOKEN.test(token)) return jsonAnswer(400, { error: "token: the signing token" });
+  if (!isSigningToken(token)) return jsonAnswer(400, { error: "token: the signing token" });
   if (typeof payloadText !== "string" || payloadText.length > MAX_PAYLOAD_TEXT) return jsonAnswer(400, { error: "payload: the key grant, base64" });
 
   let payload: Uint8Array;
@@ -65,23 +60,19 @@ export async function POST(request: Request): Promise<Response> {
     return jsonAnswer(502, { error: `cannot reach ${CHAIN.network}` });
   }
 
+  const answer = await askNearAuth(paying, auth, token, payload, grant.accountKey);
+  if ("refused" in answer) return jsonAnswer(answer.status, { error: answer.refused, hash: answer.hash });
   let signed: Uint8Array;
   try {
-    const args = { guard_id: auth.guardId, verify_payload: token, sign_payload: Array.from(payload), algorithm: "eddsa" };
-    const outcome = await paying.session.sendTo(auth.contractId, [{ method: "sign", args: jsonArgs(args), gas: SIGN_GAS, deposit: SIGN_DEPOSIT }]);
-    const signature = ed25519Signature(outcome.value);
-    // The contract answers nothing when its guard refuses the token (expired, or issued for another payload).
-    if (!signature) return jsonAnswer(422, { error: "NEAR Auth did not sign: the approval may have expired, try again", hash: outcome.hash });
-    signed = signedKeyGrant(payload, signature);
+    signed = signedKeyGrant(payload, answer.signature);
   } catch (error) {
-    if (error instanceof ContractFailure) return jsonAnswer(422, { error: `NEAR Auth refused: ${error.message}`, hash: error.hash });
-    return jsonAnswer(502, { error: `could not get the grant signed: ${text(error)}` });
+    return jsonAnswer(502, { error: text(error), hash: answer.hash });
   }
   try {
-    const outcome = await paying.session.sendTo(grant.accountId, [{ delegate: signed }]);
+    const outcome = await paying.session.sendTo(grant.accountId, [{ delegate: signed }], { delegatedTo: grant.accountId });
     return jsonAnswer(200, { accountId: grant.accountId, hash: outcome.hash });
   } catch (error) {
-    if (error instanceof ContractFailure) return jsonAnswer(422, { error: `the account did not take the key: ${error.message}`, hash: error.hash });
+    if (isContractFailure(error)) return jsonAnswer(422, { error: `the account did not take the key: ${error.message}`, hash: error.hash });
     return jsonAnswer(502, { error: `the sponsor could not send the grant: ${text(error)}` });
   }
 }

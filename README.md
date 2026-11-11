@@ -89,13 +89,25 @@ through the sign-in page and an on-chain call, so the game asks for exactly one:
 key kept in the browser, able to move a seat in this contract and nothing else
 (`games/co-ty-phu/chain/googleSession.ts`, `POST /api/relay/session`). The sponsor carries the person's signing
 token to the NEAR Auth contract, pays for that call, and relays the signed grant; after that every move is signed in
-the browser and relayed like a guest's. Such an account plays free tables only: its key here cannot attach NEAR.
+the browser and relayed like a guest's.
+
+**Playing for a stake with it.** The account is a NEAR account like any other, so NEAR can be sent to it: the
+Passenger stub shows its address and a QR code under "Deposit". Spending that NEAR is the one thing the browser's key
+cannot do, so a stake (opening a staked match, taking a staked seat) or a withdrawal is approved in the sign-in
+window each time: the person approves that one transaction, NEAR Auth signs it (`POST /api/relay/sign`), and the
+browser sends it, so the account pays its own stake and its own gas. Moves in a staked match are signed by the
+browser's key and paid by the account. "Withdraw" sends NEAR on to any NEAR account; a guest's or an EVM wallet's
+game account has it too, signed by its own key.
+
+Before the sponsor pays for a signing call it checks the token itself, for free (`authDesk.ts`): Auth0's RSA
+signature, expiry, audience, that it names exactly the payload, and that it is from the person whose key the payload
+names. What it will carry is a key grant, a stake at the game contract, or one plain transfer.
 
 This runs against NEAR Auth's **testnet** with its shared development client, which accepts only pages served at
 `http://localhost:3000`. A public deployment needs credentials of its own
 ([apply](https://docs.auth.near.org/home/apply)); until then guests play free tables without any sign-in. Set
-`NEXT_PUBLIC_NEAR_AUTH_CLIENT_ID` to turn it on (see `.env.example`). An account created this way holds no NEAR and
-so has room for about three browser keys.
+`NEXT_PUBLIC_NEAR_AUTH_CLIENT_ID` to turn it on (see `.env.example`). An account created this way holds no NEAR until
+some is sent to it, and until then has room for about three browser keys.
 
 A first sign-in cost the sponsor about 0.011 NEAR on testnet (measured 2026-11-11): 0.0071 to bring the account on
 chain, 0.0036 for NEAR Auth's `sign` call, 0.0001 to add the key. A relayed move after that cost about 0.00035.

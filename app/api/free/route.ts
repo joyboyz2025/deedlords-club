@@ -1,13 +1,13 @@
-// Opening a free table. POST { rounds?, opponent? }: the sponsor creates a two-seat match with nothing staked and
+// Opening a free table. POST { rounds?, opponent?, host?, seats? }: the sponsor creates a two-seat match with nothing staked and
 // answers its id; the visitor then takes the first seat through the relayer (/api/relay). `opponent: "agent"`: the
 // sponsor also sits in the second seat and its agent plays it (/api/free/move); otherwise the seat waits for whoever
-// gets the link.
+// gets the link. With `host` (and up to four `seats`) that table is a room: it starts when its host says so.
 //
 // The sponsor pays a table's storage deposit and gets it back when the match is settled, or when a lobby nobody
 // joined is abandoned, which this route does for its own old lobbies before it opens another.
 
 import { clientKey } from "@/games/co-ty-phu/agent/rateLimit";
-import { freeTableCalls, newMatchId } from "@/games/co-ty-phu/chain/calls";
+import { freeTableCalls, newMatchId, SEAT_COUNTS } from "@/games/co-ty-phu/chain/calls";
 import { MAX_FREE_TABLES, jsonAnswer, limits, rememberSponsored, sponsoredTables } from "@/games/co-ty-phu/chain/freeDesk";
 import { CHAIN } from "@/lib/chain/config";
 import { sponsor } from "@/lib/chain/sponsor";
@@ -15,6 +15,7 @@ import { sponsor } from "@/lib/chain/sponsor";
 export const dynamic = "force-dynamic";
 
 const ROUNDS = [3, 6, 12];
+const ACCOUNT_ID = /^(?:[0-9a-f]{64}|(?=.{2,64}$)[a-z0-9]+(?:[-_.][a-z0-9]+)*)$/;
 const TURN_SECONDS = 60;
 /** The contract lets anyone abandon a lobby 15 minutes after it was created; a little longer, for clocks that differ. */
 const ABANDON_AFTER_MS = 16 * 60_000;
@@ -35,6 +36,12 @@ export async function POST(request: Request): Promise<Response> {
   if (typeof rounds !== "number" || !ROUNDS.includes(rounds)) return jsonAnswer(400, { error: `rounds: one of ${ROUNDS.join(", ")}` });
   if (body.opponent !== undefined && body.opponent !== "agent" && body.opponent !== "friend") return jsonAnswer(400, { error: "opponent: agent or friend" });
   const withAgent = body.opponent !== "friend";
+  // A table for friends is a room: whoever asked for it hosts it, and it may seat up to four.
+  const seats = body.seats === undefined ? 2 : body.seats;
+  if (typeof seats !== "number" || !SEAT_COUNTS.includes(seats) || (withAgent && seats !== 2)) return jsonAnswer(400, { error: "seats: 2, 3 or 4 (2 against the agent)" });
+  if (body.host !== undefined && (typeof body.host !== "string" || !ACCOUNT_ID.test(body.host))) return jsonAnswer(400, { error: "host: a NEAR account" });
+  const room = !withAgent && typeof body.host === "string" ? { host: body.host, seats } : null;
+  if (!withAgent && seats !== 2 && !room) return jsonAnswer(400, { error: "a table of more than two seats needs a host" });
   if (!limits.tablePerIp.allow(clientKey(request)) || !limits.tableGlobal.allow("*"))
     return jsonAnswer(429, { error: "too many free tables opened from here: wait a few minutes" });
 
@@ -50,7 +57,7 @@ export async function POST(request: Request): Promise<Response> {
 
   const id = `f${newMatchId().slice(1)}`;
   try {
-    const outcome = await paying.session.transact(freeTableCalls(id, rounds, TURN_SECONDS, withAgent));
+    const outcome = await paying.session.transact(freeTableCalls(id, rounds, TURN_SECONDS, withAgent, room));
     rememberSponsored(id, paying);
     return jsonAnswer(200, { id, opponent: withAgent ? "agent" : "friend", sponsor: paying.accountId, hash: outcome.hash });
   } catch (error) {

@@ -31,6 +31,7 @@ import {
   payDebt,
   redeem,
   redeemPrice,
+  resign,
   roll,
   sellHouse,
   skipBuying,
@@ -43,7 +44,7 @@ import {
 import { RecordingRng, gameSeed, mulberry32, prngRng, type RngCall } from "./rng.ts";
 import { snapshot, type Snapshot } from "./snapshot.ts";
 
-export const OPS = ["start", "roll", "buy", "skip", "end", "bail", "card", "pay", "bankrupt", "build", "sell", "mortgage", "redeem", "auto"] as const;
+export const OPS = ["start", "roll", "buy", "skip", "end", "bail", "card", "pay", "bankrupt", "build", "sell", "mortgage", "redeem", "auto", "resign"] as const;
 export type Op = (typeof OPS)[number];
 /** Ops only the current player may do. */
 const TURN_OPS: Op[] = ["roll", "buy", "skip", "end", "bail", "card", "pay", "bankrupt"];
@@ -99,12 +100,14 @@ export function applyOp(game: Game, op: Op, player: string | null, index: number
     case "auto":
       autoAct(game, rng);
       return;
+    case "resign":
+      return resign(game, id);
   }
 }
 
 // Policy
 
-type Params = { doubles: number; auto: number; raise: number; buy: number; build: number; bail: number; card: number; offTurn: number };
+type Params = { doubles: number; auto: number; raise: number; buy: number; build: number; bail: number; card: number; offTurn: number; resign: number };
 
 function picker(random: () => number) {
   return <T>(items: readonly T[]): T => items[Math.min(items.length - 1, Math.floor(random() * items.length))];
@@ -131,6 +134,8 @@ function pickParams(random: () => number): Params {
     bail: between(0.15, 0.6),
     card: between(0.3, 0.9),
     offTurn: between(0.02, 0.08),
+    // Most games see nobody give up; some see it once or twice, on any turn and at any stage.
+    resign: pick([0, 0, 0.004, 0.012]),
   };
 }
 
@@ -293,6 +298,7 @@ function chooseMove(game: Game, random: () => number, params: Params, steps: num
   }
   if (random() < ILLEGAL_RATE) return illegalMove(game, random);
   const me = currentPlayer(game)!;
+  if (params.resign > 0 && random() < params.resign) return { op: "resign", player: picker(random)(game.players.filter((p) => !p.bankrupt)).id, index: null };
   if (random() < params.offTurn) {
     const others = game.players.filter((p) => p.id !== me.id && !p.bankrupt);
     const moves = others.flatMap((p) => propertyMoves(game, p));
@@ -392,6 +398,10 @@ export function generateGame(seed: number, coverage: Coverage = new Coverage()):
       if (was.stage !== "debt" && game.stage === "debt" && game.phase === "playing") coverage.add("debt: entered");
       if (move.op === "pay") coverage.add(was.pendingMove !== null ? "debt: paid, then pending move" : "debt: paid");
       if (move.op === "pay" && was.pendingMove !== null && calls.length > 0) coverage.add("debt: pending move drew a card");
+      if (move.op === "resign") {
+        const mine = move.player === me.id;
+        coverage.add(mine ? (was.stage === "debt" ? "resign: on turn, in debt" : "resign: on turn") : was.debt?.some((payee) => payee.id === move.player) ? "resign: off turn, owed a debt" : "resign: off turn");
+      }
       if (move.op === "bankrupt") {
         const toPlayer = was.debt!.length === 1 && was.debt![0].id !== null;
         coverage.add(toPlayer ? "bankrupt: to a player" : "bankrupt: to the bank");
@@ -424,7 +434,7 @@ function printCoverage(coverage: Coverage, games: number, seed: number, out: str
   line(`distinct cards drawn (of ${cards.length})`, cards.filter((key) => c(key) > 0).length);
   line(`least drawn: ${least.slice(5)}`, c(least));
   console.log("\nTurns, jail, debt, bankruptcy, building");
-  for (const prefix of ["doubles", "jail: ", "auto: ", "debt: ", "bankrupt: ", "build: ", "blitz deal"])
+  for (const prefix of ["doubles", "jail: ", "auto: ", "debt: ", "bankrupt: ", "resign: ", "build: ", "blitz deal"])
     for (const key of keys.filter((k) => k.startsWith(prefix))) line(key, c(key));
   console.log("\nEnd reasons");
   for (const key of keys.filter((k) => k.startsWith("end: "))) line(key.slice(5), c(key));

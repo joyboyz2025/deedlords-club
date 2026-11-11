@@ -11,7 +11,7 @@ import { book } from "@/games/co-ty-phu/agent/shelf";
 import { isFreeTable, jsonAnswer, limits } from "@/games/co-ty-phu/chain/freeDesk";
 import { MATCH_ID } from "@/games/co-ty-phu/chain/relayRules";
 import type { ChainMatch } from "@/games/co-ty-phu/chain/types";
-import { ContractFailure } from "@/lib/chain/client";
+import { isContractFailure } from "@/lib/chain/client";
 import { CHAIN } from "@/lib/chain/config";
 import { chainClient } from "@/lib/chain/shared";
 import { sponsor } from "@/lib/chain/sponsor";
@@ -70,13 +70,13 @@ export async function POST(request: Request): Promise<Response> {
       if (!advice) return { played: false, why: "the house agent is out of the game" };
       try {
         const outcome = await paying.session.call("turn", { id, seat, plan: advice.plan });
-        book.remember(id, seat, turnKey, live.game.round, advice, Date.now());
+        book.remember(id, seat, turnKey, live.game.round, advice, Date.now(), { open: true });
         if (done.size > 500) for (const [key, until] of done) if (until <= Date.now()) done.delete(key);
         done.set(ticket, Date.now() + DONE_FOR_MS);
         return { played: true, hash: outcome.hash, driver: advice.driver, reason: advice.reason };
       } catch (error) {
         // Refused by the contract (somebody forced the turn first, say): nothing changed, and the next request reads the match again.
-        return { played: false, why: error instanceof ContractFailure ? `the contract refused the turn: ${error.message}` : `the turn could not be sent: ${text(error)}` };
+        return { played: false, why: isContractFailure(error) ? `the contract refused the turn: ${error.message}` : `the turn could not be sent: ${text(error)}` };
       }
     })().finally(() => playing.delete(ticket));
     playing.set(ticket, pending);
