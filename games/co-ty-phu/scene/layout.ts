@@ -1,7 +1,8 @@
 // Hình học bàn cờ 3D: ô nào nằm đâu, quân đứng chỗ nào trong ô, đi từ ô này sang ô kia qua những ô nào, camera đặt ở đâu.
 // Thuần, không dùng Three.js, nên test được và giao diện 2D cũng dùng được.
 // Nhìn từ trên xuống giống bàn cờ giấy: Xuất phát ở góc dưới bên phải, đi sang trái rồi vòng lên.
-// Trục x sang phải, trục z hướng về phía mép dưới của bàn. Camera không đứng ở mép dưới mà nhìn chéo từ góc Xuất phát.
+// Trục x sang phải, trục z hướng về phía mép dưới của bàn. Camera đứng ở mép dưới nhìn gần như thẳng từ trên xuống
+// (xem `VIEW_YAW`): bàn hiện thành hình vuông đứng, như bàn cờ giấy đặt trước mặt.
 
 export const TILE = 1.8;
 /** Ô góc vuông, và cũng là bề sâu của mọi ô tính từ mép bàn vào trong. */
@@ -63,16 +64,21 @@ export function sideYaw(side: number): number {
   return (-side * Math.PI) / 2;
 }
 
-/** Camera luôn nhìn chéo từ phía góc Xuất phát vào giữa bàn và không xoay: bàn hiện thành hình thoi, Xuất phát ở đỉnh dưới. Tính như `sideYaw`. */
-export const VIEW_YAW = Math.PI / 4;
-/** Nhìn cả bàn thì camera chếch xuống chừng này (radian). */
-export const BOARD_PITCH = 0.95;
+/**
+ * Hướng camera nhìn vào giữa bàn, không bao giờ xoay. Tính như `sideYaw`. 0: đứng ở mép dưới, bàn hiện thành hình vuông
+ * đứng, Xuất phát ở góc dưới bên phải, chiếm hết bề ngang màn hình điện thoại. (Trước 2026-11-11 là `Math.PI / 4` với
+ * `BOARD_PITCH = 0.95`: nhìn chéo từ góc Xuất phát, bàn hiện thành hình thoi nằm. Mọi phép tính bên dưới đúng với cả hai.)
+ */
+export const VIEW_YAW = 0;
+/** Nhìn cả bàn thì camera chếch xuống chừng này (radian): gần như từ trên xuống, còn thấy mặt trước của nhà và quân. */
+export const BOARD_PITCH = 1.22;
 /** Góc nhìn dọc của camera, tính bằng độ. */
 export const FOV = 45;
 
 /**
- * Hai cạnh ở xa camera (cạnh trái và hàng trên) vẽ quay ngược so với bàn cờ giấy: dải màu và nhà ở mép ngoài, chữ quay vào giữa bàn.
- * Nhờ vậy nhìn từ góc Xuất phát thì ô nào cũng đọc xuôi, và nhà luôn đứng sau chữ, không che chữ.
+ * Cạnh trái và hàng trên vẽ quay ngược so với bàn cờ giấy: dải màu và nhà ở mép ngoài, chữ quay vào giữa bàn.
+ * Nhờ vậy hàng trên đọc xuôi như hàng dưới, hai cạnh bên cùng đọc theo một chiều (nghiêng đầu sang trái), không ô nào
+ * lộn ngược, và nhà không bao giờ đứng trước chữ.
  */
 export const turned = (index: number) => !isCorner(index) && (sideOf(index) === 1 || sideOf(index) === 2);
 
@@ -112,14 +118,18 @@ export function boardFit(aspect: number, roomX = 1, roomY = 1): { distance: numb
   const tanX = tanY * aspect;
   const cos = Math.cos(BOARD_PITCH);
   const sin = Math.sin(BOARD_PITCH);
-  const corner = Math.SQRT2 * HALF;
-  // Bốn góc bàn: [dọc đường chéo về phía camera, sang phải trên màn hình, độ cao].
+  // Bốn góc bàn: [về phía camera, sang phải trên màn hình, độ cao]. Góc ở nửa xa camera tính thêm bề cao nhà và quân.
+  const sinYaw = Math.sin(VIEW_YAW);
+  const cosYaw = Math.cos(VIEW_YAW);
   const points = [
-    [corner, 0, 0],
-    [-corner, 0, FIT_TALL],
-    [0, -corner, 0],
-    [0, corner, 0],
-  ];
+    [HALF, HALF],
+    [HALF, -HALF],
+    [-HALF, HALF],
+    [-HALF, -HALF],
+  ].map(([x, z]) => {
+    const toward = x * sinYaw + z * cosYaw;
+    return [toward, x * cosYaw - z * sinYaw, toward < -1e-9 ? FIT_TALL : 0];
+  });
   let distance = 3 * SIDE;
   let shift = 0;
   for (let round = 0; round < 40; round++) {

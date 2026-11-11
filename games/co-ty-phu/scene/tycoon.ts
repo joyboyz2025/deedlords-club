@@ -701,9 +701,9 @@ export class TycoonScene {
     const distance = (board ? this.boardDistance : this.followDistance) * this.zoom;
     // Nhìn cả bàn thì dời điểm nhìn về phía góc Xuất phát cho bàn nằm giữa khung. Bám theo quân thì nhìn thẳng vào quân:
     // kéo điểm nhìn vào giữa bàn thì nhà cao giữa phố chắn mất quân ở hai cạnh xa.
-    const shift = board ? this.boardShift * Math.SQRT1_2 : 0;
-    const x = this.focus.x + shift;
-    const z = this.focus.z + shift;
+    const shift = board ? this.boardShift : 0;
+    const x = this.focus.x + shift * Math.sin(VIEW_YAW);
+    const z = this.focus.z + shift * Math.cos(VIEW_YAW);
     const flat = Math.cos(pitch) * distance;
     this.camera.position.set(x + Math.sin(VIEW_YAW) * flat, Math.sin(pitch) * distance, z + Math.cos(VIEW_YAW) * flat);
     this.camera.lookAt(x, board ? 0 : 0.6, z);

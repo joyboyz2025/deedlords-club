@@ -94,18 +94,24 @@ test("cờ tỷ phú 3D: camera mỗi cạnh nhìn từ ngoài bàn vào, bốn 
   for (let side = 1; side < 4; side++) assert.ok(Math.abs(Math.abs(sideYaw(side) - sideYaw(side - 1)) - Math.PI / 2) < 1e-9);
 });
 
-test("cờ tỷ phú 3D: nhìn chéo từ góc Xuất phát thì chữ ô nào cũng xuôi, nhà đứng sau chữ", () => {
+test("cờ tỷ phú 3D: nhìn từ mép dưới thì không ô nào lộn ngược, hai hàng ngang đọc xuôi, nhà không đứng trước chữ", () => {
+  assert.equal(VIEW_YAW, 0, "camera đứng ở mép dưới: bàn hiện thành hình vuông đứng");
   const camera = { x: Math.sin(VIEW_YAW), z: Math.cos(VIEW_YAW) };
   const toward = (p: { x: number; z: number }) => p.x * camera.x + p.z * camera.z;
   for (let i = 0; i < 40; i++) {
     if (isCorner(i)) continue;
-    // Chiều đọc của ô hướng về phía camera: chữ không bị ngược, cùng lắm nghiêng nửa góc vuông.
+    // Chiều đọc của ô so với camera: 1 là xuôi, 0 là nằm nghiêng (hai cạnh bên, như bàn cờ giấy), âm là lộn ngược.
     const facing = Math.cos(tileYaw(i) - VIEW_YAW);
-    assert.ok(facing > 0.7, `chữ ô ${i} bị ngược`);
-    // Dải màu, chỗ mọc nhà, xa camera hơn giá đất ở mép trước.
-    assert.ok(toward(inTile(i, 0, CORNER / 2 - BAND / 2)) < toward(inTile(i, 0, -CORNER / 2 + 0.5)), `nhà ở ô ${i} che chữ`);
+    const row = sideOf(i) % 2 === 0;
+    assert.ok(row ? facing > 0.99 : Math.abs(facing) < 1e-9, `chữ ô ${i} ${row ? "không xuôi" : "không nằm nghiêng"}`);
+    // Dải màu, chỗ mọc nhà, không gần camera hơn giá đất: ở hai hàng ngang thì đứng hẳn phía sau chữ.
+    const band = toward(inTile(i, 0, CORNER / 2 - BAND / 2));
+    const price = toward(inTile(i, 0, -CORNER / 2 + 0.5));
+    assert.ok(row ? band < price : Math.abs(band - price) < 1e-9, `nhà ở ô ${i} che chữ`);
   }
-  // Hai cạnh gần camera giữ như bàn cờ giấy, hai cạnh xa quay ngược.
+  // Hai cạnh bên đọc cùng một chiều.
+  assert.ok(Math.abs(Math.sin(tileYaw(15)) - Math.sin(tileYaw(35))) < 1e-9);
+  // Hàng dưới và cạnh phải giữ như bàn cờ giấy, cạnh trái và hàng trên quay ngược.
   assert.deepEqual([5, 15, 25, 35].map(turned), [false, true, true, false]);
 });
 
@@ -115,7 +121,7 @@ test("cờ tỷ phú 3D: nhìn cả bàn thì bàn vừa khung và nằm giữa,
     const eye = boardEye(aspect);
     const camera = new THREE.PerspectiveCamera(FOV, aspect, 0.1, 300);
     camera.position.set(eye.x, eye.y, eye.z);
-    camera.lookAt(shift * Math.SQRT1_2, 0, shift * Math.SQRT1_2);
+    camera.lookAt(shift * Math.sin(VIEW_YAW), 0, shift * Math.cos(VIEW_YAW));
     camera.updateMatrixWorld();
     const corners = [
       [HALF, 0, HALF],
@@ -124,14 +130,14 @@ test("cờ tỷ phú 3D: nhìn cả bàn thì bàn vừa khung và nằm giữa,
       [-HALF, 0, -HALF],
     ].map(([x, y, z]) => new THREE.Vector3(x, y, z).project(camera));
     for (const corner of corners) assert.ok(Math.abs(corner.x) <= 0.98 && Math.abs(corner.y) <= 0.98, `góc bàn ra ngoài khung ${aspect}`);
-    // Xuất phát ở đỉnh dưới, góc xa ở đỉnh trên, hai góc kia hai bên.
-    const [start, left, right, far] = corners;
-    assert.ok(Math.abs(start.x) < 1e-6 && Math.abs(far.x) < 1e-6 && start.y < 0 && far.y > 0, `Xuất phát không ở đỉnh dưới ${aspect}`);
-    assert.ok(left.x < -0.5 && right.x > 0.5, `bàn không thành hình thoi ${aspect}`);
+    // Bàn là hình vuông đứng: Xuất phát ở góc dưới bên phải, cạnh dưới nằm ngang, hai cạnh bên đối xứng.
+    const [start, nearLeft, farRight, farLeft] = corners;
+    assert.ok(start.x > 0 && start.y < 0 && nearLeft.x < 0 && Math.abs(nearLeft.y - start.y) < 1e-6, `Xuất phát không ở góc dưới bên phải ${aspect}`);
+    assert.ok(farRight.y > 0 && Math.abs(farLeft.y - farRight.y) < 1e-6 && Math.abs(nearLeft.x + start.x) < 1e-6 && Math.abs(farLeft.x + farRight.x) < 1e-6, `bàn không đứng thẳng ${aspect}`);
     // Vừa khít một chiều: bề ngang khi cầm dọc, bề cao khi cầm ngang.
-    const fill = Math.max(right.x, (far.y - start.y) / 2);
+    const fill = Math.max(start.x, (farRight.y - start.y) / 2);
     assert.ok(fill > 0.85, `bàn nhỏ quá ${aspect}`);
-    assert.ok(Math.abs(far.y + start.y) < 0.12, `bàn lệch khỏi giữa khung ${aspect}`);
+    assert.ok(Math.abs(farRight.y + start.y) < 0.12, `bàn lệch khỏi giữa khung ${aspect}`);
   }
   // Chừa chỗ cho thẻ người chơi và các nút thì bàn lùi xa hơn: trên dưới khi cầm ngang, hai bên khi cầm dọc.
   assert.ok(boardFit(1.6, 1, 0.7).distance > boardFit(1.6).distance);
