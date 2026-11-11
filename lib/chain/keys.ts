@@ -37,3 +37,20 @@ export function parseSecretKey(text: string): KeyPair {
 export function sign(pair: KeyPair, message: Uint8Array): Uint8Array {
   return ed25519.sign(message, pair.seed);
 }
+
+/** Whether `signature` is this public key's over `message`. False for anything malformed, never a throw. */
+export function verify(publicKey: Uint8Array, message: Uint8Array, signature: Uint8Array): boolean {
+  try {
+    return ed25519.verify(signature, message, publicKey);
+  } catch {
+    return false;
+  }
+}
+
+/** A public key as NEAR writes it (`ed25519:…`), as its 32 bytes. Throws for anything else. */
+export function parsePublicKey(text: string): Uint8Array {
+  const [curve, encoded, ...rest] = text.split(":");
+  const key = decodeBase58(encoded ?? "");
+  if (curve !== "ed25519" || rest.length > 0 || key.length !== 32) throw new Error("not an ed25519 public key");
+  return key;
+}

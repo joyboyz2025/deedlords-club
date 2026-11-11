@@ -6,7 +6,7 @@ Two crates in one Cargo workspace:
 |---|---|
 | `engine/` (`deedlords-engine`) | The game rules: a pure, deterministic, integer-only Rust port of the TS engine. No NEAR dependency. Contract with the TS engine: `docs/ENGINE-RULES.md`. |
 | `deedlords/` (`deedlords`) | The NEAR contract around the engine: matches, stakes, on-chain dice, turn deadlines, payouts, Deed NFTs (NEP-171), stats. |
-| `sandbox/` | `run.js`: integration test on a local `near-sandbox` (never leaves this machine). `testnet.js`: testnet deploy + latency check (refuses mainnet). |
+| `sandbox/` | `run.js`: integration test on a local `near-sandbox` (never leaves this machine). `testnet.js`: testnet deploy + latency check (refuses mainnet). `sponsor.js`: creates the testnet account that pays for free play (refuses mainnet). |
 
 ## Build
 

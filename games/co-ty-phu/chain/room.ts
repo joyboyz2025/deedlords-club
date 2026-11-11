@@ -16,7 +16,9 @@ import { describeCall, type MoveTx } from "./ledger.ts";
 import type { ChainMatch, ChainResult, ContractAction, PlayOutcome } from "./types.ts";
 
 export type Reader = { view<T>(method: string, args?: unknown): Promise<T> };
-export type Caller = { readonly accountId: string; call(method: string, args: unknown): Promise<{ value: unknown; hash?: string }> };
+/** What a call is for, as far as whoever sends it cares: a table nobody staked on may be paid for by its opener (see free.ts). */
+export type Table = { stake: string; creator: string };
+export type Caller = { readonly accountId: string; call(method: string, args: unknown, table?: Table): Promise<{ value: unknown; hash?: string }> };
 
 export type RoomLink = "connecting" | "online" | "offline";
 /** `no-match`: the contract has no such match and no result for it. `abandoned`: it was closed in the lobby and refunded. */
@@ -262,7 +264,8 @@ export class ChainRoom {
 
   /** Calls the contract as the viewer and notes the transaction for the match's list of them. */
   private async transact(caller: Caller, method: string, args: unknown): Promise<{ value: unknown }> {
-    const outcome = await caller.call(method, args);
+    const meta = this.chain?.meta;
+    const outcome = await caller.call(method, args, meta && { stake: meta.stake, creator: meta.creator });
     if (outcome.hash) this.sent = [...this.sent, { hash: outcome.hash, signer: caller.accountId, method, what: describeCall(method, args), atMs: this.now(), ok: true }];
     return outcome;
   }

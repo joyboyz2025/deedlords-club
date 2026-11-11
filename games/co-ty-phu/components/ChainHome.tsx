@@ -4,11 +4,13 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { chainClient } from "@/lib/chain/shared";
 import { formatBps, formatNear } from "../chain/adapt";
-import { near, neededToOpen, newMatchId, openDuelCalls, SMALLEST_STAKE, STORAGE_DEPOSIT } from "../chain/calls";
+import { FREE_GUEST_SEAT, joinCalls, near, neededToOpen, newMatchId, openDuelCalls, SMALLEST_STAKE, STORAGE_DEPOSIT } from "../chain/calls";
 import { devCreateMatch, useDevConfig, type DevConfig, type NewMatch } from "../chain/devSession";
+import { openFreeTable, requestFreeTable, type FreeOpponent } from "../chain/free";
 import type { ChainListed } from "../chain/types";
 import { armAgent, useAgent } from "../chain/useAgent";
-import { sendStake, usePlayer, type Player } from "../chain/usePlayer";
+import { useFreeSponsor } from "../chain/useFree";
+import { canStake, sendStake, usePlayer, type Player } from "../chain/usePlayer";
 import { Arrow } from "@/components/landing/icons";
 import { AgentStub, DeparturesBoard, Hall, PassengerStub } from "./Desk";
 
@@ -27,6 +29,7 @@ export function ChainHome() {
   const { player } = state;
   const helper = useDevConfig();
   const desk = useAgent(player?.accountId ?? null);
+  const sponsor = useFreeSponsor();
   const [matches, setMatches] = useState<ChainListed[] | null>(null);
   const [offline, setOffline] = useState(false);
   const [limits, setLimits] = useState<Limits | null>(null);
@@ -64,6 +67,7 @@ export function ChainHome() {
           <h1 className="fd-line">Pick a flight, or open one.</h1>
           <p className="fd-lede">
             The contract holds every match on this board. Stakes are test NEAR{limits && limits.fee_bps > 0 ? `; it keeps ${formatBps(limits.fee_bps)} of each pot` : ""}.
+            {sponsor && " A free table costs nothing and needs no NEAR: the house pays the gas."}
           </p>
           <a className="fd-jump" href="#departures">
             {matches === null
@@ -77,31 +81,39 @@ export function ChainHome() {
           <DeparturesBoard matches={matches} offline={offline} linkTo={linkTo} you={player?.accountId ?? null} />
         </section>
         <aside className="fd-ticket" aria-label="Your ticket">
-          <PassengerStub state={state} helper={helper} />
+          <PassengerStub state={state} helper={helper} freePlay={Boolean(sponsor)} />
           <AgentStub desk={desk} signedIn={Boolean(player)} />
-          <FlightStub player={player ?? null} balance={state.balance} helper={helper} limits={limits} linkTo={linkTo} />
+          <FlightStub player={player ?? null} balance={state.balance} helper={helper} limits={limits} linkTo={linkTo} sponsor={sponsor ?? null} />
         </aside>
       </div>
     </Hall>
   );
 }
 
-/** The last stub: opening a match. A game account or a wallet picks the stake; a helper's test account takes the helper's own. */
+/**
+ * The last stub: opening a match. A game account or a wallet picks the stake; a helper's test account takes the
+ * helper's own. Where somebody sponsors play, the first choice is a free table: nothing staked, no NEAR needed.
+ */
 function FlightStub({
   player,
   balance,
   helper,
   limits,
   linkTo,
+  sponsor,
 }: {
   player: Player | null;
   balance: bigint | null | undefined;
   helper: DevConfig | null;
   limits: Limits | null;
   linkTo: (id: string) => string;
+  /** The account that pays for free tables, `null` when nobody does. */
+  sponsor: string | null;
 }) {
   const router = useRouter();
-  const [stake, setStake] = useState(STAKES[0]);
+  // `null`: not chosen yet, so the first offer stands: a free table where there is one.
+  const [chosen, setChosen] = useState<number | null>(null);
+  const [opponent, setOpponent] = useState<FreeOpponent>("agent");
   const [rounds, setRounds] = useState(ROUNDS[1]);
   const [opening, setOpening] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -145,7 +157,11 @@ function FlightStub({
     );
   }
 
-  const stakes = STAKES.filter((amount) => limits === null || near(amount) <= BigInt(limits.max_stake));
+  // A Google account's key here cannot attach NEAR: free tables are the ones it can open.
+  const staked = canStake(player) ? STAKES.filter((amount) => limits === null || near(amount) <= BigInt(limits.max_stake)) : [];
+  const stakes = [...(sponsor ? [0] : []), ...staked];
+  const stake = chosen !== null && stakes.includes(chosen) ? chosen : (stakes[0] ?? STAKES[0]);
+  const free = stake === 0;
   const cost = near(stake) + STORAGE_DEPOSIT;
   const terms = {
     stake: near(stake),
@@ -155,11 +171,18 @@ function FlightStub({
   // What the account must hold: enough for the node to take the transaction, and enough left to make moves after it.
   const needed = neededToOpen(terms);
   // A wallet shows its own balance and refuses what it cannot pay; a game account is checked here.
-  const short = player?.via === "key" && balance !== undefined && (balance === null || balance < needed);
+  const short = !free && player?.via === "key" && balance !== undefined && (balance === null || balance < needed);
   const pot = near(stake) * 2n;
   const fee = limits ? (pot * BigInt(limits.fee_bps)) / 10_000n : 0n;
   const open = () =>
     run(async () => {
+      if (free) {
+        // The sponsor opens the table. A game account sits through the sponsor too; a wallet account signs its own seat.
+        if (player!.via === "key") return openFreeTable(player!.session, rounds, opponent);
+        const id = await requestFreeTable(rounds, opponent);
+        await sendStake(player!, joinCalls(id, FREE_GUEST_SEAT, 0n));
+        return id;
+      }
       const id = newMatchId();
       await sendStake(player!, openDuelCalls(id, terms));
       return id;
@@ -172,12 +195,25 @@ function FlightStub({
         <span id="fd-stake">Stake a seat</span>
         <div className="fd-segments" role="group" aria-labelledby="fd-stake">
           {stakes.map((amount) => (
-            <button key={amount} type="button" aria-pressed={amount === stake} onClick={() => setStake(amount)}>
-              {amount}
+            <button key={amount} type="button" aria-pressed={amount === stake} onClick={() => setChosen(amount)}>
+              {amount === 0 ? "Free" : amount}
             </button>
           ))}
         </div>
       </div>
+      {free && (
+        <div className="fd-pick">
+          <span id="fd-opponent">Opponent</span>
+          <div className="fd-segments" role="group" aria-labelledby="fd-opponent">
+            <button type="button" aria-pressed={opponent === "agent"} onClick={() => setOpponent("agent")}>
+              AI agent
+            </button>
+            <button type="button" aria-pressed={opponent === "friend"} onClick={() => setOpponent("friend")}>
+              A friend
+            </button>
+          </div>
+        </div>
+      )}
       <div className="fd-pick">
         <span id="fd-rounds">Rounds</span>
         <div className="fd-segments" role="group" aria-labelledby="fd-rounds">
@@ -188,31 +224,57 @@ function FlightStub({
           ))}
         </div>
       </div>
-      <dl className="fd-sum">
-        <div>
-          <dt>Pot for two seats</dt>
-          <dd>
-            {formatNear(pot.toString())} <small>NEAR</small>
-          </dd>
-        </div>
-        <div>
-          <dt>Winner takes</dt>
-          <dd>
-            {formatNear((((pot - fee) * 70n) / 100n).toString(), 3)} <small>NEAR</small>
-          </dd>
-        </div>
-      </dl>
-      <button type="button" className="fd-go" disabled={!player || opening || short} onClick={open}>
+      {free ? (
+        <dl className="fd-sum">
+          <div>
+            <dt>You pay</dt>
+            <dd>Nothing</dd>
+          </div>
+          <div>
+            <dt>Gas</dt>
+            <dd>On the house</dd>
+          </div>
+        </dl>
+      ) : (
+        <dl className="fd-sum">
+          <div>
+            <dt>Pot for two seats</dt>
+            <dd>
+              {formatNear(pot.toString())} <small>NEAR</small>
+            </dd>
+          </div>
+          <div>
+            <dt>Winner takes</dt>
+            <dd>
+              {formatNear((((pot - fee) * 70n) / 100n).toString(), 3)} <small>NEAR</small>
+            </dd>
+          </div>
+        </dl>
+      )}
+      <button type="button" className="fd-go" disabled={!player || opening || short || stakes.length === 0} onClick={open}>
         {!player
-          ? "Check in to open a match"
+          ? free
+            ? "Check in to play for free"
+            : "Check in to open a match"
           : opening
             ? player.via === "wallet"
               ? "Waiting for your wallet…"
-              : "Opening the match…"
-            : `Open for ${formatNear(cost.toString())} NEAR`}
+              : free
+                ? "Opening your table…"
+                : "Opening the match…"
+            : free
+              ? "Open a free table"
+              : `Open for ${formatNear(cost.toString())} NEAR`}
         {player && !opening && <Arrow size={20} />}
       </button>
-      {player && (
+      {free && (
+        <p className="fd-fine">
+          {opponent === "agent"
+            ? "The same contract, the same dice, every move a transaction. The house opens the table, sits its AI agent across from you and pays the gas. Nothing is staked, so nothing is won."
+            : "The house opens the table and pays the gas; you get a link to send to a friend. Nothing is staked, so nothing is won."}
+        </p>
+      )}
+      {player && !free && (
         <p className="fd-fine">
           {short
             ? `Your game account needs ${formatNear(needed.toString(), 2)} NEAR: the ${formatNear(near(stake).toString())} stake, a ${formatNear(STORAGE_DEPOSIT.toString())} storage deposit and about ${formatNear((needed - cost).toString(), 2)} the network holds for gas while you play. The deposit and the hold come back.`

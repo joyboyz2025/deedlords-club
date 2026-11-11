@@ -7,17 +7,19 @@ import { chainClient } from "@/lib/chain/shared";
 import type { FunctionCall } from "@/lib/chain/transaction";
 import { readStored, writeStored } from "@/lib/storage";
 import { AS_KEY, openDevSession } from "./devSession";
-import { hasKeyAccount, openKeySession, signInAsGuest, signInWithEvm, signOutOfKey } from "./keySession";
+import { confirmGrant, identify, prepareGrant, resumeGoogle, type PendingGrant } from "./googleSession";
+import { hasKeyAccount, type KeySource, openKeySession, signInAsGuest, signInWithEvm, signOutOfKey } from "./keySession";
 import { hasWalletAccount, openWalletSession, sendWithWallet, signInWithNearWallet, signOutOfWallet } from "./walletSession";
 
 /**
  * Whoever this browser plays as.
  * `key`: a game account whose key is here (from an EVM wallet's signature, or a guest's). It signs everything itself.
+ *   A Google account (`source: "google"`) is one too, with a lesser key: it moves a seat and cannot stake.
  * `wallet`: an account of a NEAR wallet; a session key here signs the moves, the wallet approves the stakes.
  * `helper`: a test account of the local helper, which signs what carries a deposit.
  */
 export type Player =
-  | { via: "key"; accountId: string; session: Session; source: "evm" | "guest"; evmAddress: string | null }
+  | { via: "key"; accountId: string; session: Session; source: KeySource; evmAddress: string | null; label: string | null }
   | { via: "wallet"; accountId: string; session: Session; walletName: string }
   | { via: "helper"; accountId: string; session: Session };
 
@@ -25,6 +27,9 @@ type Choice = { via: "helper"; accountId: string } | { via: "key" } | { via: "wa
 
 const text = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const BALANCE_EVERY_MS = 6_000;
+
+/** Whether this player can attach NEAR to a call: everybody but a Google account, whose key here cannot. */
+export const canStake = (player: Player | null): boolean => !(player?.via === "key" && player.source === "google");
 
 /**
  * Signs and sends calls that carry a deposit, the way this player can: a game account with its own key, a wallet
@@ -48,6 +53,8 @@ export function usePlayer() {
   const [busy, setBusy] = useState(false);
   // `undefined`: not read yet. `null`: the account does not exist on chain (nobody has sent it anything).
   const [balance, setBalance] = useState<bigint | null | undefined>(undefined);
+  // A Google sign-in halfway: the person is known, and the grant that lets this browser play waits for their approval.
+  const [grant, setGrant] = useState<PendingGrant | null>(null);
 
   useEffect(() => {
     const asked = new URLSearchParams(window.location.search).get("as");
@@ -123,6 +130,40 @@ export function usePlayer() {
   const signInGuest = useCallback(() => signIn("key", signInAsGuest), [signIn]);
   const signInWallet = useCallback(() => signIn("wallet", signInWithNearWallet), [signIn]);
 
+  /** The first of two clicks: the sign-in window. Each opens its window at once, so neither waits on anything first. */
+  const signInGoogle = useCallback(async () => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const identity = await identify();
+      if (await resumeGoogle(identity)) setChoice({ via: "key" });
+      else setGrant(await prepareGrant(identity));
+    } catch (error) {
+      setProblem(text(error));
+    }
+    setBusy(false);
+  }, []);
+
+  /** The second click: the person approves the key for this browser. */
+  const confirmGoogle = useCallback(async () => {
+    if (!grant) return;
+    setBusy(true);
+    setProblem(null);
+    try {
+      await confirmGrant(grant);
+      setGrant(null);
+      setChoice({ via: "key" });
+    } catch (error) {
+      setProblem(text(error));
+    }
+    setBusy(false);
+  }, [grant]);
+
+  const cancelGoogle = useCallback(() => {
+    setGrant(null);
+    setProblem(null);
+  }, []);
+
   /** Play as a test account of the local helper, or as nobody. */
   const playAs = useCallback((helperAccount: string | null) => {
     setProblem(null);
@@ -138,7 +179,7 @@ export function usePlayer() {
     setChoice({ via: "nobody" });
   }, [player]);
 
-  return { player, balance, problem, busy, refreshBalance, signInEvm, signInGuest, signInWallet, playAs, signOut };
+  return { player, balance, problem, busy, grant, refreshBalance, signInEvm, signInGuest, signInWallet, signInGoogle, confirmGoogle, cancelGoogle, playAs, signOut };
 }
 
 export type PlayerState = ReturnType<typeof usePlayer>;

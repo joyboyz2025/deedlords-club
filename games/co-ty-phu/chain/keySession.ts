@@ -2,19 +2,33 @@
 // signature (lib/chain/evmKey.ts: the same wallet gives the same account anywhere) or is made here for a guest. It is
 // the account's own full-access key, so the page signs everything itself, stakes included, with no wallet prompt.
 // That is also the risk: whoever has this browser's storage has the account. It should hold a stake and some gas.
+//
+// A Google account (googleSession.ts) is kept here too, but what this browser holds for it is less: a key the account
+// granted, which can only move a seat. It cannot stake, and losing it loses nothing: signing in again grants another.
 
 import type { Session } from "@/lib/chain/client";
 import { CHAIN } from "@/lib/chain/config";
 import { gameKeyMessage, hexOfText, implicitAccountId, keyFromSignature } from "@/lib/chain/evmKey";
-import { generateKeyPair, parseSecretKey, secretKeyText } from "@/lib/chain/keys";
+import { generateKeyPair, type KeyPair, parseSecretKey, secretKeyText } from "@/lib/chain/keys";
 import { chainClient } from "@/lib/chain/shared";
 import { readStored, removeStored, writeStored } from "@/lib/storage";
 
 const STORE = `deedlords:key:${CHAIN.network}`;
+/** The granted key of the Google account last signed out of here: signing in again finds it and asks for no new grant. */
+const PARKED = `deedlords:google:${CHAIN.network}`;
 
-type Stored = { accountId: string; secretKey: string; source: "evm" | "guest"; evmAddress?: string };
+export type KeySource = "evm" | "guest" | "google";
+type Stored = { accountId: string; secretKey: string; source: KeySource; evmAddress?: string; label?: string };
 
-export type KeyAccount = { accountId: string; session: Session; source: "evm" | "guest"; /** The wallet address the key was derived from. */ evmAddress: string | null };
+export type KeyAccount = {
+  accountId: string;
+  session: Session;
+  source: KeySource;
+  /** The wallet address the key was derived from. */
+  evmAddress: string | null;
+  /** A Google account's name, as the sign-in gave it. */
+  label: string | null;
+};
 
 /** The provider an EVM wallet puts in the page (EIP-1193). */
 type EvmProvider = { request(args: { method: string; params?: unknown[] }): Promise<unknown> };
@@ -59,7 +73,13 @@ export function openKeySession(): KeyAccount | null {
   const stored = readStored<Stored>(STORE);
   if (!stored) return null;
   try {
-    return { accountId: stored.accountId, session: chainClient.session(stored.accountId, parseSecretKey(stored.secretKey)), source: stored.source, evmAddress: stored.evmAddress ?? null };
+    return {
+      accountId: stored.accountId,
+      session: chainClient.session(stored.accountId, parseSecretKey(stored.secretKey)),
+      source: stored.source,
+      evmAddress: stored.evmAddress ?? null,
+      label: stored.label ?? null,
+    };
   } catch {
     removeStored(STORE);
     return null;
@@ -72,5 +92,24 @@ export function exportGameKey(): string | null {
 }
 
 export function signOutOfKey(): void {
+  const stored = readStored<Stored>(STORE);
+  if (stored?.source === "google") writeStored(PARKED, stored);
   removeStored(STORE);
+}
+
+/** Plays as a Google account with the key it granted this browser. */
+export function keepGoogleAccount(accountId: string, pair: KeyPair, label: string): void {
+  writeStored(STORE, { accountId, secretKey: secretKeyText(pair), source: "google", label } satisfies Stored);
+  removeStored(PARKED);
+}
+
+/** The key this browser was granted by that Google account before, if it still has it. */
+export function parkedGoogleKey(accountId: string): KeyPair | null {
+  const parked = readStored<Stored>(PARKED);
+  if (parked?.source !== "google" || parked.accountId !== accountId) return null;
+  try {
+    return parseSecretKey(parked.secretKey);
+  } catch {
+    return null;
+  }
 }

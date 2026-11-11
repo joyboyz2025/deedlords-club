@@ -5,14 +5,16 @@ import { useState, type CSSProperties, type ReactNode } from "react";
 import { Arrow, Bot, Copy, Seat } from "@/components/landing/icons";
 import { CHAIN } from "@/lib/chain/config";
 import { TOKEN_COLORS } from "../board";
-import { formatBps, formatNear, seatNames, shortAccount } from "../chain/adapt";
+import { accountLabel, formatBps, formatNear, seatNames, shortAccount } from "../chain/adapt";
 import { MOVE_HOLD, joinCalls, near, upfront } from "../chain/calls";
 import { devJoin, devSeatAgent, useDevConfig, type DevConfig } from "../chain/devSession";
 import type { ChainMatch, ChainResult } from "../chain/types";
 import { armAgent, useAgent } from "../chain/useAgent";
 import { useAgentNotes, useAutopilot } from "../chain/useAutopilot";
 import { useChainRoom } from "../chain/useChainRoom";
-import { sendStake, usePlayer, type PlayerState } from "../chain/usePlayer";
+import { isFreeTable, takeFreeSeat } from "../chain/free";
+import { useFreeSponsor, useHouseAgent } from "../chain/useFree";
+import { canStake, sendStake, usePlayer, type PlayerState } from "../chain/usePlayer";
 import { AgentStub, Flap, Hall, PassengerStub } from "./Desk";
 import { Ledger } from "./Ledger";
 import { useSeatPortraits } from "./LobbyArt";
@@ -48,6 +50,9 @@ function Table({ id, state, helper }: { id: string; state: PlayerState; helper: 
   const accountId = player?.accountId ?? null;
   const autopilot = useAutopilot(id, room, playTurn, accountId);
   const notes = useAgentNotes(id, match?.meta.status === "playing");
+  const sponsor = useFreeSponsor();
+  // At a free table the house agent moves when somebody with the match open asks the server for its turn.
+  useHouseAgent(id, room, sponsor);
 
   if (error) {
     return (
@@ -102,7 +107,7 @@ function Table({ id, state, helper }: { id: string; state: PlayerState; helper: 
     );
   }
 
-  if (match.meta.status === "lobby") return <Lobby match={match} state={state} helper={helper} onJoined={refresh} />;
+  if (match.meta.status === "lobby") return <Lobby match={match} state={state} helper={helper} sponsor={sponsor ?? null} onJoined={refresh} />;
 
   const names = seatNames(match.meta);
   // A seat an agent played this round or the one before: its tag stays on the card. Older notes are history.
@@ -174,7 +179,20 @@ function Notice({ title, children }: { title: string; children: ReactNode }) {
  * The gate of a match: who sits where on the wall, and on the desk the visitor's ticket, whose last stub is the boarding
  * pass of this match. The last seat taken starts the game.
  */
-function Lobby({ match, state, helper, onJoined }: { match: ChainMatch; state: PlayerState; helper: DevConfig | null; onJoined: () => Promise<void> }) {
+function Lobby({
+  match,
+  state,
+  helper,
+  sponsor,
+  onJoined,
+}: {
+  match: ChainMatch;
+  state: PlayerState;
+  helper: DevConfig | null;
+  /** The account that pays for free tables here, `null` when nobody does. */
+  sponsor: string | null;
+  onJoined: () => Promise<void>;
+}) {
   const { meta } = match;
   const player = state.player ?? null;
   const accountId = player?.accountId ?? null;
@@ -190,6 +208,12 @@ function Lobby({ match, state, helper, onJoined }: { match: ChainMatch; state: P
   const mayJoin = player !== null && !seated && (meta.solo_player === null || meta.solo_player === accountId);
   const stake = BigInt(meta.stake);
   const pot = stake * BigInt(meta.seats.length);
+  // Nothing staked: nothing to share out. `sponsored`: the house opened it and pays the gas of a game account's moves.
+  const unstaked = stake === 0n;
+  const sponsored = isFreeTable(meta, sponsor);
+  const relayed = sponsored && player?.via === "key";
+  // A Google account's key in this browser cannot attach a stake, and without the sponsor it has no gas either.
+  const freeOnly = !canStake(player) && !sponsored;
   const free = meta.seats.find((seat) => seat.backer === null) ?? null;
   const open = meta.seats.filter((seat) => seat.backer === null).length;
   // What a game account must hold to sit: enough for the node to take the join, and enough left to make moves after it.
@@ -199,7 +223,7 @@ function Lobby({ match, state, helper, onJoined }: { match: ChainMatch; state: P
     return hold > after ? hold : after;
   })();
   // A wallet shows its own balance and refuses what it cannot pay; a game account is checked here.
-  const short = player?.via === "key" && state.balance !== undefined && (state.balance === null || state.balance < needed);
+  const short = !relayed && !freeOnly && player?.via === "key" && state.balance !== undefined && (state.balance === null || state.balance < needed);
 
   const inviteAgent = async () => {
     setInviting(true);
@@ -218,6 +242,7 @@ function Lobby({ match, state, helper, onJoined }: { match: ChainMatch; state: P
     setFailed(null);
     try {
       if (player.via === "helper") await devJoin(meta.id, seat, player.accountId);
+      else if (relayed) await takeFreeSeat(player.session, meta.id, seat);
       else await sendStake(player, joinCalls(meta.id, seat, stake));
       armAgent(meta.id, player.accountId);
       await onJoined();
@@ -263,7 +288,7 @@ function Lobby({ match, state, helper, onJoined }: { match: ChainMatch; state: P
                       <small>Seat {seat.seat + 1}</small>
                       <strong>{empty ? "Open" : seat.backer === accountId ? `${names[seat.seat]} (you)` : names[seat.seat]}</strong>
                     </p>
-                    <Flap text={empty ? "WAITING" : seat.house ? "THE HOUSE" : "SEATED"} />
+                    <Flap text={empty ? "WAITING" : seat.house ? "THE HOUSE" : sponsored && seat.backer === sponsor ? "AI AGENT" : "SEATED"} />
                   </li>
                 );
               })}
@@ -295,35 +320,68 @@ function Lobby({ match, state, helper, onJoined }: { match: ChainMatch; state: P
         <aside className="fd-ticket" aria-label="Your ticket">
           <section className="fd-stub" aria-label="Boarding pass">
             <h2 className="fd-stub__title">Boarding pass</h2>
-            <dl className="fd-sum fd-sum--top">
-              <div>
-                <dt>Pot</dt>
-                <dd>
-                  {formatNear(pot.toString())} <small>NEAR</small>
-                </dd>
-              </div>
-              <div>
-                <dt>A seat</dt>
-                <dd>
-                  {formatNear(meta.stake)} <small>NEAR</small>
-                </dd>
-              </div>
-            </dl>
-            <div className="fd-split" aria-label="How the pot is shared">
-              {meta.split.map((share, rank) => (
-                <span key={rank} style={{ flexGrow: share } as CSSProperties} data-rank={rank}>
-                  {rank === 0 ? "1st" : rank === 1 ? "2nd" : rank === 2 ? "3rd" : "4th"} · {formatBps(share)}
-                </span>
-              ))}
-            </div>
-            {meta.fee_bps > 0 && <p className="fd-fine">The contract keeps {formatBps(meta.fee_bps)} of the pot; the ranks share the rest.</p>}
+            {unstaked ? (
+              <dl className="fd-sum fd-sum--top">
+                <div>
+                  <dt>A seat</dt>
+                  <dd>Free</dd>
+                </div>
+                <div>
+                  <dt>Gas</dt>
+                  <dd>{sponsored ? "On the house" : "Yours"}</dd>
+                </div>
+              </dl>
+            ) : (
+              <dl className="fd-sum fd-sum--top">
+                <div>
+                  <dt>Pot</dt>
+                  <dd>
+                    {formatNear(pot.toString())} <small>NEAR</small>
+                  </dd>
+                </div>
+                <div>
+                  <dt>A seat</dt>
+                  <dd>
+                    {formatNear(meta.stake)} <small>NEAR</small>
+                  </dd>
+                </div>
+              </dl>
+            )}
+            {unstaked ? (
+              <p className="fd-fine">
+                A free table: nothing is staked, so nothing is paid out. The contract still rolls the dice and keeps the board
+                {sponsored ? ", and the house pays the gas of every move: a game account needs no NEAR to sit here." : "."}
+              </p>
+            ) : (
+              <>
+                <div className="fd-split" aria-label="How the pot is shared">
+                  {meta.split.map((share, rank) => (
+                    <span key={rank} style={{ flexGrow: share } as CSSProperties} data-rank={rank}>
+                      {rank === 0 ? "1st" : rank === 1 ? "2nd" : rank === 2 ? "3rd" : "4th"} · {formatBps(share)}
+                    </span>
+                  ))}
+                </div>
+                {meta.fee_bps > 0 && <p className="fd-fine">The contract keeps {formatBps(meta.fee_bps)} of the pot; the ranks share the rest.</p>}
+              </>
+            )}
             {free && mayJoin && (
-              <button type="button" className="fd-go" disabled={joining || short} onClick={() => take(free.seat)}>
-                {joining ? (player?.via === "wallet" ? "Waiting for your wallet…" : "Staking…") : `Take seat ${free.seat + 1} · ${formatNear(meta.stake)} NEAR`}
+              <button type="button" className="fd-go" disabled={joining || short || freeOnly} onClick={() => take(free.seat)}>
+                {joining
+                  ? player?.via === "wallet"
+                    ? "Waiting for your wallet…"
+                    : unstaked
+                      ? "Taking the seat…"
+                      : "Staking…"
+                  : unstaked
+                    ? `Take seat ${free.seat + 1} · Free`
+                    : `Take seat ${free.seat + 1} · ${formatNear(meta.stake)} NEAR`}
                 {!joining && <Arrow size={20} />}
               </button>
             )}
             {free && !player && <p className="fd-small">Check in below to take the open seat.</p>}
+            {free && mayJoin && freeOnly && (
+              <p className="fd-fine">A Google account plays free tables. This seat asks for a stake: open a free table from the departures board instead.</p>
+            )}
             {short && free && mayJoin && (
               <p className="fd-fine">
                 Your game account needs {formatNear(needed.toString(), 2)} NEAR to sit here: the {formatNear(meta.stake)} stake and about{" "}
@@ -361,7 +419,7 @@ function Lobby({ match, state, helper, onJoined }: { match: ChainMatch; state: P
               </p>
             )}
           </section>
-          <PassengerStub state={state} helper={helper} />
+          <PassengerStub state={state} helper={helper} freePlay={Boolean(sponsor)} />
           <AgentStub desk={desk} signedIn={Boolean(player)} />
         </aside>
       </div>
@@ -400,14 +458,16 @@ function Payout({
           <li key={seat}>
             <i className="tp-token" style={{ background: TOKEN_COLORS[seat] }} />
             <span>{names[seat] ?? shortAccount(result.backers[rank])}</span>
-            <strong>{formatNear(result.payouts[rank], 5)} NEAR</strong>
+            <strong>{pot > 0n ? `${formatNear(result.payouts[rank], 5)} NEAR` : rank === 0 ? "1st" : rank === 1 ? "2nd" : rank === 2 ? "3rd" : "4th"}</strong>
           </li>
         ))}
       </ol>
       <p className="tp-hint">
-        Pot {formatNear(result.pot)} NEAR{result.fee !== "0" && `, fee ${formatNear(result.fee)} NEAR (${formatBps(feeBps)})`}, paid by the contract at block {result.block_height}.
+        {pot > 0n
+          ? `Pot ${formatNear(result.pot)} NEAR${result.fee !== "0" ? `, fee ${formatNear(result.fee)} NEAR (${formatBps(feeBps)})` : ""}, paid by the contract at block ${result.block_height}.`
+          : `A free table: nothing was staked. Ranked and recorded by the contract at block ${result.block_height}.`}
         {result.forfeited !== "0" && ` The house seat's ${formatNear(result.forfeited)} NEAR stays in the contract.`}
-        {result.deed && ` Deed of this match minted to ${shortAccount(result.deed)}.`}
+        {result.deed && ` Deed of this match minted to ${accountLabel(result.deed)}.`}
       </p>
       <div className="tp-row">
         <Link className="tp-btn tp-btn--main" href="/play">

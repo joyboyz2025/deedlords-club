@@ -9,6 +9,12 @@ export const SESSION_METHODS = ["play", "turn", "timeout", "set_driver", "leave"
 /** What a session key may burn in gas over its life, in yoctoNEAR: 0.25 NEAR, about 600 moves. */
 export const SESSION_ALLOWANCE = "250000000000000000000000";
 
+/**
+ * What the key of an account signed in through NEAR Auth may call: the moves, and taking a seat. Such a key cannot
+ * attach a deposit, so the only seats it can take are those of a table that costs nothing.
+ */
+export const GRANT_METHODS = ["join", ...SESSION_METHODS] as const;
+
 const TGAS = 1_000_000_000_000n;
 /**
  * `join` may start the game and draw the turn order, so the contract wants at least 100 Tgas on it. Not a gas more:
@@ -33,8 +39,8 @@ export const STORAGE_DEPOSIT = 60_000_000_000_000_000_000_000n;
 
 export type DuelTerms = { stake: bigint; maxRounds: number; turnSeconds: number };
 
-/** One transaction, two calls: open a two-seat match and take its first seat. */
-export function openDuelCalls(id: string, terms: DuelTerms): FunctionCall[] {
+/** Opens a two-seat match. Whoever sends it pays the storage deposit and gets it back at settlement. */
+export function createDuelCall(id: string, terms: DuelTerms): FunctionCall {
   const create = {
     id,
     seats: 2,
@@ -44,7 +50,25 @@ export function openDuelCalls(id: string, terms: DuelTerms): FunctionCall[] {
     solo_player: null,
     turn_seconds: terms.turnSeconds,
   };
-  return [{ method: "create_match", args: jsonArgs(create), gas: CREATE_GAS, deposit: STORAGE_DEPOSIT }, ...joinCalls(id, 0, terms.stake)];
+  return { method: "create_match", args: jsonArgs(create), gas: CREATE_GAS, deposit: STORAGE_DEPOSIT };
+}
+
+/** One transaction, two calls: open a two-seat match and take its first seat. */
+export function openDuelCalls(id: string, terms: DuelTerms): FunctionCall[] {
+  return [createDuelCall(id, terms), ...joinCalls(id, 0, terms.stake)];
+}
+
+/** The seat a free table's opener leaves to its guest; the house agent, when there is one, takes the other. */
+export const FREE_GUEST_SEAT = 0;
+export const FREE_AGENT_SEAT = 1;
+
+/**
+ * A free table, as the sponsor opens it (see free.ts): nothing is staked, so nothing is won. `withAgent`: the sponsor
+ * also sits in the second seat, which its agent plays.
+ */
+export function freeTableCalls(id: string, maxRounds: number, turnSeconds: number, withAgent: boolean): FunctionCall[] {
+  const create = createDuelCall(id, { stake: 0n, maxRounds, turnSeconds });
+  return withAgent ? [create, ...joinCalls(id, FREE_AGENT_SEAT, 0n)] : [create];
 }
 
 export function joinCalls(id: string, seat: number, stake: bigint): FunctionCall[] {

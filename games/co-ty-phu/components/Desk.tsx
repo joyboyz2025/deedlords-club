@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useId, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useId, useState, type CSSProperties, type ReactNode } from "react";
 import goldFoil from "@/assets/plates/gold-foil.webp";
 import paper from "@/assets/plates/strip-paper.png";
 import { Arrow, Bot, Chain, Copy, Gem, NearMark, Plane, Sliders, Spark, User } from "@/components/landing/icons";
@@ -11,6 +11,7 @@ import { BAIL_RULES, BUILD_ORDERS, MAX_CAUTION, MAX_CUSHION, MAX_RESERVE, PRESET
 import { formatNear, seatNames, shortAccount } from "../chain/adapt";
 import { SMALLEST_STAKE, near, neededToOpen } from "../chain/calls";
 import { devFund, type DevConfig } from "../chain/devSession";
+import { googleSignInOffered, warmGoogleSignIn } from "../chain/googleSession";
 import { exportGameKey } from "../chain/keySession";
 import type { ChainListed } from "../chain/types";
 import type { AgentDesk } from "../chain/useAgent";
@@ -126,10 +127,22 @@ export function DeparturesBoard({ matches, offline, linkTo, you }: { matches: Ch
                     ))}
                   </span>
                   <span role="cell" data-label="Stake">
-                    {formatNear(match.stake)} <small>NEAR</small>
+                    {match.stake === "0" ? (
+                      "Free"
+                    ) : (
+                      <>
+                        {formatNear(match.stake)} <small>NEAR</small>
+                      </>
+                    )}
                   </span>
                   <span role="cell" data-label="Winner takes">
-                    {winnerTakes(match)} <small>NEAR</small>
+                    {match.stake === "0" ? (
+                      "The table"
+                    ) : (
+                      <>
+                        {winnerTakes(match)} <small>NEAR</small>
+                      </>
+                    )}
                   </span>
                   <span role="cell" data-label="Rounds">
                     {match.rules.maxRounds}
@@ -169,6 +182,7 @@ export function DeparturesBoard({ matches, offline, linkTo, you }: { matches: Ch
 function sourceLine(player: Player): string {
   if (player.via === "wallet") return `NEAR wallet · ${player.walletName.replace(/-/g, " ")}`;
   if (player.via === "helper") return "Test account of the local helper";
+  if (player.source === "google") return `${player.label ?? "Google account"} · signed in through NEAR Auth`;
   return player.source === "evm"
     ? `Game account from ${player.evmAddress ? `${player.evmAddress.slice(0, 6)}…${player.evmAddress.slice(-4)}` : "your EVM wallet"}`
     : "Guest account, key kept in this browser";
@@ -180,10 +194,23 @@ const LOW_BALANCE = near(0.25);
 const TO_START = neededToOpen({ stake: near(SMALLEST_STAKE), maxRounds: 6, turnSeconds: 60 });
 
 /** The first stub: who plays here. Three ways in for a visitor; the account, its balance and its keys for a player. */
-export function PassengerStub({ state, helper }: { state: PlayerState; helper: DevConfig | null }) {
-  const { player, balance, problem, busy } = state;
+export function PassengerStub({
+  state,
+  helper,
+  freePlay = false,
+}: {
+  state: PlayerState;
+  helper: DevConfig | null;
+  /** Somebody sponsors free tables here: an account with no NEAR can play them. */ freePlay?: boolean;
+}) {
+  const { player, balance, problem, busy, grant } = state;
   const [note, setNote] = useState<string | null>(null);
   const [funding, setFunding] = useState(false);
+  // Google sign-in rests on the sponsor: it pays for the one signature and for every move after it.
+  const google = freePlay && googleSignInOffered();
+  useEffect(() => {
+    if (google && player === null) warmGoogleSignIn();
+  }, [google, player]);
 
   if (player === undefined) {
     return (
@@ -194,16 +221,62 @@ export function PassengerStub({ state, helper }: { state: PlayerState; helper: D
     );
   }
 
+  if (player === null && grant) {
+    return (
+      <section className="fd-stub" aria-label="Finish signing in">
+        <h2 className="fd-stub__title">Passenger</h2>
+        <div className="fd-who">
+          <span className="fd-stamp" aria-hidden="true">
+            G
+          </span>
+          <p>
+            <strong title={grant.identity.accountId}>{grant.identity.label}</strong>
+            <small>Your NEAR account: {shortAccount(grant.identity.accountId)}</small>
+          </p>
+        </div>
+        <p className="fd-small">
+          One approval and this browser can play for you. It gets a key that moves your seat in Deedlords and nothing else: it cannot spend, and you are not asked again.
+        </p>
+        <button type="button" className="fd-go" disabled={busy} onClick={state.confirmGoogle}>
+          {busy ? "Waiting for your approval…" : "Approve this browser"}
+        </button>
+        <div className="fd-acts">
+          <button type="button" className="fd-pill fd-pill--quiet" disabled={busy} onClick={state.cancelGoogle}>
+            Cancel
+          </button>
+        </div>
+        {problem && (
+          <p className="fd-problem" role="alert">
+            {problem}
+          </p>
+        )}
+      </section>
+    );
+  }
+
   if (player === null) {
     return (
       <section className="fd-stub" aria-label="Sign in">
         <h2 className="fd-stub__title">Passenger</h2>
-        <p className="fd-small">You confirm a stake once. A move never opens a wallet.</p>
+        <p className="fd-small">
+          {freePlay ? "No wallet and no NEAR needed for a free table. A move never opens a wallet." : "You confirm a stake once. A move never opens a wallet."}
+        </p>
         <button type="button" className="fd-go" disabled={busy} onClick={state.signInGuest}>
           <User size={20} /> Play now as guest
         </button>
         <p className="fd-fine">A new game account. Its key stays in this browser.</p>
         <div className="fd-ways">
+          {google && (
+            <button type="button" className="fd-way fd-way--wide" disabled={busy} onClick={state.signInGoogle}>
+              <b className="fd-way__g" aria-hidden="true">
+                G
+              </b>
+              <span>
+                <strong>{busy ? "Signing you in…" : "Continue with Google"}</strong>
+                <small>No wallet. A NEAR account of your own, through NEAR Auth</small>
+              </span>
+            </button>
+          )}
           <button type="button" className="fd-way" disabled={busy} onClick={state.signInEvm}>
             <Gem size={20} />
             <span>
@@ -235,7 +308,9 @@ export function PassengerStub({ state, helper }: { state: PlayerState; helper: D
   const low = balance === null || (balance !== undefined && balance < LOW_BALANCE);
   const cannotStart = balance === null || (balance !== undefined && balance < TO_START);
   // A game account with too little to open the smallest match: getting NEAR onto it is the one thing to do here.
-  const needsFunds = player.via === "key" && balance !== undefined && (faucet ? low : cannotStart);
+  const unfunded = player.via === "key" && balance !== undefined && (faucet ? low : cannotStart);
+  // Where free tables are sponsored an empty account can already play: funding it is for staking, not a first step.
+  const needsFunds = unfunded && !freePlay;
   const copy = async (text: string, done: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -284,11 +359,11 @@ export function PassengerStub({ state, helper }: { state: PlayerState; helper: D
           <strong title={player.accountId}>{shortAccount(player.accountId)}</strong>
           <small>{sourceLine(player)}</small>
         </p>
-        <p className="fd-balance" data-low={low || undefined}>
+        <p className="fd-balance" data-low={(low && !freePlay) || undefined}>
           {balance === undefined ? (
             <small>reading…</small>
           ) : balance === null ? (
-            <small>not on chain yet</small>
+            <small>{freePlay ? "no NEAR needed" : "not on chain yet"}</small>
           ) : (
             <>
               <strong>{formatNear(balance.toString())}</strong>
@@ -328,8 +403,15 @@ export function PassengerStub({ state, helper }: { state: PlayerState; helper: D
           )}
         </p>
       )}
+      {unfunded && freePlay && (
+        <p className="fd-fine">
+          {player.via === "key" && player.source === "google"
+            ? "This account plays free tables: the key in this browser moves your seat and cannot spend."
+            : `Free tables are open to this account as it is. To play for a stake, send it ${formatNear(TO_START.toString(), 2)} NEAR or more (test NEAR on ${CHAIN.network}).`}
+        </p>
+      )}
       <div className="fd-acts">
-        {player.via === "key" && !(needsFunds && !faucet) && (
+        {player.via === "key" && player.source !== "google" && !(needsFunds && !faucet) && (
           <button type="button" className="fd-pill" onClick={() => copy(player.accountId, "Address copied: send NEAR to it from any NEAR account.")}>
             <Copy /> Address
           </button>

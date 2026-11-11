@@ -19,6 +19,8 @@ class FakeChain {
   settled: ChainResult | null = null;
   exists = true;
   calls: { by: string; method: string; actions?: ContractAction[] }[] = [];
+  /** What the room said each call was for, in the order of `calls`. */
+  readonly tables: ({ stake: string; creator: string } | null)[] = [];
   /** The next transactions wait for this before they run. */
   gate: Promise<void> | null = null;
   /** The next transaction fails with this, as a contract panic does. */
@@ -93,9 +95,10 @@ class FakeChain {
   caller(accountId: string): Caller {
     return {
       accountId,
-      call: async (method, args) => {
+      call: async (method, args, table) => {
         const { seat, actions } = args as { seat?: number; actions?: ContractAction[] };
         this.calls.push({ by: accountId, method, ...(actions ? { actions } : {}) });
+        this.tables.push(table ?? null);
         if (this.gate) await this.gate;
         if (this.refuse) {
           const why = this.refuse;
@@ -173,6 +176,16 @@ test("a seated player is their seat; anybody else watches", async () => {
   assert.equal(watched.players.find((p) => p.id === "watcher")!.color, null);
   guest.send({ t: "roll" });
   assert.equal(chain.calls.length, 0, "a watcher sends nothing");
+});
+
+test("every call is handed over with the table it is for, so its sender can tell a free one", async () => {
+  const chain = new FakeChain();
+  const alice = roomFor(chain, "alice.test");
+  await alice.refresh();
+  alice.send({ t: "roll" });
+  await alice.idle();
+  assert.equal(chain.calls.length, 1);
+  assert.deepEqual(chain.tables, [{ stake: "1000000000000000000000000", creator: "alice.test" }]);
 });
 
 test("a roll is only sent, and nothing else is taken until it lands", async () => {

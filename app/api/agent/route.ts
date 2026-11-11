@@ -6,11 +6,11 @@
 // `turn(id, seat, plan)` with their own key: a seat's owner in their tab, or a runner holding an agent account. A
 // turn is answered once however often it is asked, so a model is asked at most once per turn played on chain.
 
-import { advise, type Advice } from "@/games/co-ty-phu/agent/advise";
-import { AdviceBook } from "@/games/co-ty-phu/agent/book";
+import { advise } from "@/games/co-ty-phu/agent/advise";
 import { MAX_STYLE, RULES_MODEL, llmConfig, llmFor } from "@/games/co-ty-phu/agent/llm";
 import { cleanPlaybook } from "@/games/co-ty-phu/agent/playbook";
 import { clientKey, intEnv, rateLimiter, underBudget } from "@/games/co-ty-phu/agent/rateLimit";
+import { asking, book } from "@/games/co-ty-phu/agent/shelf";
 import type { ChainMatch } from "@/games/co-ty-phu/chain/types";
 import { CHAIN } from "@/lib/chain/config";
 import { chainClient } from "@/lib/chain/shared";
@@ -18,10 +18,6 @@ import { chainClient } from "@/lib/chain/shared";
 export const dynamic = "force-dynamic";
 
 const MATCH_ID = /^[A-Za-z0-9_-]{1,32}$/;
-// One book for the process, kept across the reloads of a dev server.
-const shelf = globalThis as { deedlordsAdvice?: AdviceBook; deedlordsAsking?: Map<string, Promise<Advice | null>> };
-const book = (shelf.deedlordsAdvice ??= new AdviceBook());
-const asking = (shelf.deedlordsAsking ??= new Map());
 
 // A model call costs the server's owner money; a turn is already asked at most once (the book above dedups by turn),
 // but a public deployment still wants a ceiling on how many *different* turns pay for a model. Past it, the playbook

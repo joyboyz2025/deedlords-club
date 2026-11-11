@@ -6,6 +6,7 @@ import { CHAIN } from "@/lib/chain/config";
 import { chainClient } from "@/lib/chain/shared";
 import type { Plan } from "../agent/plan";
 import type { Send } from "../useRoom";
+import { seatCaller } from "./free";
 import { ChainRoom, type RoomState } from "./room";
 
 /**
@@ -17,7 +18,7 @@ export function useChainRoom(
   session: Session | null,
 ): RoomState & { send: Send; playTurn: (plan: Plan) => boolean; retry: () => void; refresh: () => Promise<void> } {
   const room = useMemo(
-    () => new ChainRoom({ id, reader: chainClient, caller: session, pollMs: CHAIN.pollMs, isVisible: () => document.visibilityState !== "hidden" }),
+    () => new ChainRoom({ id, reader: chainClient, caller: session && seatCaller(session), pollMs: CHAIN.pollMs, isVisible: () => document.visibilityState !== "hidden" }),
     [id, session],
   );
 

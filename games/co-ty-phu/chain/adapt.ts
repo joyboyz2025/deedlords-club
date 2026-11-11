@@ -40,9 +40,23 @@ export function shortAccount(accountId: string): string {
   return first.length > 16 ? `${first.slice(0, 15)}…` : first;
 }
 
+/** The account that sponsors free tables on this server and plays their second seat, once the page has learnt it (free.ts). */
+let houseAgent: string | null = null;
+
+export function knowHouseAgent(accountId: string | null): void {
+  houseAgent = accountId;
+}
+
+/** A seat the sponsor's agent plays: the sponsor's own seat at a table it opened with nothing staked. */
+export const isHouseAgentSeat = (meta: ChainMeta, seat: { backer: string | null }): boolean =>
+  houseAgent !== null && seat.backer === houseAgent && meta.creator === houseAgent && meta.stake === "0";
+
+/** An account as a line of text names it: the sponsor's as what it is here, any other by `shortAccount`. */
+export const accountLabel = (accountId: string): string => (accountId === houseAgent ? "the house agent" : shortAccount(accountId));
+
 /** A name per seat, by seat. Seats that would share a name are numbered. */
 export function seatNames(meta: ChainMeta): string[] {
-  const names = meta.seats.map((seat) => (seat.house ? "House" : seat.backer ? shortAccount(seat.backer) : `Seat ${seat.seat + 1}`));
+  const names = meta.seats.map((seat) => (seat.house ? "House" : isHouseAgentSeat(meta, seat) ? "House agent" : seat.backer ? shortAccount(seat.backer) : `Seat ${seat.seat + 1}`));
   return names.map((name, i) => {
     const same = names.filter((other) => other === name).length;
     return same > 1 ? `${name} ${names.slice(0, i + 1).filter((other) => other === name).length}` : name;

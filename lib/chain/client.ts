@@ -1,12 +1,15 @@
 // Reads from and calls to one contract over raw JSON-RPC. A `Session` signs with a function-call key held in the
 // browser, so a move needs no wallet prompt: the key can only call the game contract's move methods and carries no
 // deposit (see SESSION_METHODS in contracts/sandbox/testnet.js).
+//
+// A session can also sign calls for somebody else to send (`delegate`, NEP-366): the account then pays nothing, and
+// needs nothing. On a server the same class holds the key of the account that pays (`pipelined`, `sendTo`).
 
 import { decodeBase58, fromBase64, toBase64 } from "./base58.ts";
 import { type ChainConfig, MOVE_GAS } from "./config.ts";
 import { type KeyPair, publicKeyText } from "./keys.ts";
 import { RpcError, rpc } from "./rpc.ts";
-import { type FunctionCall, jsonArgs, signTransaction } from "./transaction.ts";
+import { type Action, type FunctionCall, jsonArgs, signDelegateAction, signTransaction } from "./transaction.ts";
 
 export type ContractEvent = { standard: string; version: string; event: string; data: Record<string, unknown> };
 
@@ -29,6 +32,14 @@ type TxResult = {
   status?: { SuccessValue?: string; Failure?: unknown };
   receipts_outcome?: { outcome: { logs: string[] } }[];
 };
+
+/** What a relayer answers once the calls it was handed have run: what they returned, or the contract's refusal. */
+export type Relayed = { hash: string; value: unknown; events: ContractEvent[] } | { hash: string; failed: string };
+/** Hands a signed delegate action to whoever sends and pays for it. */
+export type Deliver = (signedDelegate: Uint8Array) => Promise<Relayed>;
+
+/** How long a signed delegate action stays sendable, in blocks: about ten minutes on testnet. */
+const DELEGATE_BLOCKS = 1_000n;
 
 const utf8 = new TextDecoder();
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -58,7 +69,7 @@ export function eventsOf(result: TxResult): ContractEvent[] {
 
 export class ChainClient {
   readonly config: ChainConfig;
-  private block: { hash: Uint8Array; at: number } | null = null;
+  private block: { hash: Uint8Array; height: bigint; at: number } | null = null;
 
   constructor(config: ChainConfig) {
     this.config = config;
@@ -93,6 +104,32 @@ export class ChainClient {
     }
   }
 
+  /** The contract a function-call key of the account may call, or `null`: no such key on the account, or a full-access one. */
+  async functionCallKey(accountId: string, publicKey: Uint8Array): Promise<{ receiverId: string; methods: string[] } | null> {
+    type Permission = "FullAccess" | { FunctionCall: { receiver_id: string; method_names: string[] } };
+    try {
+      const key = await rpc<{ permission?: Permission; error?: string }>(this.config.rpcUrl, "query", {
+        request_type: "view_access_key",
+        finality: "optimistic",
+        account_id: accountId,
+        public_key: publicKeyText(publicKey),
+      });
+      if (key.error || typeof key.permission !== "object") return null;
+      return { receiverId: key.permission.FunctionCall.receiver_id, methods: key.permission.FunctionCall.method_names };
+    } catch (error) {
+      if (error instanceof RpcError && (error.code === "UNKNOWN_ACCESS_KEY" || error.code === "UNKNOWN_ACCOUNT")) return null;
+      throw error;
+    }
+  }
+
+  /** Calls a view method of any contract. */
+  async viewOf<T>(contractId: string, method: string, args: unknown = {}): Promise<T> {
+    const query = { request_type: "call_function", finality: "optimistic", account_id: contractId, method_name: method, args_base64: toBase64(jsonArgs(args)) };
+    const result = await rpc<CallResult>(this.config.rpcUrl, "query", query);
+    if (result.error || !result.result) throw new RpcError(`view ${contractId}.${method}: ${result.error ?? "no result"}`, "VIEW_ERROR");
+    return JSON.parse(utf8.decode(Uint8Array.from(result.result))) as T;
+  }
+
   /** The account's balance in yoctoNEAR, or `null` when there is no such account (an implicit account nobody has funded yet). */
   async balance(accountId: string): Promise<bigint | null> {
     try {
@@ -123,14 +160,27 @@ export class ChainClient {
   }
 
   async blockHash(fresh = false): Promise<Uint8Array> {
-    if (!fresh && this.block && Date.now() - this.block.at < this.config.blockHashTtlMs) return this.block.hash;
-    const block = await rpc<{ header: { hash: string } }>(this.config.rpcUrl, "block", { finality: "final" });
-    this.block = { hash: decodeBase58(block.header.hash), at: Date.now() };
-    return this.block.hash;
+    return (await this.recentBlock(fresh)).hash;
   }
 
-  session(accountId: string, pair: KeyPair): Session {
-    return new Session(this, accountId, pair);
+  /** The height of a recent final block: as old as `blockHash` may be. */
+  async blockHeight(fresh = false): Promise<bigint> {
+    return (await this.recentBlock(fresh)).height;
+  }
+
+  private async recentBlock(fresh: boolean): Promise<{ hash: Uint8Array; height: bigint }> {
+    if (!fresh && this.block && Date.now() - this.block.at < this.config.blockHashTtlMs) return this.block;
+    const block = await rpc<{ header: { hash: string; height: number } }>(this.config.rpcUrl, "block", { finality: "final" });
+    this.block = { hash: decodeBase58(block.header.hash), height: BigInt(block.header.height), at: Date.now() };
+    return this.block;
+  }
+
+  /**
+   * `pipelined`: a transaction is only handed to the node before the next one may be signed, and its result is waited
+   * for apart, so several can be on their way at once. For an account many requests send from (a server's).
+   */
+  session(accountId: string, pair: KeyPair, options: { pipelined?: boolean } = {}): Session {
+    return new Session(this, accountId, pair, options.pipelined ?? false);
   }
 }
 
@@ -138,13 +188,19 @@ export class Session {
   readonly accountId: string;
   private readonly client: ChainClient;
   private readonly pair: KeyPair;
+  private readonly pipelined: boolean;
   private nonce: bigint | null = null;
   private last: Promise<unknown> = Promise.resolve();
 
-  constructor(client: ChainClient, accountId: string, pair: KeyPair) {
+  constructor(client: ChainClient, accountId: string, pair: KeyPair, pipelined = false) {
     this.client = client;
     this.accountId = accountId;
     this.pair = pair;
+    this.pipelined = pipelined;
+  }
+
+  get publicKey(): Uint8Array {
+    return this.pair.publicKey;
   }
 
   /** Whether the account still has this key. */
@@ -165,64 +221,121 @@ export class Session {
    * deposit: the key of a game account, not a session key a wallet added. `value` is what the last call returned.
    */
   transact(calls: FunctionCall[]): Promise<Outcome> {
-    const run = this.last.then(() => this.send(calls));
+    return this.sendTo(this.client.config.contractId, calls);
+  }
+
+  /** One transaction to any account: a transfer, or a player's delegate action sent to that player's own account. */
+  sendTo(receiverId: string, actions: Action[]): Promise<Outcome> {
+    if (!this.pipelined) return this.inTurn(() => this.retried((fresh) => this.sendOnce(receiverId, actions, fresh, true)));
+    const handed = this.inTurn(() => this.retried((fresh) => this.sendOnce(receiverId, actions, fresh, false)));
+    return handed.then(({ hash }) => this.wait(hash).then((result) => outcomeOf(result, hash)));
+  }
+
+  /**
+   * The same calls, signed here and sent by somebody else, who pays for them (`deliver`): the account needs no NEAR,
+   * only to exist. No deposit can ride along: whoever sends would be the one paying it.
+   * Throws `RpcError` `UNKNOWN_ACCESS_KEY` when the account does not exist yet or has lost this key.
+   */
+  delegate(calls: FunctionCall[], deliver: Deliver): Promise<Outcome> {
+    return this.inTurn(() =>
+      this.retried(async (fresh) => {
+        if (this.nonce === null || fresh) this.nonce = await this.readNonce();
+        const nonce = this.nonce + 1n;
+        const signed = signDelegateAction(
+          {
+            senderId: this.accountId,
+            receiverId: this.client.config.contractId,
+            actions: calls,
+            nonce,
+            maxBlockHeight: (await this.client.blockHeight(fresh)) + DELEGATE_BLOCKS,
+            publicKey: this.pair.publicKey,
+          },
+          this.pair,
+        );
+        let answer: Relayed;
+        try {
+          answer = await deliver(signed);
+        } catch (error) {
+          this.nonce = null; // it may or may not have been sent: read the nonce again next time
+          throw error;
+        }
+        if ("failed" in answer) {
+          // The chain did not take the delegate action itself (as opposed to the contract refusing the call inside).
+          if (/DelegateAction(InvalidNonce|Expired)/.test(answer.failed)) {
+            this.nonce = null;
+            throw new RpcError(answer.failed, "INVALID_TRANSACTION", { detail: "InvalidNonce" });
+          }
+          this.nonce = nonce;
+          throw new ContractFailure(answer.failed, answer.hash);
+        }
+        this.nonce = nonce;
+        return answer;
+      }),
+    );
+  }
+
+  /** One at a time: a key's nonce only goes up. */
+  private inTurn<T>(job: () => Promise<T>): Promise<T> {
+    const run = this.last.then(job);
     this.last = run.catch(() => undefined);
     return run;
   }
 
-  private async send(calls: FunctionCall[]): Promise<Outcome> {
-    for (let attempt = 0; ; attempt++) {
-      try {
-        return await this.sendOnce(calls, attempt > 0);
-      } catch (error) {
-        // Another tab moved with the same key, or the block we named has expired: read both again, once.
-        const stale = error instanceof RpcError && error.code === "INVALID_TRANSACTION" && /InvalidNonce|Expired/.test(error.detail);
-        if (!stale || attempt > 0) throw error;
-      }
+  /** Another tab moved with the same key, or the block we named has expired: read both again, once. */
+  private async retried<T>(attempt: (fresh: boolean) => Promise<T>): Promise<T> {
+    try {
+      return await attempt(false);
+    } catch (error) {
+      const stale = error instanceof RpcError && error.code === "INVALID_TRANSACTION" && /InvalidNonce|Expired/.test(error.detail);
+      if (!stale) throw error;
+      return attempt(true);
     }
   }
 
-  private async sendOnce(calls: FunctionCall[], fresh: boolean): Promise<Outcome> {
-    const { rpcUrl, contractId } = this.client.config;
-    if (this.nonce === null || fresh) {
-      const nonce = await this.client.accessKeyNonce(this.accountId, this.pair.publicKey);
-      if (nonce === null) throw new RpcError(`${this.accountId} has no session key for this browser`, "UNKNOWN_ACCESS_KEY");
-      this.nonce = nonce;
-    }
+  private async readNonce(): Promise<bigint> {
+    const nonce = await this.client.accessKeyNonce(this.accountId, this.pair.publicKey);
+    if (nonce === null) throw new RpcError(`${this.accountId} has no session key for this browser`, "UNKNOWN_ACCESS_KEY");
+    return nonce;
+  }
+
+  /** Signs and sends. `untilRun`: waits for the result; otherwise returns once the node has taken the transaction. */
+  private async sendOnce(receiverId: string, actions: Action[], fresh: boolean, untilRun: true): Promise<Outcome>;
+  private async sendOnce(receiverId: string, actions: Action[], fresh: boolean, untilRun: false): Promise<{ hash: string }>;
+  private async sendOnce(receiverId: string, actions: Action[], fresh: boolean, untilRun: boolean): Promise<Outcome | { hash: string }> {
+    const { rpcUrl } = this.client.config;
+    if (this.nonce === null || fresh) this.nonce = await this.readNonce();
     const nonce = this.nonce + 1n;
     const { hash, bytes } = signTransaction(
       {
         signerId: this.accountId,
         publicKey: this.pair.publicKey,
         nonce,
-        receiverId: contractId,
+        receiverId,
         blockHash: await this.client.blockHash(fresh),
-        actions: calls,
+        actions,
       },
       this.pair,
     );
-    let result: TxResult;
+    let result: TxResult | null = null;
     try {
       // Sending the same signed transaction twice is harmless (same hash), so a rate limit here is simply retried.
-      result = await rpc<TxResult>(rpcUrl, "send_tx", { signed_tx_base64: toBase64(bytes), wait_until: "EXECUTED_OPTIMISTIC" }, { timeoutMs: 60_000, retryTimeout: false });
+      const sent = await rpc<TxResult>(
+        rpcUrl,
+        "send_tx",
+        { signed_tx_base64: toBase64(bytes), wait_until: untilRun ? "EXECUTED_OPTIMISTIC" : "NONE" },
+        { timeoutMs: 60_000, retryTimeout: false },
+      );
+      if (untilRun) result = sent;
     } catch (error) {
       const waiting = error instanceof RpcError && (error.code === "TIMEOUT_ERROR" || error.code === "TIMEOUT");
       if (!waiting) {
         this.nonce = null; // not accepted: read the nonce again next time
         throw error;
       }
-      result = await this.wait(hash);
+      if (untilRun) result = await this.wait(hash);
     }
     this.nonce = nonce;
-    if (result.status?.Failure !== undefined) throw new ContractFailure(failureText(result.status.Failure), hash);
-    const returned = utf8.decode(fromBase64(result.status?.SuccessValue ?? ""));
-    let value: unknown = null;
-    try {
-      value = returned ? JSON.parse(returned) : null;
-    } catch {
-      value = returned;
-    }
-    return { hash, value, events: eventsOf(result) };
+    return result ? outcomeOf(result, hash) : { hash };
   }
 
   private async wait(hash: string): Promise<TxResult> {
@@ -240,4 +353,17 @@ export class Session {
       }
     }
   }
+}
+
+/** What a transaction that has run returned, or `ContractFailure` when it was refused. */
+function outcomeOf(result: TxResult, hash: string): Outcome {
+  if (result.status?.Failure !== undefined) throw new ContractFailure(failureText(result.status.Failure), hash);
+  const returned = utf8.decode(fromBase64(result.status?.SuccessValue ?? ""));
+  let value: unknown = null;
+  try {
+    value = returned ? JSON.parse(returned) : null;
+  } catch {
+    value = returned;
+  }
+  return { hash, value, events: eventsOf(result) };
 }
