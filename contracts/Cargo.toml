@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["engine", "deedlords"]
+members = ["engine", "deedlords", "arena-engine", "arena"]
 
 # Settings for the NEAR contract wasm (small, deterministic, abort on panic).
 [profile.release]

@@ -1,0 +1,23 @@
+[package]
+name = "arena-engine"
+version = "0.1.0"
+edition = "2021"
+description = "Deedlords Arena rules: deterministic, integer-only port of games/arena/engine.ts."
+publish = false
+build = "build.rs"
+
+[lib]
+name = "arena_engine"
+path = "src/lib.rs"
+
+[[bin]]
+name = "arena-replay"
+path = "src/bin/replay.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+borsh = { version = "1", features = ["derive"] }
+
+[build-dependencies]
+serde_json = "1"

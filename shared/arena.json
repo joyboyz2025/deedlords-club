@@ -1,0 +1,61 @@
+{
+  "constants": {
+    "startGold": 6,
+    "startPoints": 20,
+    "baseIncome": 5,
+    "interestPer": 5,
+    "interestMax": 2,
+    "winBonus": 1,
+    "marketSize": 5,
+    "benchSize": 3,
+    "maxTicks": 70,
+    "overtime": 30,
+    "cols": 7,
+    "rows": 3,
+    "meleeRange": 1,
+    "rangedRange": 3,
+    "minCooldown": 2,
+    "maxRank": 3,
+    "rankPercent": [100, 170, 280],
+    "teamCap": [3, 4, 5, 6, 6, 6, 6],
+    "tierWeights": [
+      [70, 30, 0, 0],
+      [50, 35, 15, 0],
+      [35, 35, 25, 5],
+      [25, 30, 30, 15],
+      [15, 30, 35, 20],
+      [10, 25, 35, 30],
+      [10, 20, 35, 35]
+    ]
+  },
+  "guilds": [
+    { "name": "Canal Guild", "color": "#1f8a8a", "at": [2, 4], "bonus": [10, 25], "text": "All allies gain 10% / 25% health." },
+    { "name": "Skyport", "color": "#e9dcc0", "at": [2, 4], "bonus": [1, 2], "text": "All allies attack 1 / 2 ticks sooner." },
+    { "name": "Customs House", "color": "#b3261e", "at": [2, 4], "bonus": [1, 2], "text": "Enemies need 1 / 2 more attacks before their first ability." },
+    { "name": "Grid Works", "color": "#c77b30", "at": [2, 4], "bonus": [15, 35], "text": "All allies gain 15% / 35% attack." }
+  ],
+  "roles": [
+    { "name": "Guard", "at": [2, 3], "bonus": [2, 4], "text": "Guards gain 2 / 4 armour." },
+    { "name": "Runner", "at": [2, 3], "bonus": [2, 3], "text": "A Runner's first attack hits 2 / 3 times as hard." },
+    { "name": "Signaller", "at": [2, 3], "bonus": [20, 40], "text": "Signallers gain 20% / 40% attack." },
+    { "name": "Broker", "at": [2, 3], "bonus": [1, 2], "text": "Earn 1 / 2 more gold each round." }
+  ],
+  "units": [
+    { "id": "brann", "name": "Lockkeeper Brann", "guild": 0, "role": 0, "cost": 1, "hp": 128, "atk": 6, "armor": 2, "cd": 5, "ranged": false, "dive": false, "every": 3, "ability": { "name": "Sluice Gate", "op": "shield", "who": "allyNear", "amount": 25, "text": "Shields himself and every ally next to him." } },
+    { "id": "eel", "name": "Eel", "guild": 0, "role": 1, "cost": 2, "hp": 93, "atk": 14, "armor": 0, "cd": 3, "ranged": false, "dive": true, "every": 3, "ability": { "name": "Undertow", "op": "dmg", "who": "weakest", "amount": 29, "text": "Strikes the weakest enemy." } },
+    { "id": "ysolde", "name": "Harpooner Ysolde", "guild": 0, "role": 2, "cost": 3, "hp": 105, "atk": 18, "armor": 0, "cd": 4, "ranged": true, "dive": false, "every": 3, "ability": { "name": "Harpoon", "op": "stun", "who": "farthest", "amount": 5, "text": "Pins the enemy furthest away for 5 ticks." } },
+    { "id": "odo", "name": "Bargemaster Odo", "guild": 0, "role": 3, "cost": 4, "hp": 177, "atk": 14, "armor": 0, "cd": 5, "ranged": true, "dive": false, "every": 2, "ability": { "name": "Toll", "op": "heal", "who": "allies", "amount": 31, "text": "Heals every ally." } },
+    { "id": "tamsin", "name": "Ground Marshal Tamsin", "guild": 1, "role": 0, "cost": 2, "hp": 172, "atk": 8, "armor": 2, "cd": 5, "ranged": false, "dive": false, "every": 3, "ability": { "name": "Hold Short", "op": "shield", "who": "self", "amount": 56, "text": "Raises a heavy shield." } },
+    { "id": "pip", "name": "Wingwalker Pip", "guild": 1, "role": 1, "cost": 1, "hp": 68, "atk": 10, "armor": 0, "cd": 3, "ranged": false, "dive": true, "every": 3, "ability": { "name": "Tailwind", "op": "haste", "who": "self", "amount": 1, "text": "Attacks one tick sooner from now on." } },
+    { "id": "ko", "name": "Flare Gunner Ko", "guild": 1, "role": 2, "cost": 4, "hp": 135, "atk": 24, "armor": 0, "cd": 4, "ranged": true, "dive": false, "every": 3, "ability": { "name": "Signal Flare", "op": "dmg", "who": "near", "amount": 52, "text": "Burns the target and every enemy next to it." } },
+    { "id": "bel", "name": "Quartermaster Bel", "guild": 1, "role": 3, "cost": 3, "hp": 135, "atk": 11, "armor": 0, "cd": 5, "ranged": true, "dive": false, "every": 2, "ability": { "name": "Resupply", "op": "energize", "who": "allies", "amount": 1, "text": "Brings every other ally one attack closer to its ability." } },
+    { "id": "grigg", "name": "Inspector Grigg", "guild": 2, "role": 0, "cost": 3, "hp": 225, "atk": 11, "armor": 2, "cd": 5, "ranged": false, "dive": false, "every": 3, "ability": { "name": "Hold for Inspection", "op": "stun", "who": "target", "amount": 4, "text": "Holds his target for 4 ticks." } },
+    { "id": "finch", "name": "Stowaway Finch", "guild": 2, "role": 1, "cost": 4, "hp": 165, "atk": 25, "armor": 0, "cd": 3, "ranged": false, "dive": true, "every": 3, "ability": { "name": "Slip Through", "op": "dmg", "who": "weakest", "amount": 91, "text": "A heavy blow on the weakest enemy." } },
+    { "id": "mirela", "name": "Stamp Clerk Mirela", "guild": 2, "role": 2, "cost": 1, "hp": 57, "atk": 10, "armor": 0, "cd": 4, "ranged": true, "dive": false, "every": 3, "ability": { "name": "Denied", "op": "weaken", "who": "target", "amount": 25, "text": "Cuts her target's attack by a quarter." } },
+    { "id": "vane", "name": "Assessor Vane", "guild": 2, "role": 3, "cost": 2, "hp": 102, "atk": 8, "armor": 0, "cd": 5, "ranged": true, "dive": false, "every": 2, "ability": { "name": "Duty", "op": "drain", "who": "target", "amount": 0, "text": "Sets his target's ability back to the start." } },
+    { "id": "hask", "name": "Boilerman Hask", "guild": 3, "role": 0, "cost": 4, "hp": 292, "atk": 15, "armor": 2, "cd": 5, "ranged": false, "dive": false, "every": 3, "ability": { "name": "Pressure Valve", "op": "dmg", "who": "around", "amount": 29, "text": "Scalds every enemy within two hexes." } },
+    { "id": "jory", "name": "Lineman Jory", "guild": 3, "role": 1, "cost": 3, "hp": 128, "atk": 19, "armor": 0, "cd": 3, "ranged": false, "dive": true, "every": 3, "ability": { "name": "Live Wire", "op": "dmg", "who": "three", "amount": 26, "text": "Lightning jumps to the three weakest enemies." } },
+    { "id": "sena", "name": "Arc Welder Sena", "guild": 3, "role": 2, "cost": 2, "hp": 78, "atk": 13, "armor": 0, "cd": 4, "ranged": true, "dive": false, "every": 3, "ability": { "name": "Arc", "op": "ramp", "who": "self", "amount": 30, "text": "Her attack grows by 30% for the rest of the fight." } },
+    { "id": "opal", "name": "Meter Reader Opal", "guild": 3, "role": 3, "cost": 1, "hp": 75, "atk": 6, "armor": 0, "cd": 5, "ranged": true, "dive": false, "every": 2, "ability": { "name": "Surge", "op": "heal", "who": "allyWeakest", "amount": 35, "text": "Heals the weakest ally." } }
+  ]
+}

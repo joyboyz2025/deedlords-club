@@ -33,6 +33,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "arena-engine"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -481,6 +490,14 @@ version = "0.1.0"
 dependencies = [
  "deedlords-engine",
  "near-contract-standards",
+ "near-sdk",
+]
+
+[[package]]
+name = "deedlords-arena"
+version = "0.1.0"
+dependencies = [
+ "arena-engine",
  "near-sdk",
 ]
 
