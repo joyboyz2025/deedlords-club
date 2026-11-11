@@ -316,6 +316,16 @@ export function PassengerStub({ state, helper }: { state: PlayerState; helper: D
           {faucet
             ? "This account cannot play yet. The local faucet sends it enough for the smallest match."
             : `This account cannot play yet. The smallest match needs ${formatNear(TO_START.toString(), 2)} NEAR on it: send that much or more from any NEAR wallet (test NEAR on ${CHAIN.network}).`}
+          {!faucet && CHAIN.network === "testnet" && (
+            <>
+              {" "}
+              No NEAR wallet yet?{" "}
+              <a href="https://docs.near.org/getting-started/faucet" target="_blank" rel="noreferrer noopener">
+                Ask a testnet faucet
+              </a>
+              .
+            </>
+          )}
         </p>
       )}
       <div className="fd-acts">

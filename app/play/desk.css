@@ -487,6 +487,17 @@ a.fd-row:hover .fd-row__go {
   line-height: 1.4;
 }
 
+.fd-fine a {
+  color: var(--red);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.fd-fine a:hover {
+  text-decoration-thickness: 2px;
+}
+
 .fd-problem {
   padding: 8px 12px;
   border-radius: 10px;

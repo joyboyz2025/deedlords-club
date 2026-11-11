@@ -328,6 +328,16 @@ function Lobby({ match, state, helper, onJoined }: { match: ChainMatch; state: P
               <p className="fd-fine">
                 Your game account needs {formatNear(needed.toString(), 2)} NEAR to sit here: the {formatNear(meta.stake)} stake and about{" "}
                 {formatNear((needed - stake).toString(), 2)} the network holds for gas while you play. The hold comes back.
+                {CHAIN.network === "testnet" && (
+                  <>
+                    {" "}
+                    No NEAR wallet yet?{" "}
+                    <a href="https://docs.near.org/getting-started/faucet" target="_blank" rel="noreferrer noopener">
+                      Ask a testnet faucet
+                    </a>
+                    .
+                  </>
+                )}
               </p>
             )}
             {seated && open > 0 && (
