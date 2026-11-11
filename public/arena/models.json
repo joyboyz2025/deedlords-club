@@ -1,0 +1,39 @@
+{
+  "map": "map.glb",
+  "units": {
+    "brann": "brann.glb",
+    "eel": "eel.glb",
+    "ysolde": "ysolde.glb",
+    "odo": "odo.glb",
+    "tamsin": "tamsin.glb",
+    "pip": "pip.glb",
+    "ko": "ko.glb",
+    "bel": "bel.glb",
+    "grigg": "grigg.glb",
+    "finch": "finch.glb",
+    "mirela": "mirela.glb",
+    "vane": "vane.glb",
+    "hask": "hask.glb",
+    "jory": "jory.glb",
+    "sena": "sena.glb",
+    "opal": "opal.glb"
+  },
+  "portraits": [
+    "brann",
+    "eel",
+    "ysolde",
+    "odo",
+    "tamsin",
+    "pip",
+    "ko",
+    "bel",
+    "grigg",
+    "finch",
+    "mirela",
+    "vane",
+    "hask",
+    "jory",
+    "sena",
+    "opal"
+  ]
+}
