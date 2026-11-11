@@ -1,0 +1,464 @@
+/* Deedlords Arena. The tokens come first: a night-blue ground, raised panels, gold for what you act on, teal for your
+   side and coral for the other. */
+.arena {
+  --a-ground: #1b1e2e;
+  --a-panel: #23273d;
+  --a-raised: #2f3552;
+  --a-line: #454c70;
+  --a-text: #fff7e6;
+  --a-dim: #c3c9e2;
+  --a-gold: #e8c15a;
+  --a-ink: #1b1d2a;
+  --a-me: #35c9b4;
+  --a-them: #f0604a;
+  --a-hp: #4fd18b;
+  --a-atk: #ff9d4d;
+  --a-radius: 12px;
+
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--a-ground);
+  color: var(--a-text);
+  font-family: var(--font-be-vietnam), system-ui, sans-serif;
+  font-size: 14px;
+}
+.arena button {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 2px solid var(--a-line);
+  border-radius: 10px;
+  background: var(--a-raised);
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.arena button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.arena button[aria-pressed="true"] {
+  border-color: var(--a-gold);
+  color: var(--a-gold);
+}
+.arena button.arena-main {
+  min-width: 96px;
+  border-color: var(--a-gold);
+  background: var(--a-gold);
+  color: var(--a-ink);
+}
+.arena h3,
+.arena p,
+.arena ul,
+.arena ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The top bar. */
+.arena-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
+  background: var(--a-panel);
+}
+.arena-title {
+  margin-right: auto;
+  font-family: var(--font-alfa), serif;
+  font-size: 18px;
+}
+.arena-tabs {
+  display: inline-flex;
+  gap: 4px;
+}
+
+/* The floor, with what is read at a glance laid over it. */
+.arena-stage {
+  position: relative;
+  min-height: 0;
+}
+.arena-stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+.arena-versus {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  translate: -50% 0;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgb(27 30 46 / 0.86);
+  font-variant-numeric: tabular-nums;
+}
+.arena-health {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.arena-meter {
+  display: block;
+  width: 96px;
+  height: 10px;
+  border-radius: 999px;
+  background: #0d0f18;
+  overflow: hidden;
+}
+.arena-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--a-hp);
+  transition: width 0.4s ease;
+}
+.arena-meter[data-tone="me"] i {
+  background: var(--a-me);
+}
+.arena-meter[data-tone="them"] i {
+  background: var(--a-them);
+  margin-left: auto;
+}
+.arena-meter[data-tone="atk"] i {
+  background: var(--a-atk);
+}
+.arena-rounds {
+  display: flex;
+  gap: 5px;
+}
+.arena-rounds li {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--a-line);
+}
+.arena-rounds li[data-state="done"] {
+  border-color: var(--a-dim);
+  background: var(--a-dim);
+}
+.arena-rounds li[data-state="now"] {
+  border-color: var(--a-gold);
+  background: var(--a-gold);
+  scale: 1.25;
+}
+.arena-traits {
+  position: absolute;
+  left: 10px;
+  top: 64px;
+  display: grid;
+  gap: 4px;
+}
+.arena-traits li {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgb(27 30 46 / 0.86);
+  color: var(--a-dim);
+}
+.arena-traits li[data-on="true"] {
+  color: var(--a-text);
+  box-shadow: inset 0 0 0 2px var(--a-gold);
+}
+.arena-detail {
+  position: absolute;
+  right: 10px;
+  top: 64px;
+  width: min(320px, calc(100% - 20px));
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 10px;
+  padding: 10px;
+  border-radius: var(--a-radius);
+  background: rgb(35 39 61 / 0.95);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35);
+}
+.arena-detail > div {
+  display: grid;
+  gap: 5px;
+}
+.arena-detail h3 {
+  font-size: 15px;
+  padding-right: 28px;
+}
+.arena .arena-close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-height: 32px;
+  width: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 20px;
+}
+.arena-bar-row {
+  display: grid;
+  grid-template-columns: 52px 1fr 32px;
+  gap: 8px;
+  align-items: center;
+  color: var(--a-dim);
+  font-size: 12px;
+}
+.arena-bar-row .arena-meter {
+  width: auto;
+  height: 8px;
+}
+.arena-bar-row b {
+  color: var(--a-text);
+  text-align: right;
+}
+
+/* Small parts shared by cards, tiles and the detail card. */
+.arena-face {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.arena-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.arena-rank {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 1px 0;
+  background: rgb(13 15 24 / 0.7);
+  color: var(--a-gold);
+  font-size: 11px;
+  text-align: center;
+}
+.arena-dot {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgb(255 255 255 / 0.6);
+}
+.arena-icon {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+}
+.arena-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  color: var(--a-dim);
+  font-size: 12px;
+}
+.arena-ability {
+  font-size: 12px;
+}
+
+/* The bottom panel: one line of status, the bench, then the shop. */
+.arena-panel {
+  max-height: 48vh;
+  overflow-y: auto;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  background: var(--a-panel);
+  display: grid;
+  gap: 8px;
+}
+.arena-note {
+  font-weight: 700;
+}
+.arena-steps {
+  color: var(--a-dim);
+  font-size: 12px;
+}
+.arena-steps ol {
+  padding: 4px 0 0 18px;
+  list-style: decimal;
+}
+.arena-steps a,
+.arena-lobby a {
+  color: var(--a-gold);
+}
+.arena-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.arena-gold,
+.arena-count {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: var(--a-ground);
+  font-weight: 700;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.arena-gold i {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--a-gold);
+  box-shadow: inset 0 0 0 2px #b8902f;
+}
+.arena-bench {
+  display: flex;
+  gap: 6px;
+  min-height: 52px;
+}
+.arena .arena-tile {
+  width: 52px;
+  min-height: 52px;
+  padding: 2px;
+}
+.arena .arena-tile[data-held="true"] {
+  border-color: var(--a-gold);
+  translate: 0 -4px;
+}
+.arena .arena-tile[data-hoped="true"] {
+  border-style: dashed;
+}
+.arena .arena-tile[data-sold] {
+  opacity: 0.45;
+}
+.arena-hint {
+  flex: 1;
+  min-width: 0;
+  color: var(--a-dim);
+}
+.arena-market {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+.arena-card {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+}
+.arena .arena-buy {
+  position: relative;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  column-gap: 8px;
+  row-gap: 2px;
+  align-content: center;
+  width: 100%;
+  min-height: 76px;
+  padding: 6px;
+  text-align: left;
+}
+.arena-buy .arena-face {
+  grid-row: 1 / -1;
+}
+.arena-buy > b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 26px;
+}
+.arena-card[data-bid="true"] .arena-buy {
+  border-color: var(--a-gold);
+  background: #3a3f5e;
+}
+.arena-cost {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 24px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--a-gold);
+  color: var(--a-ink);
+  font-weight: 700;
+  text-align: center;
+}
+.arena-bid {
+  display: grid;
+  grid-template-columns: 40px 1fr 40px;
+  align-items: center;
+  text-align: center;
+  font-weight: 700;
+}
+.arena-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Before a chain match. */
+.arena-lobby {
+  grid-row: 2 / -1;
+  overflow-y: auto;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+.arena-lobby h2 {
+  margin: 0;
+  font-family: var(--font-alfa), serif;
+  font-weight: 400;
+  font-size: 24px;
+}
+.arena-lobby code {
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: var(--a-raised);
+}
+.arena-account {
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+@media (max-width: 760px) {
+  .arena-market {
+    grid-auto-flow: column;
+    grid-auto-columns: 210px;
+    grid-template-columns: none;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .arena-row {
+    flex-wrap: wrap;
+  }
+  .arena-hint {
+    flex-basis: 100%;
+    order: 5;
+  }
+  .arena-meter {
+    width: 64px;
+  }
+  .arena-detail {
+    top: auto;
+    bottom: 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .arena-meter i {
+    transition: none;
+  }
+}
