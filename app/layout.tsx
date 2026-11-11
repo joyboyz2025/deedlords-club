@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Trò chơi nhóm",
-  description: "Mở phòng, mời mọi người quét mã là chơi cùng nhau trên điện thoại.",
+  title: "Deedlords",
+  description: "A property game whose rules, dice and stakes live in a NEAR contract. Buy capitals, collect rent, win the pot.",
 };
 
 export const viewport: Viewport = {
@@ -14,7 +14,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="vi">
+    <html lang="en">
       <body>{children}</body>
     </html>
   );

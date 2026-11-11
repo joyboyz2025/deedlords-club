@@ -12,7 +12,8 @@
 //                                             (create_match and join carry deposits: full-access signatures)
 //   POST /join    { id, seat, accountId }     seats a dev account in an open match
 //   POST /rpc                                 forwards one JSON-RPC request to the sandbox node
-//   GET  /config                              { networkId, contractId, house, players, stake, solo }
+//   POST /fund    { accountId }               sends 5 NEAR to a game account (an implicit account: 64 hex digits)
+//   GET  /config                              { networkId, contractId, house, players, stake, solo, faucet }
 //
 // Only pages served from localhost may call it (CORS), and every POST must be application/json.
 
@@ -38,6 +39,8 @@ const SESSION_ALLOWANCE = NEAR(0.25);
 const ALL_CITIES = [1, 3, 6, 8, 9, 11, 13, 14, 16, 18, 19, 21, 23, 24, 26, 27, 29, 31, 32, 34, 37, 39];
 const HOUSE_PLAN = { buy_reserve: 150, build: ALL_CITIES, keep_reserve: 250, bail: true, liquidate: [] };
 const DEFAULT_RULES = { salary: 200, cash: 1500, blitz: false, max_rounds: 12 };
+/// What a new game account (a key made in the browser) is handed here.
+const FAUCET_AMOUNT = NEAR(5);
 const PORT = Number(process.env.DEEDLORDS_DEV_PORT ?? 8791);
 const LOCAL_ORIGIN = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -116,6 +119,7 @@ async function setUp(wasmPath) {
     acc.alice = await makeAccount("alice", 200);
     acc.bob = await makeAccount("bob", 200);
     acc.carol = await makeAccount("carol", 200);
+    acc.faucet = await makeAccount("faucet", 400);
     await game.deployContract(wasm);
     await game.functionCall({ contractId, methodName: "new", args: { owner: acc.owner.accountId, house: acc.house.accountId, max_stake: MAX_STAKE.toString(), fee_bps: FEE_BPS }, gas: GAS });
     console.log(`contract deployed to ${contractId} on the local sandbox`);
@@ -170,6 +174,15 @@ async function join({ id, seat, accountId }) {
   if (!match) throw new Error(`no such match: ${id}`);
   await call(account, "join", { id: String(id), seat: Number(seat) }, BigInt(match.meta.stake));
   return { id, seat: Number(seat), accountId: account.accountId };
+}
+
+/// Play money for a game account. An implicit account comes to exist with this first transfer.
+async function fund({ accountId }) {
+  if (typeof accountId !== "string" || !/^[0-9a-f]{64}$/.test(accountId)) throw new Error("only a game account (64 hex digits) is funded here");
+  const have = await provider.query({ request_type: "view_account", finality: "optimistic", account_id: accountId }).then((a) => BigInt(a.amount), () => 0n);
+  if (have >= FAUCET_AMOUNT / 2n) return { accountId, funded: false, balance: have.toString() };
+  await inTurn(acc.faucet.accountId, () => acc.faucet.sendMoney(accountId, FAUCET_AMOUNT));
+  return { accountId, funded: true, balance: (have + FAUCET_AMOUNT).toString() };
 }
 
 async function addSessionKey({ accountId, publicKey }) {
@@ -241,7 +254,7 @@ function serve() {
       if (req.method === "OPTIONS") return send(204);
       const route = `${req.method} ${new URL(req.url, "http://x").pathname}`;
       if (route === "GET /config") {
-        return send(200, { networkId: NET, contractId, house: acc.house.accountId, players: players().map((a) => a.accountId), stake: STAKE.toString(), solo: true });
+        return send(200, { networkId: NET, contractId, house: acc.house.accountId, players: players().map((a) => a.accountId), stake: STAKE.toString(), solo: true, faucet: FAUCET_AMOUNT.toString() });
       }
       if (req.method !== "POST") return send(404, { error: "not found" });
       if (!String(req.headers["content-type"] ?? "").startsWith("application/json")) return send(415, { error: "content-type must be application/json" });
@@ -254,6 +267,7 @@ function serve() {
       if (route === "POST /session") return send(200, await addSessionKey(body));
       if (route === "POST /match") return send(200, { id: await createMatch(body) });
       if (route === "POST /join") return send(200, await join(body));
+      if (route === "POST /fund") return send(200, await fund(body));
       return send(404, { error: "not found" });
     } catch (e) {
       send(400, { error: String(e && e.message ? e.message : e).slice(0, 600) });

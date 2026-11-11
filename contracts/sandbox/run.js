@@ -11,6 +11,7 @@
 // (e) the stake cap, the gas floor of every call that may roll, the turn clock under free moves, and a whole match
 // played with exactly the floor attached and the largest plan the contract accepts; (f) the fee: 2.5% of every settled
 // pot adds up in the contract and only the owner can withdraw it, and nothing but it.
+// (h) the transaction a web wallet signs to open a match: create_match + join in one, and its refusal as a whole.
 // With DEEDLORDS_V1_WASM=<wasm built before the fee existed> also (g): that wasm is deployed to a second account, a
 // match is settled on it, then the new wasm is deployed over it with migrate() in the same transaction.
 // Prints gas per join/turn/play, the heaviest calls against the gas floor, the wasm size and storage bytes per match.
@@ -541,6 +542,36 @@ async function scenarioFees(acc) {
   console.log(`  ${fmt(fees)} collected from ${settledIds.length}+ settled matches; alice, the house and a call without the yocto were refused; the owner received ${fmt(fees)} (balance +${fmt(gained)} after gas)`);
 }
 
+/// (h) What the web wallet is handed when a player opens a match: create_match and join as two calls of ONE transaction,
+/// with the gas the page gives them (20 and 100 Tgas: join gets exactly the contract's floor). See games/co-ty-phu/chain/calls.ts.
+async function scenarioWalletBatch(acc) {
+  console.log("\n(h) one transaction: create_match + join, as the web wallet signs it");
+  const stake = NEAR(0.05);
+  const rules = { salary: 200, cash: 1500, blitz: false, max_rounds: 6 };
+  const actionsFor = (id, joinGas) => [
+    transactions.functionCall("create_match", { id, seats: 2, stake: stake.toString(), split: [7000, 3000], rules, solo_player: null, turn_seconds: 60 }, 20n * TGAS, NEAR(0.06)),
+    transactions.functionCall("join", { id, seat: 0 }, joinGas, stake),
+  ];
+  // With too little gas on join the contract refuses it, and the create_match before it is undone with it.
+  await expectFail(acc.carol.signAndSendTransaction({ receiverId: contractId, actions: actionsFor("wallet-low", 99n * TGAS) }), "attach at least 100 Tgas");
+  assert.equal(await view("get_match", { id: "wallet-low" }), null, "nothing of the refused transaction stays");
+
+  const before = await balance(acc.carol.accountId);
+  const outcome = await acc.carol.signAndSendTransaction({ receiverId: contractId, actions: actionsFor("wallet-1", 100n * TGAS) });
+  const m = await view("get_match", { id: "wallet-1" });
+  assert.equal(m.meta.status, "lobby");
+  assert.equal(m.meta.creator, acc.carol.accountId);
+  assert.deepEqual(m.meta.seats.map((seat) => seat.backer), [acc.carol.accountId, null]);
+  await waitBlocks(3);
+  const spent = before - (await balance(acc.carol.accountId));
+  const { burnt } = gasOf(outcome);
+  assert.ok(spent >= NEAR(0.11) && spent < NEAR(0.12), `carol put in the deposit and the stake, plus gas (${fmt(spent)})`);
+  // The second player's wallet signs a single join; the last seat starts the game.
+  await acc.bob.signAndSendTransaction({ receiverId: contractId, actions: [transactions.functionCall("join", { id: "wallet-1", seat: 1 }, 100n * TGAS, stake)] });
+  assert.equal((await view("get_match", { id: "wallet-1" })).meta.status, "playing");
+  console.log(`  both calls ran in one transaction (${(Number(burnt) / 1e12).toFixed(2)} Tgas burnt, ${fmt(spent)} out of carol's balance); with 99 Tgas on join the whole transaction was refused; bob's join started the game`);
+}
+
 /// (g) Upgrade in place: the wasm from before the fee on a second account, then deploy + migrate in one transaction.
 async function scenarioUpgrade(acc, wasm, v1Path) {
   console.log(`\n(g) upgrade: ${v1Path} deployed first, then the new wasm with migrate()`);
@@ -683,7 +714,7 @@ async function stopSandbox(sandbox) {
     console.log(`deployed to ${contractId}: contract storage ${await storageUsage(contractId) - empty} bytes (code + state)`);
     await expectFail(acc.alice.functionCall({ contractId, methodName: "new", args: { owner: acc.alice.accountId, house: acc.alice.accountId, max_stake: "0", fee_bps: 0 }, gas: GAS }), "");
 
-    const scenarios = [["a", scenarioSoloBlitz], ["b", scenarioClassicPlay], ["c", scenarioTimeout], ["d", scenarioAbandon], ["e", scenarioGasFloor], ["f", scenarioFees]];
+    const scenarios = [["a", scenarioSoloBlitz], ["b", scenarioClassicPlay], ["c", scenarioTimeout], ["d", scenarioAbandon], ["e", scenarioGasFloor], ["f", scenarioFees], ["h", scenarioWalletBatch]];
     const v1Path = process.env.DEEDLORDS_V1_WASM;
     if (v1Path) scenarios.push(["g", (a) => scenarioUpgrade(a, wasm, v1Path)]);
     else console.log("(g) upgrade from the first layout: skipped, set DEEDLORDS_V1_WASM to a wasm built before the fee existed");

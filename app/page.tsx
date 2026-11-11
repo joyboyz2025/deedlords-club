@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
-// Standalone deedlords: the only game is the property game, so the home page goes straight to its lobby.
+// Standalone Deedlords: the game lives in the NEAR contract, so the home page goes straight to its matches.
+// The room-server version of the same table is still at /co-ty-phu.
 export default function HomePage() {
-  redirect("/co-ty-phu");
+  redirect("/play");
 }

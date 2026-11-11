@@ -13,7 +13,7 @@ import { readStored, writeStored } from "@/lib/storage";
 import { formatClock, useCountdown } from "@/lib/useCountdown";
 import { usePin } from "@/lib/usePin";
 import { useWakeLock } from "@/lib/useWakeLock";
-import { GROUPS, JAIL_FINE, SALARY, SQUARES, TOKEN_COLORS, groupSquares, houseCost, isOwnable } from "../board";
+import { DECK_NAMES, GROUPS, JAIL_FINE, SALARY, SQUARES, TOKEN_COLORS, groupSquares, houseCost, isOwnable } from "../board";
 import { autoSecondsOf, redeemPrice, startCashOf } from "../engine";
 import { AUTO_CHOICES, CASH_CHOICES, LIMIT_CHOICES, SALARY_CHOICES, type ErrorCode } from "../protocol";
 import { sound } from "../sound";
@@ -37,11 +37,11 @@ const nameOf = (view: View, id: string | null | undefined) => view.players.find(
 function errorText(code: string, error: Exclude<ErrorCode, "pin" | "pin-wait">): { title: string; line: string } {
   switch (error) {
     case "full":
-      return { title: `Phòng ${code} đã đầy`, line: "Hỏi chủ phòng xem có mở phòng khác không." };
+      return { title: `Room ${code} is full`, line: "Ask the host whether another room is open." };
     case "no-room":
-      return { title: `Không có phòng ${code}`, line: "Kiểm tra lại mã với chủ phòng. Ván bị bỏ 10 phút thì phòng tự đóng, phòng chờ thì sau 24 giờ." };
+      return { title: `No room ${code}`, line: "Check the code with the host. A room closes after 10 minutes without play, a lobby after 24 hours." };
     case "closed-idle":
-      return { title: `Phòng ${code} đã đóng`, line: "Không ai chơi suốt 10 phút nên phòng đã tự đóng." };
+      return { title: `Room ${code} is closed`, line: "Nobody played for 10 minutes, so the room closed." };
   }
 }
 
@@ -78,12 +78,12 @@ function JoinForm({ code, onJoin }: { code: string; onJoin: (name: string) => vo
   return (
     <main className="tp tp--center">
       <form className="tp-join" onSubmit={submit}>
-        <h1 className="tp-logo">Cờ tỷ phú</h1>
-        <p className="tp-lede">Phòng {code}</p>
+        <h1 className="tp-logo">Deedlords</h1>
+        <p className="tp-lede">Room {code}</p>
         <input
           className="tp-input"
-          aria-label="Tên của bạn"
-          placeholder="Tên của bạn"
+          aria-label="Your name"
+          placeholder="Your name"
           value={name}
           onChange={(event) => setName(event.target.value)}
           maxLength={20}
@@ -91,7 +91,7 @@ function JoinForm({ code, onJoin }: { code: string; onJoin: (name: string) => vo
           required
         />
         <button type="submit" className="tp-btn tp-btn--main tp-btn--big">
-          Vào phòng
+          Join
         </button>
       </form>
     </main>
@@ -134,8 +134,8 @@ function Table({ code, identity, pin, onPin }: { code: string; identity: Identit
           }}
           classes={{ form: "tp-join", input: "tp-input tp-input--code", button: "tp-btn tp-btn--main tp-btn--big", problem: "tp-problem" }}
         >
-          <h1 className="tp-join__title">Phòng {code} có khóa</h1>
-          <p className="tp-lede">Hỏi chủ phòng mã PIN 4 số.</p>
+          <h1 className="tp-join__title">Room {code} is locked</h1>
+          <p className="tp-lede">Ask the host for the 4-digit PIN.</p>
         </PinForm>
       </main>
     );
@@ -149,7 +149,7 @@ function Table({ code, identity, pin, onPin }: { code: string; identity: Identit
           <h1 className="tp-join__title">{title}</h1>
           <p className="tp-lede">{line}</p>
           <Link className="tp-btn tp-btn--big" href={error === "closed-idle" ? "/choi-nhanh" : "/co-ty-phu"}>
-            {error === "closed-idle" ? "Chọn trò chơi khác" : "Nhập mã khác"}
+            {error === "closed-idle" ? "Pick another game" : "Enter another code"}
           </Link>
         </div>
       </main>
@@ -160,7 +160,7 @@ function Table({ code, identity, pin, onPin }: { code: string; identity: Identit
     return (
       <main className="tp tp--center">
         <p className="tp-lede" aria-live="polite">
-          {link === "offline" ? "Chưa nối được tới phòng, đang thử lại…" : "Đang vào phòng…"}
+          {link === "offline" ? "Cannot reach the room, trying again…" : "Joining the room…"}
         </p>
       </main>
     );
@@ -227,7 +227,15 @@ export type ChainStage = {
   busy: boolean;
   /** The payout card of a settled match, shown in place of the room server's result card. */
   result: (onClose: () => void) => ReactNode;
+  /** Seats an agent plays, by player id: who drives and the sentence it gave for its last plan. */
+  agents?: Record<string, AgentTag>;
+  /** The viewer's own seat handed to an agent; `null` for somebody without a seat. */
+  autopilot?: { on: boolean; thinking: boolean; toggle: () => void; note: string | null } | null;
+  /** The match's transactions, opened from the menu. */
+  ledger?: (onClose: () => void) => ReactNode;
 };
+
+export type AgentTag = { driver: string; reason: string; fallback: boolean };
 
 export function Stage({ view, offline, send, chain }: { view: View; offline: boolean; send: Send; chain?: ChainStage }) {
   // Máy không vẽ được 3D thì dùng bàn cờ 2D.
@@ -241,12 +249,12 @@ export function Stage({ view, offline, send, chain }: { view: View; offline: boo
   const fullScreen = has3D && view.phase !== "lobby";
   return (
     <main className="tp" data-phase={view.phase} data-view={has3D ? "3d" : "2d"}>
-      {offline && <p className="tp-offline">Mất kết nối, đang nối lại…</p>}
+      {offline && <p className="tp-offline">Connection lost, reconnecting…</p>}
       {!fullScreen && (
         <header className="tp-top">
           <div className="tp-top__title">
-            <span className="tp-top__game">Cờ tỷ phú</span>
-            <strong>{chain?.label ?? `Phòng ${view.code}`}</strong>
+            <span className="tp-top__game">Deedlords</span>
+            <strong>{chain?.label ?? `Room ${view.code}`}</strong>
           </div>
           {view.phase === "playing" && <GameClock view={view} />}
           <SoundToggle />
@@ -264,12 +272,12 @@ export function Stage({ view, offline, send, chain }: { view: View; offline: boo
 /** Đếm lùi từ lúc nhận tin, không phụ thuộc giờ của từng máy. */
 function GameClock({ view }: { view: View }) {
   const left = useCountdown(view.endsInMs ?? 0);
-  if (view.lastRound) return <span className="tp-clock tp-clock--last">Vòng cuối</span>;
-  if (view.pause) return <span className="tp-clock">Tạm dừng</span>;
+  if (view.lastRound) return <span className="tp-clock tp-clock--last">Last round</span>;
+  if (view.pause) return <span className="tp-clock">Paused</span>;
   if (view.endsInMs === null) return null;
   return (
-    <span className="tp-clock" role="timer" aria-label="Thời gian còn lại của ván">
-      Còn {formatClock(left)}
+    <span className="tp-clock" role="timer" aria-label="Time left in the game">
+      {formatClock(left)} left
     </span>
   );
 }
@@ -284,67 +292,67 @@ function Lobby({ view, send }: { view: View; send: Send }) {
   const players = view.players.filter((p) => p.wantsToPlay && p.online).slice(0, MAX_SEATS);
   const watchers = view.players.filter((p) => !players.includes(p));
   const mine = me(view);
-  const problem = players.length < 2 ? `Cần ít nhất 2 người chơi, đang có ${players.length}.` : null;
+  const problem = players.length < 2 ? `Needs at least 2 players, has ${players.length}.` : null;
 
   return (
     <div className="tp-lobby">
       <details className="tp-invite" open={you.isHost}>
         <summary className="tp-invite__bar">
-          <span>Mã phòng</span>
+          <span>Room code</span>
           <strong>{view.code}</strong>
         </summary>
         <div className="tp-invite__body">
           <div className="tp-invite__qr">{inviteUrl && <QRCodeSVG value={inviteUrl} size={320} marginSize={0} bgColor="#fff7e6" fgColor="#3a120c" />}</div>
-          <p className="tp-invite__hint">Quét mã hoặc nhập mã phòng ở trang Cờ tỷ phú</p>
+          <p className="tp-invite__hint">Scan the code, or enter the room code on the Deedlords page</p>
           <p className="tp-invite__url">{joinUrl?.replace(/^https?:\/\//, "")}</p>
           {you.isHost && view.access && <RoomAccessPanel access={view.access} send={send} className="tp-access" />}
         </div>
       </details>
 
       <section className="tp-section">
-        <h2 className="tp-heading">Người chơi ({players.length}/6)</h2>
+        <h2 className="tp-heading">Players ({players.length}/6)</h2>
         <ol className="tp-seats">
           {players.map((player, i) => (
             <li key={player.id} className="tp-seat">
               <i className="tp-token tp-token--big" style={{ background: TOKEN_COLORS[i] }} />
               <span>
                 {player.name}
-                {player.id === you.id && " (bạn)"}
-                {player.isHost && " · chủ phòng"}
+                {player.id === you.id && " (you)"}
+                {player.isHost && " · host"}
               </span>
             </li>
           ))}
         </ol>
-        {watchers.length > 0 && <p className="tp-hint">Đang xem: {watchers.map((p) => p.name + (p.online ? "" : " (vắng)")).join(", ")}</p>}
+        {watchers.length > 0 && <p className="tp-hint">Watching: {watchers.map((p) => p.name + (p.online ? "" : " (away)")).join(", ")}</p>}
         <button type="button" className="tp-btn" onClick={() => send({ t: "play", on: !mine.wantsToPlay })}>
-          {mine.wantsToPlay ? "Tôi chỉ xem" : "Tôi cũng chơi"}
+          {mine.wantsToPlay ? "I'll just watch" : "I'll play too"}
         </button>
       </section>
 
       <section className="tp-section">
-        <h2 className="tp-heading">Độ dài ván</h2>
+        <h2 className="tp-heading">Game length</h2>
         {you.isHost ? (
-          <div className="tp-segments" role="group" aria-label="Độ dài ván">
+          <div className="tp-segments" role="group" aria-label="Game length">
             {LIMIT_CHOICES.map((minutes) => (
               <button key={minutes} type="button" aria-pressed={settings.limitMinutes === minutes} onClick={() => send({ t: "limit", minutes })}>
-                {minutes === 0 ? "Tới khi còn 1 người" : `${minutes} phút`}
+                {minutes === 0 ? "Until one is left" : `${minutes} min`}
               </button>
             ))}
           </div>
         ) : (
-          <p className="tp-lede">{settings.limitMinutes === 0 ? "Chơi tới khi chỉ còn một người" : `${settings.limitMinutes} phút`}</p>
+          <p className="tp-lede">{settings.limitMinutes === 0 ? "Until only one player is left" : `${settings.limitMinutes} minutes`}</p>
         )}
         <p className="tp-hint">
           {settings.limitMinutes === 0
-            ? "Có thể kéo dài khá lâu, tới khi những người khác phá sản hết."
-            : "Hết giờ thì chơi nốt vòng đó, rồi ai có nhiều tài sản nhất (tiền mặt, giá đất, giá nhà) thắng."}
+            ? "This can take long: it goes on until everybody else is bankrupt."
+            : "When time is up the round is finished, then the highest net worth (cash, land, houses) wins."}
         </p>
       </section>
 
       <section className="tp-section">
-        <h2 className="tp-heading">Qua Xuất phát nhận</h2>
+        <h2 className="tp-heading">Passing Departure pays</h2>
         {you.isHost ? (
-          <div className="tp-segments" role="group" aria-label="Tiền nhận khi qua Xuất phát">
+          <div className="tp-segments" role="group" aria-label="Pay for passing Departure">
             {SALARY_CHOICES.map((amount) => (
               <button key={amount} type="button" aria-pressed={(settings.salary ?? SALARY) === amount} onClick={() => send({ t: "salary", amount })}>
                 {money(amount)}
@@ -354,13 +362,13 @@ function Lobby({ view, send }: { view: View; send: Send }) {
         ) : (
           <p className="tp-lede">{money(settings.salary ?? SALARY)}</p>
         )}
-        <p className="tp-hint">Nhận càng nhiều thì tiền càng dư, ván càng lâu mới có người phá sản.</p>
+        <p className="tp-hint">The more it pays, the more cash there is and the longer it takes for anybody to go bankrupt.</p>
       </section>
 
       <section className="tp-section">
-        <h2 className="tp-heading">Vốn ban đầu</h2>
+        <h2 className="tp-heading">Starting cash</h2>
         {you.isHost ? (
-          <div className="tp-segments" role="group" aria-label="Vốn mỗi người lúc vào ván">
+          <div className="tp-segments" role="group" aria-label="Cash each player starts with">
             {CASH_CHOICES.map((amount) => (
               <button key={amount} type="button" aria-pressed={startCashOf(view) === amount} onClick={() => send({ t: "cash", amount })}>
                 {money(amount)}
@@ -370,23 +378,23 @@ function Lobby({ view, send }: { view: View; send: Send }) {
         ) : (
           <p className="tp-lede">{money(startCashOf(view))}</p>
         )}
-        <p className="tp-hint">Vốn càng nhiều thì càng lâu mới có người phá sản, kịp xây nhiều nhà hơn.</p>
+        <p className="tp-hint">More cash means bankruptcy comes later and more houses get built.</p>
       </section>
 
       <section className="tp-section">
-        <h2 className="tp-heading">Chờ lâu thì máy bấm hộ</h2>
+        <h2 className="tp-heading">Auto-move when slow</h2>
         {you.isHost ? (
-          <div className="tp-segments" role="group" aria-label="Chờ bao lâu thì máy bấm hộ">
+          <div className="tp-segments" role="group" aria-label="How long before the game moves for a slow player">
             {AUTO_CHOICES.map((seconds) => (
               <button key={seconds} type="button" aria-pressed={autoSecondsOf(view) === seconds} onClick={() => send({ t: "auto", seconds })}>
-                {seconds === 0 ? "Không" : `${seconds} giây`}
+                {seconds === 0 ? "Off" : `${seconds} s`}
               </button>
             ))}
           </div>
         ) : (
-          <p className="tp-lede">{autoSecondsOf(view) === 0 ? "Không, chờ tới khi người đó bấm" : `Sau ${autoSecondsOf(view)} giây`}</p>
+          <p className="tp-lede">{autoSecondsOf(view) === 0 ? "Off: the game waits for the player" : `After ${autoSecondsOf(view)} seconds`}</p>
         )}
-        <p className="tp-hint">Người tới lượt để quá giờ thì máy đổ xúc xắc hộ, bỏ qua mua đất hay hết lượt hộ, để ván không bị đứng. Bấm gì đó là đếm lại từ đầu.</p>
+        <p className="tp-hint">When the player to move runs out of time the game rolls, declines the purchase or ends the turn for them, so the game never stalls. Any move restarts the count.</p>
       </section>
 
       <Rules view={view} />
@@ -396,19 +404,19 @@ function Lobby({ view, send }: { view: View; send: Send }) {
           <>
             {problem && <p className="tp-problem">{problem}</p>}
             <button type="button" className="tp-btn tp-btn--main tp-btn--big" disabled={problem !== null} onClick={() => send({ t: "start" })}>
-              Bắt đầu
+              Start
             </button>
           </>
         ) : (
-          <p className="tp-lede">Đợi chủ phòng bắt đầu.</p>
+          <p className="tp-lede">Waiting for the host to start.</p>
         )}
       </div>
       <nav className="tp-links">
         <Link className="tp-link" href="/thi-tran">
-          ← Về thị trấn
+          ← Back to town
         </Link>
         <Link className="tp-link" href="/choi-nhanh">
-          Chọn trò chơi khác
+          Pick another game
         </Link>
       </nav>
     </div>
@@ -419,17 +427,17 @@ function Rules({ view }: { view: View }) {
   const auto = autoSecondsOf(view);
   return (
     <details className="tp-rules">
-      <summary>Luật nhanh</summary>
+      <summary>Quick rules</summary>
       <ul>
         <li>
-          Mỗi người có {money(startCashOf(view))} (triệu đồng). Đi qua Xuất phát nhận {money(view.settings.salary ?? SALARY)}. Thứ tự đi bốc ngẫu nhiên.
+          Everybody starts with {money(startCashOf(view))}. Passing Departure pays {money(view.settings.salary ?? SALARY)}. The turn order is drawn at random.
         </li>
-        <li>Đứng ở đất chưa có chủ thì được mua; không mua thì đất để trống, không đấu giá.</li>
-        <li>Đứng ở đất người khác thì trả tiền thuê. Những lần sau dừng lại ở đất của mình thì xây thêm được một nhà; đủ 4 nhà thì lần dừng sau lên khách sạn. Đủ bộ màu thì tiền thuê đất trống gấp đôi.</li>
-        <li>Đổ đôi được đổ tiếp; đôi ba lần liền thì vào tạm giữ. Ra bằng cách đổ đôi, nộp 50 hoặc dùng thẻ.</li>
-        <li>Thiếu tiền thì bán nhà hoặc cầm cố đất để trả; không trả nổi thì phá sản, tài sản về chủ nợ.</li>
-        <li>Đổi đất và tiền với người khác bất cứ lúc nào, người kia đồng ý thì mới đổi.</li>
-        {auto > 0 && <li>Người tới lượt để quá {auto} giây thì máy đổ xúc xắc hộ, bỏ qua mua đất hay hết lượt hộ.</li>}
+        <li>Land on an unowned property and you may buy it; if you don't, it stays free. There is no auction.</li>
+        <li>Land on somebody else's property and you pay rent. When you later stop on your own city you may add one house; after 4 houses the next stop makes it a hotel. Owning a whole colour group doubles the rent of its empty lots.</li>
+        <li>A double rolls again; three doubles in a row send you to Customs Hold. Leave by rolling a double, paying 50 or using a card.</li>
+        <li>Short of cash? Sell houses or mortgage properties to pay. If you still cannot, you go bankrupt and your assets go to the creditor.</li>
+        <li>Trade properties and cash with another player at any time, if they agree.</li>
+        {auto > 0 && <li>After {auto} seconds without a move the game rolls, declines the purchase or ends the turn for the player.</li>}
       </ul>
     </details>
   );
@@ -483,7 +491,7 @@ function useWalkingTokens(view: View): Record<string, number> {
   return shown;
 }
 
-type Sheet = { kind: "assets"; playerId: string } | { kind: "trade" } | { kind: "rules" } | { kind: "menu" } | null;
+type Sheet = { kind: "assets"; playerId: string } | { kind: "trade" } | { kind: "rules" } | { kind: "menu" } | { kind: "ledger" } | null;
 
 function Game({
   view,
@@ -574,10 +582,17 @@ function Game({
             onArrive={onArrive}
             onBroken={onBroken}
           />
-          <PlayerCards view={view} cash={cash} worth={worth} onOpen={(playerId) => setSheet({ kind: "assets", playerId })} />
+          <PlayerCards view={view} cash={cash} worth={worth} agents={chain?.agents} onOpen={(playerId) => setSheet({ kind: "assets", playerId })} />
           <div className="tp-tools">
             {view.phase === "playing" && <GameClock view={view} />}
-            <button type="button" className="tp-round" aria-label="Thêm: đổi đất, cầm cố, luật, khóa màn hình, tiếng" onClick={() => setSheet({ kind: "menu" })}>
+            {chain?.ledger && (
+              <button type="button" className="tp-round" aria-label="Transactions of this match on NEAR" title="Transactions" onClick={() => setSheet({ kind: "ledger" })}>
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.700-5.700l-1 1M14 10a4 4 0 0 0-5.700 0l-3 3a4 4 0 0 0 5.700 5.700l1-1" />
+                </svg>
+              </button>
+            )}
+            <button type="button" className="tp-round" aria-label="More: trades, mortgages, rules, camera lock, sound" onClick={() => setSheet({ kind: "menu" })}>
               <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
                 <path d="M5 7h14M5 12h14M5 17h14" />
               </svg>
@@ -589,6 +604,7 @@ function Game({
               send={send}
               holding={holding}
               busy={chain?.busy ?? false}
+              autopilot={chain?.autopilot ?? null}
               raising={raising && !debt}
               offers={offers.size}
               onStopRaising={() => setRaising(false)}
@@ -605,25 +621,36 @@ function Game({
           </div>
         )}
         {sheet?.kind === "menu" && (
-          <div className="tp-sheet" role="dialog" aria-label="Thêm" onClick={(event) => event.target === event.currentTarget && close()}>
+          <div className="tp-sheet" role="dialog" aria-label="More" onClick={(event) => event.target === event.currentTarget && close()}>
             <div className="tp-sheet__body tp-more">
               <div className="tp-more__head">
-                <strong>{chain?.label ?? `Phòng ${view.code}`}</strong>
+                <strong>{chain?.label ?? `Room ${view.code}`}</strong>
                 {view.phase === "playing" && <GameClock view={view} />}
               </div>
               <div className="tp-more__row">
-                <span>Âm thanh</span>
+                <span>Sound</span>
                 <SoundToggle />
               </div>
               {/* Khóa màn hình: camera đứng yên nhìn cả bàn. Tắt thì camera lại gần người đang tới lượt. */}
               <button type="button" className="tp-more__row" aria-pressed={locked} onClick={toggleLock}>
-                <span>Khóa màn hình</span>
-                <span className="tp-switch">{locked ? "bật" : "tắt"}</span>
+                <span>Lock the camera</span>
+                <span className="tp-switch">{locked ? "on" : "off"}</span>
               </button>
+              {chain?.autopilot && view.phase === "playing" && (
+                <button type="button" className="tp-more__row" aria-pressed={chain.autopilot.on} onClick={chain.autopilot.toggle}>
+                  <span>Let the AI play my seat</span>
+                  <span className="tp-switch">{chain.autopilot.on ? "on" : "off"}</span>
+                </button>
+              )}
               <div className="tp-more__buttons">
+                {chain?.ledger && (
+                  <button type="button" className="tp-btn" onClick={() => setSheet({ kind: "ledger" })}>
+                    Transactions
+                  </button>
+                )}
                 {trades && (
                   <button type="button" className="tp-btn" disabled={!canTrade} onClick={() => setSheet({ kind: "trade" })}>
-                    Đổi đất
+                    Trade
                   </button>
                 )}
                 {active && view.phase === "playing" && !debt && (
@@ -636,11 +663,11 @@ function Game({
                       close();
                     }}
                   >
-                    Cầm cố, bán nhà
+                    Mortgage, sell houses
                   </button>
                 )}
                 <button type="button" className="tp-btn" onClick={() => setSheet({ kind: "rules" })}>
-                  Luật
+                  Rules
                 </button>
                 {view.phase === "ended" && !showResult && (
                   <button
@@ -651,13 +678,13 @@ function Game({
                       close();
                     }}
                   >
-                    Kết quả
+                    Result
                   </button>
                 )}
               </div>
               <Log log={log} lines={8} />
               <button type="button" className="tp-btn tp-btn--big" onClick={close}>
-                Đóng
+                Close
               </button>
             </div>
           </div>
@@ -665,6 +692,11 @@ function Game({
         {sheet?.kind === "assets" && <AssetsSheet view={view} playerId={sheet.playerId} send={send} onClose={close} />}
         {sheet?.kind === "trade" && <TradeSheet view={view} send={send} onClose={close} />}
         {sheet?.kind === "rules" && <RulesSheet view={view} onClose={close} />}
+        {sheet?.kind === "ledger" && chain?.ledger && (
+          <div className="tp-sheet" role="dialog" aria-label="Transactions" onClick={(event) => event.target === event.currentTarget && close()}>
+            <div className="tp-sheet__body tp-more">{chain.ledger(close)}</div>
+          </div>
+        )}
       </div>
     );
   }
@@ -679,20 +711,20 @@ function Game({
         <div className="tp-bar">
           {mine.color !== null && (
             <button type="button" className="tp-btn" onClick={() => setSheet({ kind: "assets", playerId: mine.id })}>
-              Tài sản
+              Assets
             </button>
           )}
           {trades && (
             <button type="button" className="tp-btn" disabled={!canTrade} onClick={() => setSheet({ kind: "trade" })}>
-              Đổi đất
+              Trade
             </button>
           )}
           <button type="button" className="tp-btn tp-btn--quiet" onClick={() => setSheet({ kind: "rules" })}>
-            Luật
+            Rules
           </button>
           {view.phase === "ended" && !showResult && (
             <button type="button" className="tp-btn" onClick={() => setShowResult(true)}>
-              Kết quả
+              Result
             </button>
           )}
         </div>
@@ -707,11 +739,11 @@ function Game({
 
 function RulesSheet({ view, onClose }: { view: View; onClose: () => void }) {
   return (
-    <div className="tp-sheet" role="dialog" aria-label="Luật nhanh">
+    <div className="tp-sheet" role="dialog" aria-label="Quick rules">
       <div className="tp-sheet__body">
         <Rules view={view} />
         <button type="button" className="tp-btn tp-btn--big" onClick={onClose}>
-          Đóng
+          Close
         </button>
       </div>
     </div>
@@ -729,6 +761,7 @@ function TurnControls({
   send,
   holding,
   busy,
+  autopilot,
   raising,
   offers,
   onStopRaising,
@@ -738,6 +771,8 @@ function TurnControls({
   holding: boolean;
   /** On chain: the roll just made has not landed yet. */
   busy: boolean;
+  /** On chain: the viewer's seat handed to an agent. */
+  autopilot: NonNullable<ChainStage["autopilot"]> | null;
   raising: boolean;
   offers: number;
   onStopRaising: () => void;
@@ -754,27 +789,27 @@ function TurnControls({
   if (raising) {
     center.push(
       <div key="raise" className="tp-strip">
-        <p>{offers > 0 ? "Chạm đất sáng để bán nhà hay cầm cố." : "Không còn đất nào bán nhà hay cầm cố được."}</p>
+        <p>{offers > 0 ? "Tap a lit property to sell a house or mortgage it." : "Nothing left to sell or mortgage."}</p>
         <button type="button" className="tp-btn tp-btn--main" onClick={onStopRaising}>
-          Xong
+          Done
         </button>
       </div>,
     );
   } else if (myTurn && view.stage === "buy" && isOwnable(square)) {
     center.push(
-      <div key="buy" className="tp-offer" role="dialog" aria-label={`Mua ${square.name}?`}>
+      <div key="buy" className="tp-offer" role="dialog" aria-label={`Buy ${square.name}?`}>
         {square.kind === "city" && <i className="tp-offer__band" style={{ background: GROUPS[square.group].color }} />}
         <strong>{square.name}</strong>
         <span>
-          Giá {money(square.price)} · bạn có {money(mine.cash)}
+          Price {money(square.price)} · you have {money(mine.cash)}
         </span>
-        {autoLeft !== null && <small className="tp-offer__auto">Tự bỏ qua sau {autoLeft} giây</small>}
+        {autoLeft !== null && <small className="tp-offer__auto">Skips by itself in {autoLeft} s</small>}
         <div className="tp-row">
           <button type="button" className="tp-btn tp-btn--main" disabled={mine.cash < square.price} onClick={() => send({ t: "buy" })}>
-            Mua
+            Buy
           </button>
           <button type="button" className="tp-btn" onClick={() => send({ t: "skip" })}>
-            Bỏ qua
+            Skip
           </button>
         </div>
       </div>,
@@ -782,22 +817,33 @@ function TurnControls({
   } else if (myTurn && view.stage === "debt" && view.debt) {
     const owed = view.debt.reduce((sum, payee) => sum + payee.amount, 0);
     const bankrupt = () => {
-      if (window.confirm("Phá sản và rời ván? Tài sản của bạn sẽ về chủ nợ.")) send({ t: "bankrupt" });
+      if (window.confirm("Go bankrupt and leave the game? Your assets go to the creditor.")) send({ t: "bankrupt" });
     };
     center.push(
       <div key="debt" className="tp-strip tp-strip--urgent">
         <p>
-          Nợ {money(owed)}, có {money(mine.cash)}. Chạm đất sáng để bán nhà hay cầm cố.
+          You owe {money(owed)} and have {money(mine.cash)}. Tap a lit property to sell a house or mortgage it.
         </p>
         <div className="tp-row">
           <button type="button" className="tp-btn tp-btn--main" disabled={mine.cash < owed} onClick={() => send({ t: "pay" })}>
-            Trả nợ
+            Pay the debt
           </button>
           <button type="button" className="tp-btn" onClick={bankrupt}>
-            Phá sản
+            Go bankrupt
           </button>
         </div>
       </div>,
+    );
+  } else if (autopilot?.on && isActive(mine)) {
+    corner = (
+      <div className="tp-turn">
+        <span className="tp-turn__note" aria-live="polite">
+          {view.current !== mine.id ? (autopilot.note ?? "The AI plays your seat") : autopilot.thinking ? "The AI is planning…" : "The AI is moving on NEAR…"}
+        </span>
+        <button type="button" className="tp-btn" onClick={autopilot.toggle}>
+          Take back
+        </button>
+      </div>
     );
   } else if (myTurn) {
     const jailed = view.stage === "roll" && mine.jail !== null;
@@ -807,27 +853,32 @@ function TurnControls({
     const build = view.you.can.build.includes(index);
     corner = (
       <div className="tp-turn">
-        {jailed && <span className="tp-turn__note">Đổ ra đôi thì được ra ({mine.jail! + 1}/3)</span>}
+        {jailed && <span className="tp-turn__note">Roll a double to get out ({mine.jail! + 1}/3)</span>}
         {jailed && (
           <button type="button" className="tp-btn" disabled={mine.cash < JAIL_FINE} onClick={() => send({ t: "bail" })}>
-            Nộp {JAIL_FINE} để ra
+            Pay {JAIL_FINE} to leave
           </button>
         )}
         {jailed && mine.freeCards > 0 && (
           <button type="button" className="tp-btn" onClick={() => send({ t: "card" })}>
-            Dùng thẻ ra tù
+            Use a release card
           </button>
         )}
         {build && (
           <button type="button" className="tp-btn tp-btn--main" onClick={() => send({ t: "build", square: index })}>
-            {view.props[index].houses === 4 ? "Lên khách sạn" : "Xây nhà"} · {money(houseCost(index))}
+            {view.props[index].houses === 4 ? "Build a hotel" : "Build a house"} · {money(houseCost(index))}
           </button>
         )}
-        <button type="button" className="tp-roll" onClick={() => send({ t: roll ? "roll" : "end" })} aria-label={roll ? "Đổ xúc xắc" : "Kết thúc lượt"}>
-          {roll ? (again ? "ĐỔ TIẾP" : "ĐỔ") : "XONG"}
+        {autopilot && (
+          <button type="button" className="tp-btn tp-turn__ai" onClick={autopilot.toggle}>
+            Let AI play
+          </button>
+        )}
+        <button type="button" className="tp-roll" onClick={() => send({ t: roll ? "roll" : "end" })} aria-label={roll ? "Roll the dice" : "End the turn"}>
+          {roll ? (again ? "AGAIN" : "ROLL") : "END"}
           {/* Số giây còn lại trước khi máy bấm hộ. */}
           {autoLeft !== null && (
-            <span className="tp-roll__timer" data-low={autoLeft <= 5 || undefined} aria-label={`Còn ${autoLeft} giây thì máy bấm hộ`}>
+            <span className="tp-roll__timer" data-low={autoLeft <= 5 || undefined} aria-label={`The game moves for you in ${autoLeft} seconds`}>
               {autoLeft}
             </span>
           )}
@@ -896,7 +947,7 @@ function Dice({ view }: { view: View }) {
   const shown = rolling ? faces : view.dice;
   if (!shown) return null;
   return (
-    <div className={`tp-dice${rolling ? " tp-dice--rolling" : ""}`} aria-label={rolling ? "Đang đổ" : `Đổ được ${shown[0]} và ${shown[1]}`}>
+    <div className={`tp-dice${rolling ? " tp-dice--rolling" : ""}`} aria-label={rolling ? "Rolling" : `Rolled ${shown[0]} and ${shown[1]}`}>
       {shown.map((face, i) => (
         <Die key={i} face={face} />
       ))}
@@ -929,13 +980,13 @@ function Panel({ view, send }: { view: View; send: Send }) {
       {view.phase === "playing" && current && (
         <p className="tp-panel__turn">
           <i className="tp-token" style={{ background: TOKEN_COLORS[color ?? 0] }} />
-          {myTurn ? "Tới lượt bạn" : `Lượt của ${current.name}`}
+          {myTurn ? "Your turn" : `${current.name}'s turn`}
         </p>
       )}
       <Dice view={view} />
       {view.card && (
         <div className={`tp-card tp-card--${view.card.deck}`}>
-          <strong>{view.card.deck === "chance" ? "Bất ngờ" : "Lì xì"}</strong>
+          <strong>{DECK_NAMES[view.card.deck]}</strong>
           <span>{view.card.text}</span>
         </div>
       )}
@@ -949,13 +1000,13 @@ function waitingText(view: View, current: PublicPlayer): string {
   const square = SQUARES[current.position];
   switch (view.stage) {
     case "roll":
-      return current.jail !== null ? `${current.name} đang ở tạm giữ, sắp đổ tìm đôi.` : `Đang chờ ${current.name} đổ xúc xắc.`;
+      return current.jail !== null ? `${current.name} is in Customs Hold and rolls for a double.` : `Waiting for ${current.name} to roll.`;
     case "buy":
-      return `${current.name} đang nghĩ có mua ${square.name} không.`;
+      return `${current.name} is deciding whether to buy ${square.name}.`;
     case "debt":
-      return `${current.name} đang xoay tiền trả nợ.`;
+      return `${current.name} is raising cash to pay a debt.`;
     case "end":
-      return view.again ? `${current.name} đổ đôi, được đổ tiếp.` : `Chờ ${current.name} kết thúc lượt.`;
+      return view.again ? `${current.name} rolled a double and rolls again.` : `Waiting for ${current.name} to end the turn.`;
   }
 }
 
@@ -966,17 +1017,17 @@ function Actions({ view, send }: { view: View; send: Send }) {
   if (view.stage === "roll" && mine.jail !== null) {
     return (
       <div className="tp-actions">
-        <p className="tp-panel__note">Bạn đang bị tạm giữ. Đổ ra đôi thì được ra (lần {mine.jail + 1}/3).</p>
+        <p className="tp-panel__note">You are in Customs Hold. Roll a double to get out (try {mine.jail + 1}/3).</p>
         <button type="button" className="tp-btn tp-btn--main" onClick={() => send({ t: "roll" })}>
-          Đổ xúc xắc
+          Roll the dice
         </button>
         <div className="tp-row">
           <button type="button" className="tp-btn" disabled={mine.cash < JAIL_FINE} onClick={() => send({ t: "bail" })}>
-            Nộp {JAIL_FINE} để ra
+            Pay {JAIL_FINE} to leave
           </button>
           {mine.freeCards > 0 && (
             <button type="button" className="tp-btn" onClick={() => send({ t: "card" })}>
-              Dùng thẻ ra tù
+              Use a release card
             </button>
           )}
         </div>
@@ -986,9 +1037,9 @@ function Actions({ view, send }: { view: View; send: Send }) {
   if (view.stage === "roll" || (view.stage === "end" && view.again)) {
     return (
       <div className="tp-actions">
-        {view.stage === "end" && <p className="tp-panel__note">Bạn đổ đôi, được đổ tiếp.</p>}
+        {view.stage === "end" && <p className="tp-panel__note">You rolled a double: roll again.</p>}
         <button type="button" className="tp-btn tp-btn--main tp-btn--big" onClick={() => send({ t: "roll" })}>
-          {view.stage === "end" ? "Đổ tiếp" : "Đổ xúc xắc"}
+          {view.stage === "end" ? "Roll again" : "Roll the dice"}
         </button>
         <BuildHere view={view} send={send} />
       </div>
@@ -999,33 +1050,33 @@ function Actions({ view, send }: { view: View; send: Send }) {
     return (
       <div className="tp-actions">
         <p className="tp-panel__note">
-          {square.name} chưa có chủ. {short && `Bạn chỉ có ${money(mine.cash)}.`}
+          {square.name} has no owner. {short && `You only have ${money(mine.cash)}.`}
         </p>
         <button type="button" className="tp-btn tp-btn--main" disabled={short} onClick={() => send({ t: "buy" })}>
-          Mua · {money(square.price)}
+          Buy · {money(square.price)}
         </button>
         <button type="button" className="tp-btn" onClick={() => send({ t: "skip" })}>
-          Không mua
+          Don't buy
         </button>
       </div>
     );
   }
   if (view.stage === "debt" && view.debt) {
     const owed = view.debt.reduce((sum, payee) => sum + payee.amount, 0);
-    const creditors = view.debt.map((payee) => (payee.id ? nameOf(view, payee.id) : "ngân hàng"));
+    const creditors = view.debt.map((payee) => (payee.id ? nameOf(view, payee.id) : "the bank"));
     const bankrupt = () => {
-      if (window.confirm("Phá sản và rời ván? Tài sản của bạn sẽ về chủ nợ.")) send({ t: "bankrupt" });
+      if (window.confirm("Go bankrupt and leave the game? Your assets go to the creditor.")) send({ t: "bankrupt" });
     };
     return (
       <div className="tp-actions">
         <p className="tp-panel__note tp-panel__note--urgent">
-          Bạn nợ {[...new Set(creditors)].join(", ")} {money(owed)}, đang có {money(mine.cash)}. Bán nhà hoặc cầm cố ở mục Tài sản cho đủ.
+          You owe {[...new Set(creditors)].join(", ")} {money(owed)} and have {money(mine.cash)}. Sell houses or mortgage under Assets to cover it.
         </p>
         <button type="button" className="tp-btn tp-btn--main" disabled={mine.cash < owed} onClick={() => send({ t: "pay" })}>
-          Trả nợ
+          Pay the debt
         </button>
         <button type="button" className="tp-btn" onClick={bankrupt}>
-          Phá sản
+          Go bankrupt
         </button>
       </div>
     );
@@ -1034,7 +1085,7 @@ function Actions({ view, send }: { view: View; send: Send }) {
     <div className="tp-actions">
       <BuildHere view={view} send={send} />
       <button type="button" className="tp-btn tp-btn--main tp-btn--big" onClick={() => send({ t: "end" })}>
-        Kết thúc lượt
+        End the turn
       </button>
     </div>
   );
@@ -1046,7 +1097,7 @@ function BuildHere({ view, send }: { view: View; send: Send }) {
   if (!view.you.can.build.includes(index)) return null;
   return (
     <button type="button" className="tp-btn" onClick={() => send({ t: "build", square: index })}>
-      {view.props[index].houses === 4 ? "Lên khách sạn" : "Xây nhà"} ở {SQUARES[index].name} · {money(houseCost(index))}
+      {view.props[index].houses === 4 ? "Build a hotel" : "Build a house"} in {SQUARES[index].name} · {money(houseCost(index))}
     </button>
   );
 }
@@ -1059,11 +1110,11 @@ function PauseNote({ view, send }: { view: View; send: Send }) {
   return (
     <div className="tp-pause" role="status">
       <p>
-        <strong>Ván tạm dừng.</strong> {name} vừa mất kết nối. Còn {formatClock(left)} nữa chưa quay lại thì {name} bị loại.
+        <strong>Game paused.</strong> {name} lost the connection and is out unless back within {formatClock(left)}.
       </p>
       {view.you.isHost && (
-        <button type="button" className="tp-btn" onClick={() => window.confirm("Hủy ván này và về phòng chờ?") && send({ t: "lobby" })}>
-          Hủy ván
+        <button type="button" className="tp-btn" onClick={() => window.confirm("Cancel this game and go back to the lobby?") && send({ t: "lobby" })}>
+          Cancel the game
         </button>
       )}
     </div>
@@ -1080,22 +1131,22 @@ function TradeNote({ view, send }: { view: View; send: Send }) {
   if (!trade || view.phase !== "playing") return null;
   const from = nameOf(view, trade.from);
   const to = nameOf(view, trade.to);
-  const side = (squares: number[], cash: number) => [propertyNames(squares), cash > 0 ? `${money(cash)} tiền` : ""].filter(Boolean).join(" và ") || "không gì";
+  const side = (squares: number[], cash: number) => [propertyNames(squares), cash > 0 ? `${money(cash)} cash` : ""].filter(Boolean).join(" and ") || "nothing";
 
   if (trade.to === view.you.id) {
     return (
       <div className="tp-trade" role="alert">
         <p>
-          <strong>{from}</strong> muốn đổi:
+          <strong>{from}</strong> offers a trade:
         </p>
-        <p>Bạn nhận: {side(trade.give, trade.giveCash)}</p>
-        <p>Bạn đưa: {side(trade.take, trade.takeCash)}</p>
+        <p>You get: {side(trade.give, trade.giveCash)}</p>
+        <p>You give: {side(trade.take, trade.takeCash)}</p>
         <div className="tp-row">
           <button type="button" className="tp-btn tp-btn--main" disabled={view.pause !== null} onClick={() => send({ t: "answer", accept: true })}>
-            Đồng ý
+            Accept
           </button>
           <button type="button" className="tp-btn" disabled={view.pause !== null} onClick={() => send({ t: "answer", accept: false })}>
-            Từ chối
+            Decline
           </button>
         </div>
       </div>
@@ -1104,11 +1155,11 @@ function TradeNote({ view, send }: { view: View; send: Send }) {
   return (
     <div className="tp-trade">
       <p>
-        {trade.from === view.you.id ? "Bạn" : from} đề nghị đổi với {trade.to === view.you.id ? "bạn" : to}: đưa {side(trade.give, trade.giveCash)}, lấy {side(trade.take, trade.takeCash)}.
+        {trade.from === view.you.id ? "You" : from} offered {trade.to === view.you.id ? "you" : to} a trade: {side(trade.give, trade.giveCash)} for {side(trade.take, trade.takeCash)}.
       </p>
       {trade.from === view.you.id && (
         <button type="button" className="tp-btn" onClick={() => send({ t: "withdraw" })}>
-          Rút lại
+          Withdraw
         </button>
       )}
     </div>
@@ -1125,15 +1176,15 @@ function PlayersBar({ view, onOpen }: { view: View; onOpen: (id: string) => void
             type="button"
             className={`tp-chip${player.id === view.current ? " tp-chip--turn" : ""}${player.bankrupt ? " tp-chip--out" : ""}${player.online ? "" : " tp-chip--away"}`}
             onClick={() => onOpen(player.id)}
-            aria-label={`${player.name}, ${player.bankrupt ? "phá sản" : `${money(player.cash)} tiền mặt`}. Xem tài sản`}
+            aria-label={`${player.name}, ${player.bankrupt ? "bankrupt" : `${money(player.cash)} cash`}. See assets`}
           >
             <i className="tp-token" style={{ background: TOKEN_COLORS[player.color ?? 0] }} />
             <span className="tp-chip__name">
               {player.name}
-              {player.id === view.you.id && " (bạn)"}
+              {player.id === view.you.id && " (you)"}
             </span>
-            <span className="tp-chip__cash">{player.bankrupt ? "phá sản" : money(player.cash)}</span>
-            {player.jail !== null && <span className="tp-chip__flag">tạm giữ</span>}
+            <span className="tp-chip__cash">{player.bankrupt ? "bankrupt" : money(player.cash)}</span>
+            {player.jail !== null && <span className="tp-chip__flag">held</span>}
           </button>
         </li>
       ))}
@@ -1222,11 +1273,14 @@ function PlayerCards({
   view,
   cash,
   worth: worths,
+  agents,
   onOpen,
 }: {
   view: View;
   cash: Record<string, number>;
   worth: Record<string, number>;
+  /** On chain: the seats an agent plays. */
+  agents?: Record<string, AgentTag>;
   onOpen: (id: string) => void;
 }) {
   const half = Math.ceil(view.order.length / 2);
@@ -1237,7 +1291,7 @@ function PlayerCards({
   const portraits = usePortraits(players);
   const rows = [players.slice(0, half), players.slice(half)];
   return (
-    <div className="tp-hud" data-crowded={players.length > SEATS_IN_CORNERS || undefined} aria-label="Người chơi">
+    <div className="tp-hud" data-crowded={players.length > SEATS_IN_CORNERS || undefined} aria-label="Players">
       {rows.map((row, r) => (
         <ul key={r} className={`tp-hud__row${r === 1 ? " tp-hud__row--bottom" : ""}`}>
           {row.map((player, i) => {
@@ -1245,26 +1299,36 @@ function PlayerCards({
             const right = r === 0 ? row.length > 1 && i === row.length - 1 : i === 0;
             const shown = cash[player.id] ?? player.cash;
             const worth = worths[player.id] ?? player.worth;
+            const agent = agents?.[player.id];
             return (
               <li key={player.id} data-side={right ? "right" : "left"}>
                 <button
                   type="button"
                   className={`tp-hud__chip${player.id === view.current ? " tp-hud__chip--turn" : ""}${player.bankrupt ? " tp-chip--out" : ""}${player.online ? "" : " tp-hud__chip--away"}`}
                   onClick={() => onOpen(player.id)}
-                  aria-label={`${player.name}, ${player.bankrupt ? "phá sản" : `${money(shown)} tiền mặt, tổng tài sản ${money(worth)}`}. Xem tài sản`}
+                  aria-label={`${player.name}, ${player.bankrupt ? "bankrupt" : `${money(shown)} cash, net worth ${money(worth)}`}. See assets`}
                 >
                   <span className="tp-hud__face" style={{ "--seat": TOKEN_COLORS[player.color ?? 0] } as CSSProperties}>
                     {portraits[player.id] ? <img src={portraits[player.id]} alt="" /> : <b>{player.name.slice(0, 1).toUpperCase()}</b>}
-                    {player.jail !== null && <i className="tp-hud__flag">Tạm giữ</i>}
-                    {!player.online && player.jail === null && <i className="tp-hud__flag">Vắng</i>}
+                    {player.jail !== null && <i className="tp-hud__flag">Held</i>}
+                    {!player.online && player.jail === null && <i className="tp-hud__flag">Away</i>}
                   </span>
                   <span className="tp-hud__name">
                     {player.name}
-                    {player.id === view.you.id && <small> (bạn)</small>}
+                    {player.id === view.you.id && <small> (you)</small>}
                   </span>
-                  {player.bankrupt ? <span className="tp-hud__cash">Phá sản</span> : <Wallet cash={shown} />}
-                  {!player.bankrupt && <span className="tp-hud__worth">Tài sản {money(worth)}</span>}
+                  {player.bankrupt ? <span className="tp-hud__cash">Bankrupt</span> : <Wallet cash={shown} />}
+                  {!player.bankrupt && <span className="tp-hud__worth">Worth {money(worth)}</span>}
                 </button>
+                {agent && !player.bankrupt && (
+                  <p className="tp-hud__agent" data-fallback={agent.fallback || undefined} data-mine={player.id === view.you.id || undefined}>
+                    <b>
+                      AI · {agent.driver}
+                      {agent.fallback ? " (fallback)" : ""}
+                    </b>
+                    <span>{agent.reason}</span>
+                  </p>
+                )}
               </li>
             );
           })}
@@ -1335,11 +1399,11 @@ function CardPopup({ view, holding }: { view: View; holding: boolean }) {
   if (!card || open !== key) return null;
   const drawer = view.players.find((p) => p.id === view.current);
   return (
-    <div className="tp-popup" role="dialog" aria-label={card.deck === "chance" ? "Thẻ Bất ngờ" : "Thẻ Lì xì"} onClick={() => setOpen(null)}>
+    <div className="tp-popup" role="dialog" aria-label={`${DECK_NAMES[card.deck]} card`} onClick={() => setOpen(null)}>
       <div className={`tp-popup__card tp-popup__card--${card.deck}`}>
-        <strong>{card.deck === "chance" ? "Bất ngờ" : "Lì xì"}</strong>
+        <strong>{DECK_NAMES[card.deck]}</strong>
         <span>{card.text}</span>
-        <small>{drawer && drawer.id === view.you.id ? "Bạn" : drawer?.name} rút được · chạm để đóng</small>
+        <small>Drawn by {drawer && drawer.id === view.you.id ? "you" : drawer?.name} · tap to close</small>
       </div>
     </div>
   );
@@ -1357,7 +1421,7 @@ function Log({ log, lines = 3 }: { log: string[]; lines?: number }) {
   const shown = log.slice(-lines);
   if (shown.length === 0) return null;
   return (
-    <ol className="tp-log" aria-label="Diễn biến gần đây">
+    <ol className="tp-log" aria-label="Recent events">
       {shown.map((line, i) => (
         <li key={`${log.length}-${i}`}>{line}</li>
       ))}
@@ -1376,16 +1440,16 @@ function AssetsSheet({ view, playerId, send, onClose }: { view: View; playerId: 
   const { can } = view.you;
 
   return (
-    <div className="tp-sheet" role="dialog" aria-label={`Tài sản của ${player.name}`}>
+    <div className="tp-sheet" role="dialog" aria-label={`${player.name}'s assets`}>
       <div className="tp-sheet__body">
         <header className="tp-sheet__head">
-          <h2>{playerId === view.you.id ? "Tài sản của bạn" : `Tài sản của ${player.name}`}</h2>
+          <h2>{playerId === view.you.id ? "Your assets" : `${player.name}'s assets`}</h2>
           <p>
-            Tiền mặt {money(player.cash)} · Tổng tài sản {money(player.worth)}
-            {player.freeCards > 0 && ` · ${player.freeCards} thẻ ra tù`}
+            Cash {money(player.cash)} · Net worth {money(player.worth)}
+            {player.freeCards > 0 && ` · ${player.freeCards} release card${player.freeCards > 1 ? "s" : ""}`}
           </p>
         </header>
-        {owned.length === 0 && <p className="tp-hint">Chưa có đất nào.</p>}
+        {owned.length === 0 && <p className="tp-hint">No properties yet.</p>}
         <ul className="tp-assets">
           {owned.map((index) => {
             const square = SQUARES[index];
@@ -1395,28 +1459,28 @@ function AssetsSheet({ view, playerId, send, onClose }: { view: View; playerId: 
                 <span className="tp-asset__band" style={{ background: square.kind === "city" ? GROUPS[square.group].color : "#6b6b6b" }} />
                 <span className="tp-asset__name">
                   <strong>{square.name}</strong>
-                  <small>{props.mortgaged ? "Đang cầm cố" : props.houses === 5 ? "Khách sạn" : props.houses > 0 ? `${props.houses} nhà` : square.kind === "city" ? "Đất trống" : ""}</small>
+                  <small>{props.mortgaged ? "Mortgaged" : props.houses === 5 ? "Hotel" : props.houses > 0 ? `${props.houses} house${props.houses > 1 ? "s" : ""}` : square.kind === "city" ? "Empty lot" : ""}</small>
                 </span>
                 {mine && (
                   <span className="tp-asset__actions">
                     {can.build.includes(index) && (
                       <button type="button" className="tp-btn tp-btn--small tp-btn--main" onClick={() => send({ t: "build", square: index })}>
-                        +{props.houses === 4 ? "KS" : "Nhà"} {houseCost(index)}
+                        +{props.houses === 4 ? "Hotel" : "House"} {houseCost(index)}
                       </button>
                     )}
                     {can.sell.includes(index) && (
                       <button type="button" className="tp-btn tp-btn--small" onClick={() => send({ t: "sell", square: index })}>
-                        Bán nhà +{houseCost(index) / 2}
+                        Sell house +{houseCost(index) / 2}
                       </button>
                     )}
                     {can.mortgage.includes(index) && (
                       <button type="button" className="tp-btn tp-btn--small" onClick={() => send({ t: "mortgage", square: index })}>
-                        Cầm cố +{(square as { price: number }).price / 2}
+                        Mortgage +{(square as { price: number }).price / 2}
                       </button>
                     )}
                     {can.redeem.includes(index) && (
                       <button type="button" className="tp-btn tp-btn--small" onClick={() => send({ t: "redeem", square: index })}>
-                        Chuộc −{redeemPrice(index)}
+                        Redeem −{redeemPrice(index)}
                       </button>
                     )}
                   </span>
@@ -1425,9 +1489,9 @@ function AssetsSheet({ view, playerId, send, onClose }: { view: View; playerId: 
             );
           })}
         </ul>
-        {mine && <p className="tp-hint">Muốn xây nhà thì dừng lại đúng ô đất của mình: mỗi lần dừng xây được một nhà. Bán nhà được nửa giá; ô còn nhà thì không cầm cố hay đổi được. Chuộc đất phải trả thêm 10%.</p>}
+        {mine && <p className="tp-hint">To build, stop on your own city: one house per stop. A house sells for half its price; a property with houses cannot be mortgaged or traded. Redeeming costs 10% more.</p>}
         <button type="button" className="tp-btn tp-btn--big" onClick={onClose}>
-          Đóng
+          Close
         </button>
       </div>
     </div>
@@ -1470,7 +1534,7 @@ function TradeSheet({ view, send, onClose }: { view: View; send: Send; onClose: 
 
   const choices = (owner: string, list: number[], set: (next: number[]) => void) => {
     const options = tradableOf(view, owner);
-    if (options.length === 0) return <p className="tp-hint">Không có đất đổi được.</p>;
+    if (options.length === 0) return <p className="tp-hint">No properties to trade.</p>;
     return (
       <ul className="tp-picks">
         {options.map((index) => {
@@ -1481,7 +1545,7 @@ function TradeSheet({ view, send, onClose }: { view: View; send: Send; onClose: 
                 <input type="checkbox" checked={list.includes(index)} onChange={() => toggle(list, set, index)} />
                 <span className="tp-asset__band" style={{ background: square.kind === "city" ? GROUPS[square.group].color : "#6b6b6b" }} />
                 {square.name}
-                {view.props[index].mortgaged && " (cầm cố)"}
+                {view.props[index].mortgaged && " (mortgaged)"}
               </label>
             </li>
           );
@@ -1503,18 +1567,18 @@ function TradeSheet({ view, send, onClose }: { view: View; send: Send; onClose: 
         value={value}
         onChange={(event) => set(Math.max(0, Math.min(max, Math.floor(Number(event.target.value) || 0))))}
       />
-      <small>tối đa {money(max)}</small>
+      <small>up to {money(max)}</small>
     </label>
   );
 
   return (
-    <div className="tp-sheet" role="dialog" aria-label="Đổi đất">
+    <div className="tp-sheet" role="dialog" aria-label="Trade">
       <div className="tp-sheet__body">
         <header className="tp-sheet__head">
-          <h2>Đổi đất</h2>
-          <p>Đất có nhà trong cả bộ màu thì phải bán nhà trước mới đổi được.</p>
+          <h2>Trade</h2>
+          <p>A property with houses must have them sold before it can be traded.</p>
         </header>
-        <div className="tp-segments" role="group" aria-label="Đổi với ai">
+        <div className="tp-segments" role="group" aria-label="Trade with">
           {partners.map((p) => (
             <button key={p.id} type="button" aria-pressed={p.id === to} onClick={() => pickPartner(p.id)}>
               {p.name}
@@ -1522,23 +1586,23 @@ function TradeSheet({ view, send, onClose }: { view: View; send: Send; onClose: 
           ))}
         </div>
         <section className="tp-section">
-          <h3 className="tp-heading">Bạn đưa</h3>
+          <h3 className="tp-heading">You give</h3>
           {choices(mine.id, give, setGive)}
-          {cashInput(giveCash, mine.cash, setGiveCash, "Tiền")}
+          {cashInput(giveCash, mine.cash, setGiveCash, "Cash")}
         </section>
         {partner && (
           <section className="tp-section">
-            <h3 className="tp-heading">Bạn lấy của {partner.name}</h3>
+            <h3 className="tp-heading">You take from {partner.name}</h3>
             {choices(partner.id, take, setTake)}
-            {cashInput(takeCash, partner.cash, setTakeCash, "Tiền")}
+            {cashInput(takeCash, partner.cash, setTakeCash, "Cash")}
           </section>
         )}
         <div className="tp-row">
           <button type="button" className="tp-btn tp-btn--main" disabled={empty || !partner} onClick={submit}>
-            Gửi đề nghị
+            Send the offer
           </button>
           <button type="button" className="tp-btn" onClick={onClose}>
-            Thôi
+            Cancel
           </button>
         </div>
       </div>
@@ -1551,28 +1615,28 @@ function ResultCard({ view, send, onClose }: { view: View; send: Send; onClose: 
   const ranking = result.ranking.map((id) => view.players.find((p) => p.id === id)!);
   const winner = ranking[0];
   return (
-    <div className="tp-result" role="dialog" aria-label="Kết quả ván">
-      <p className="tp-result__title">{winner.id === view.you.id ? "Bạn thắng!" : `${winner.name} thắng`}</p>
-      <p className="tp-result__line">{result.reason === "time" ? "Hết giờ, xếp hạng theo tổng tài sản." : "Những người khác đều đã phá sản."}</p>
+    <div className="tp-result" role="dialog" aria-label="Result of the game">
+      <p className="tp-result__title">{winner.id === view.you.id ? "You win!" : `${winner.name} wins`}</p>
+      <p className="tp-result__line">{result.reason === "time" ? "Time is up: ranked by net worth." : "Everybody else went bankrupt."}</p>
       <ol className="tp-ranking">
         {ranking.map((player) => (
           <li key={player.id}>
             <i className="tp-token" style={{ background: TOKEN_COLORS[player.color ?? 0] }} />
             <span>{player.name}</span>
-            <strong>{player.bankrupt ? "phá sản" : money(player.worth)}</strong>
+            <strong>{player.bankrupt ? "bankrupt" : money(player.worth)}</strong>
           </li>
         ))}
       </ol>
       <div className="tp-row">
         {view.you.isHost ? (
           <button type="button" className="tp-btn tp-btn--main" onClick={() => send({ t: "lobby" })}>
-            Ván mới
+            New game
           </button>
         ) : (
-          <p className="tp-hint">Đợi chủ phòng mở ván mới.</p>
+          <p className="tp-hint">Waiting for the host to open a new game.</p>
         )}
         <button type="button" className="tp-btn" onClick={onClose}>
-          Xem bàn cờ
+          View the board
         </button>
       </div>
     </div>

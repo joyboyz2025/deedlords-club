@@ -8,13 +8,15 @@
 // nothing else can be played (`busy`). If the contract refuses anything, what was shown ahead of the chain is dropped.
 
 import { currentPlayer, type Game } from "../engine.ts";
+import type { Plan } from "../agent/plan.ts";
 import type { ClientMessage } from "../protocol.ts";
 import type { View } from "../view.ts";
 import { applyAction, chainView, deadlineMs, diceAllowed, needsDice, seatOf, settledGame, toAction, toGame } from "./adapt.ts";
+import { describeCall, type MoveTx } from "./ledger.ts";
 import type { ChainMatch, ChainResult, ContractAction, PlayOutcome } from "./types.ts";
 
 export type Reader = { view<T>(method: string, args?: unknown): Promise<T> };
-export type Caller = { readonly accountId: string; call(method: string, args: unknown): Promise<{ value: unknown }> };
+export type Caller = { readonly accountId: string; call(method: string, args: unknown): Promise<{ value: unknown; hash?: string }> };
 
 export type RoomLink = "connecting" | "online" | "offline";
 /** `no-match`: the contract has no such match and no result for it. `abandoned`: it was closed in the lobby and refunded. */
@@ -35,6 +37,8 @@ export type RoomState = {
   busy: boolean;
   /** Why the last move did not go through. */
   notice: string | null;
+  /** The transactions this viewer sent for the match since the page opened, oldest first. */
+  sent: MoveTx[];
   /** When this state was made, for countdowns. */
   at: number;
 };
@@ -88,6 +92,7 @@ export class ChainRoom {
   private notice: string | null = null;
   private failures = 0;
   private nextTimeoutAt = 0;
+  private sent: MoveTx[] = [];
   /** The transaction (and the re-read after it) in progress. One at a time. */
   private working: Promise<void> | null = null;
   private loop = 0;
@@ -104,7 +109,7 @@ export class ChainRoom {
     this.now = options.now ?? Date.now;
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.isVisible = options.isVisible ?? (() => true);
-    this.state = { match: null, view: null, result: null, seat: null, link: "connecting", error: null, busy: false, notice: null, at: this.now() };
+    this.state = { match: null, view: null, result: null, seat: null, link: "connecting", error: null, busy: false, notice: null, sent: [], at: this.now() };
   }
 
   readonly subscribe = (listener: () => void): (() => void) => {
@@ -164,6 +169,32 @@ export class ChainRoom {
     this.notice = null;
     this.emit();
     this.kick();
+  };
+
+  /**
+   * A whole turn by plan, as an agent plays it: one `turn` transaction that rolls, applies the plan wherever the seat
+   * lands and ends the turn. `false`: it cannot be sent now (not the viewer's turn, or moves of theirs are on their way).
+   */
+  readonly playTurn = (plan: Plan): boolean => {
+    const match = this.chain;
+    const caller = this.caller;
+    if (!match || !caller || this.result || this.working || this.dicePending || this.queue.length > 0 || match.meta.status !== "playing") return false;
+    const seat = seatOf(match.meta, this.accountId);
+    if (seat === null || match.meta.current_seat !== seat) return false;
+    this.dicePending = true;
+    this.notice = null;
+    this.emit();
+    this.occupy(async () => {
+      let problem: string | null = null;
+      try {
+        await this.transact(caller, "turn", { id: this.id, seat, plan });
+      } catch (error) {
+        problem = text(error);
+      }
+      if (problem !== null) this.notice = problem;
+      await this.resync(problem === null);
+    });
+    return true;
   };
 
   private async tick(loop: number): Promise<void> {
@@ -229,6 +260,13 @@ export class ChainRoom {
     this.emit();
   }
 
+  /** Calls the contract as the viewer and notes the transaction for the match's list of them. */
+  private async transact(caller: Caller, method: string, args: unknown): Promise<{ value: unknown }> {
+    const outcome = await caller.call(method, args);
+    if (outcome.hash) this.sent = [...this.sent, { hash: outcome.hash, signer: caller.accountId, method, what: describeCall(method, args), atMs: this.now(), ok: true }];
+    return outcome;
+  }
+
   private kick(): void {
     if (!this.working && this.queue.length > 0) this.occupy(() => this.pump());
   }
@@ -257,7 +295,7 @@ export class ChainRoom {
       const actions = this.queue.splice(0, MAX_ACTIONS);
       let problem: string | null = null;
       try {
-        const outcome = await this.caller.call("play", { id: this.id, seat, actions });
+        const outcome = await this.transact(this.caller, "play", { id: this.id, seat, actions });
         const rejected = (outcome.value as PlayOutcome | null)?.rejected;
         if (rejected) problem = `Move refused: ${rejected.error}`;
       } catch (error) {
@@ -330,7 +368,7 @@ export class ChainRoom {
     this.nextTimeoutAt = now + TIMEOUT_RETRY_MS;
     this.occupy(async () => {
       // Refused when somebody else was first, or when the chain's clock is behind this machine's: tried again later.
-      await caller.call("timeout", { id: this.id }).catch(() => undefined);
+      await this.transact(caller, "timeout", { id: this.id }).catch(() => undefined);
       await this.resync(false);
     });
   }
@@ -355,6 +393,7 @@ export class ChainRoom {
       error: this.error,
       busy: this.dicePending,
       notice: this.notice,
+      sent: this.sent,
       at: now,
     };
     for (const listener of this.listeners) listener();

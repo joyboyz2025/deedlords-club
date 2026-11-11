@@ -6,7 +6,7 @@ import { decodeBase58, fromBase64, toBase64 } from "./base58.ts";
 import { type ChainConfig, MOVE_GAS } from "./config.ts";
 import { type KeyPair, publicKeyText } from "./keys.ts";
 import { RpcError, rpc } from "./rpc.ts";
-import { jsonArgs, signTransaction } from "./transaction.ts";
+import { type FunctionCall, jsonArgs, signTransaction } from "./transaction.ts";
 
 export type ContractEvent = { standard: string; version: string; event: string; data: Record<string, unknown> };
 
@@ -93,6 +93,35 @@ export class ChainClient {
     }
   }
 
+  /** The account's balance in yoctoNEAR, or `null` when there is no such account (an implicit account nobody has funded yet). */
+  async balance(accountId: string): Promise<bigint | null> {
+    try {
+      const account = await rpc<{ amount: string }>(this.config.rpcUrl, "query", { request_type: "view_account", finality: "optimistic", account_id: accountId });
+      return BigInt(account.amount);
+    } catch (error) {
+      if (error instanceof RpcError && error.code === "UNKNOWN_ACCOUNT") return null;
+      throw error;
+    }
+  }
+
+  /**
+   * A full-access key of the account with its nonce: what a wallet signs with. One of `prefer` when the account has it.
+   * `null` when the account has none (or does not exist).
+   */
+  async fullAccessKey(accountId: string, prefer: string[] = []): Promise<{ publicKey: string; nonce: bigint } | null> {
+    type Listed = { public_key: string; access_key: { nonce: number | string; permission: unknown } };
+    let keys: Listed[];
+    try {
+      keys = (await rpc<{ keys: Listed[] }>(this.config.rpcUrl, "query", { request_type: "view_access_key_list", finality: "final", account_id: accountId })).keys;
+    } catch (error) {
+      if (error instanceof RpcError && error.code === "UNKNOWN_ACCOUNT") return null;
+      throw error;
+    }
+    const full = keys.filter((key) => key.access_key.permission === "FullAccess" && key.public_key.startsWith("ed25519:"));
+    const chosen = full.find((key) => prefer.includes(key.public_key)) ?? full[0];
+    return chosen ? { publicKey: chosen.public_key, nonce: BigInt(chosen.access_key.nonce) } : null;
+  }
+
   async blockHash(fresh = false): Promise<Uint8Array> {
     if (!fresh && this.block && Date.now() - this.block.at < this.config.blockHashTtlMs) return this.block.hash;
     const block = await rpc<{ header: { hash: string } }>(this.config.rpcUrl, "block", { finality: "final" });
@@ -128,15 +157,23 @@ export class Session {
    * Throws `ContractFailure` when the contract refuses the call, `RpcError` when the node does or cannot be reached.
    */
   call(method: string, args: unknown, gas: bigint = MOVE_GAS): Promise<Outcome> {
-    const run = this.last.then(() => this.send(method, args, gas));
+    return this.transact([{ method, args: jsonArgs(args), gas, deposit: 0n }]);
+  }
+
+  /**
+   * One transaction with several calls to the game contract, deposits included. Only a full-access key can sign a
+   * deposit: the key of a game account, not a session key a wallet added. `value` is what the last call returned.
+   */
+  transact(calls: FunctionCall[]): Promise<Outcome> {
+    const run = this.last.then(() => this.send(calls));
     this.last = run.catch(() => undefined);
     return run;
   }
 
-  private async send(method: string, args: unknown, gas: bigint): Promise<Outcome> {
+  private async send(calls: FunctionCall[]): Promise<Outcome> {
     for (let attempt = 0; ; attempt++) {
       try {
-        return await this.sendOnce(method, args, gas, attempt > 0);
+        return await this.sendOnce(calls, attempt > 0);
       } catch (error) {
         // Another tab moved with the same key, or the block we named has expired: read both again, once.
         const stale = error instanceof RpcError && error.code === "INVALID_TRANSACTION" && /InvalidNonce|Expired/.test(error.detail);
@@ -145,7 +182,7 @@ export class Session {
     }
   }
 
-  private async sendOnce(method: string, args: unknown, gas: bigint, fresh: boolean): Promise<Outcome> {
+  private async sendOnce(calls: FunctionCall[], fresh: boolean): Promise<Outcome> {
     const { rpcUrl, contractId } = this.client.config;
     if (this.nonce === null || fresh) {
       const nonce = await this.client.accessKeyNonce(this.accountId, this.pair.publicKey);
@@ -160,7 +197,7 @@ export class Session {
         nonce,
         receiverId: contractId,
         blockHash: await this.client.blockHash(fresh),
-        actions: [{ method, args: jsonArgs(args), gas, deposit: 0n }],
+        actions: calls,
       },
       this.pair,
     );

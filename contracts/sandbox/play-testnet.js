@@ -13,16 +13,25 @@
 //                                            create_match (0.06 NEAR storage deposit, refunded at settlement but for
 //                                            the permanent records) and join (0.05 NEAR stake) for p1 and/or p2
 //   POST /join    { id, seat, accountId }    join for p1 or p2, only a match staked at 0.05 NEAR or less
-//   GET  /config                             { networkId, contractId, house, players, stake, solo: false }
+//   POST /fund    { accountId }              sends 0.25 NEAR from the parent account to a GAME ACCOUNT (an implicit
+//                                            account: 64 hex digits) that holds less than 0.25 NEAR, so that somebody
+//                                            who signed in with an EVM wallet or as a guest can stake on testnet
+//   POST /agent   { id }                     seats p2 (or p1) in the open seat of a lobby staked at 0.05 NEAR or less
+//                                            and plays that seat as an AGENT until the match is settled: on each of its
+//                                            turns it asks the web app's agent desk (DEEDLORDS_WEB_URL/api/agent: a
+//                                            language model, or the rule bot) for a plan and signs `turn(id, seat, plan)`
+//   GET  /config                             { networkId, contractId, house, players, stake, solo: false, faucet, agent }
 // Every move of the game itself is signed in the browser with its session key and goes straight to the RPC.
 //
-// Bounds: at most 10 matches and 8 session keys per run; an account is never taken below 0.15 NEAR. On start it removes
+// Bounds: at most 10 matches, 8 session keys, 6 fundings and 4 agent seats at a time per run; a test account is never taken below 0.15 NEAR and
+// the parent never below 1 NEAR. On start it removes
 // session keys an earlier run left on p1/p2, on Ctrl-C the ones it added. A match nobody finishes keeps its two stakes
 // until its turns are timed out (the players' browsers do that while open; `testnet.js run` finishes leftovers).
 //
 // Only pages served from localhost may call it (CORS), every POST must be application/json, and it listens on
 // loopback only. Environment: DEEDLORDS_PARENT (required), DEEDLORDS_RPC (default https://test.rpc.fastnear.com),
-// NEAR_CREDENTIALS_DIR (default ~/.near-credentials), DEEDLORDS_PLAY_PORT (default 8792).
+// NEAR_CREDENTIALS_DIR (default ~/.near-credentials), DEEDLORDS_PLAY_PORT (default 8792), DEEDLORDS_WEB_URL (the web
+// app whose /api/agent plans the agent's turns, default http://localhost:3000).
 
 "use strict";
 
@@ -47,6 +56,16 @@ const SESSION_ALLOWANCE = NEAR(0.25);
 const RESERVE = NEAR(0.15);
 const MAX_MATCHES = 10;
 const MAX_KEYS = 8;
+/// Test NEAR for a new game account, and what the parent keeps for itself.
+const FAUCET_AMOUNT = NEAR(0.25);
+const FAUCET_FLOOR = NEAR(0.25);
+const FAUCET_RESERVE = NEAR(1);
+const MAX_FUNDINGS = 6;
+/// Agent seats: how many at a time, how often a match is looked at, and what is played when the desk cannot be reached.
+const MAX_AGENTS = 4;
+const AGENT_LOOK_MS = 1200;
+const WEB_URL = (process.env.DEEDLORDS_WEB_URL ?? "http://localhost:3000").replace(/\/$/, "");
+const CAREFUL_PLAN = { buy_reserve: 200, build: [], keep_reserve: 200, bail: true, liquidate: [] };
 const PORT = Number(process.env.DEEDLORDS_PLAY_PORT ?? 8792);
 const LOCAL_ORIGIN = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -56,6 +75,8 @@ const acc = {};
 const addedKeys = []; // { account, publicKey }
 let matches = 0;
 let serial = 0;
+let fundings = 0;
+const agents = new Map(); // match id -> { seat, account }
 
 // ----- chain helpers -----------------------------------------------------------------------------------------------
 
@@ -117,6 +138,20 @@ async function addSessionKey({ accountId, publicKey }) {
   return { accountId: account.accountId, publicKey, contractId, methods: SESSION_METHODS, added: !existing.includes(publicKey) };
 }
 
+/// Test NEAR for a game account, from the parent. An implicit account comes to exist with this first transfer.
+async function fund({ accountId }) {
+  if (typeof accountId !== "string" || !/^[0-9a-f]{64}$/.test(accountId)) throw new Error("only a game account (64 hex digits) is funded here");
+  const have = await provider.query({ request_type: "view_account", finality: "optimistic", account_id: accountId }).then((a) => BigInt(a.amount), () => 0n);
+  if (have >= FAUCET_FLOOR) return { accountId, funded: false, balance: have.toString() };
+  if (fundings >= MAX_FUNDINGS) throw new Error(`this run has funded ${MAX_FUNDINGS} game accounts already: restart the helper to go on`);
+  const { amount } = await acc.faucet.state();
+  if (BigInt(amount) < FAUCET_AMOUNT + FAUCET_RESERVE) throw new Error(`the faucet account ${acc.faucet.accountId} is down to ${fmt(amount)}`);
+  fundings++;
+  const outcome = await inTurn(acc.faucet.accountId, () => acc.faucet.sendMoney(accountId, FAUCET_AMOUNT));
+  console.log(`  signed by ${acc.faucet.accountId}: send ${fmt(FAUCET_AMOUNT)} to game account ${accountId.slice(0, 8)}…, tx ${outcome.transaction.hash}`);
+  return { accountId, funded: true, balance: (have + FAUCET_AMOUNT).toString() };
+}
+
 const whole = (value, min, max, name) => {
   if (!(Number.isInteger(value) && value >= min && value <= max)) throw new Error(`${name} must be a whole number from ${min} to ${max}`);
   return value;
@@ -159,6 +194,79 @@ async function join({ id, seat, accountId }) {
   return { id: match.meta.id, seat: Number(seat), accountId: account.accountId };
 }
 
+// ----- an agent in a seat ------------------------------------------------------------------------------------------
+
+/// A plan for the seat from the web app's agent desk; when the desk cannot be reached, a careful plan that needs no advice.
+async function adviceFor(id, seat) {
+  try {
+    const response = await fetch(`${WEB_URL}/api/agent`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, seat }), signal: AbortSignal.timeout(9000) });
+    const advice = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(advice.error ?? `HTTP ${response.status}`);
+    return advice;
+  } catch (e) {
+    return { plan: CAREFUL_PLAN, driver: "default plan", reason: `the agent desk at ${WEB_URL} did not answer (${String(e.message ?? e).slice(0, 80)})`, fallback: true };
+  }
+}
+
+/// Plays `seat` of match `id` with `account` until the contract no longer has the match (settled) or it fails 5 times running.
+async function drive(id, seat, account) {
+  console.log(`  agent: ${account.accountId} plays seat ${seat + 1} of ${id}`);
+  let failures = 0;
+  let played = null; // the turn already sent: a node one block behind may still show it as ours
+  for (;;) {
+    await sleep(AGENT_LOOK_MS);
+    let match;
+    try {
+      match = await view("get_match", { id });
+    } catch {
+      continue;
+    }
+    if (!match) break;
+    if (match.meta.status !== "playing" || match.meta.current_seat !== seat) continue;
+    const turnKey = `${match.game.rolls}:${match.game.round}`;
+    if (played && played.key === turnKey && Date.now() - played.at < 8000) continue;
+    const advice = await adviceFor(id, seat);
+    try {
+      await call(account, "turn", { id, seat, plan: advice.plan });
+      played = { key: turnKey, at: Date.now() };
+      failures = 0;
+      console.log(`  agent ${advice.driver}${advice.fallback ? " (fallback)" : ""}, round ${match.game.round + 1}: ${String(advice.reason).slice(0, 160)}`);
+    } catch (e) {
+      failures++;
+      console.log(`  agent: turn refused (${failures}/5): ${String(e.message ?? e).slice(0, 160)}`);
+      if (failures >= 5) break;
+      await sleep(2000);
+    }
+  }
+  agents.delete(id);
+  console.log(`  agent: seat ${seat + 1} of ${id} is done`);
+}
+
+async function seatAgent({ id }) {
+  const match = await view("get_match", { id: String(id) });
+  if (!match) throw new Error(`no such match: ${String(id).slice(0, 40)}`);
+  if (match.meta.status !== "lobby") throw new Error("the game has already started");
+  if (agents.has(match.meta.id)) throw new Error("an agent already sits in this match");
+  if (agents.size >= MAX_AGENTS) throw new Error(`${MAX_AGENTS} agents are playing already: wait for a match to end`);
+  const free = match.meta.seats.find((s) => s.backer === null);
+  if (!free) throw new Error("no seat is free");
+  const seated = new Set(match.meta.seats.map((s) => s.backer));
+  const account = [acc.p2, acc.p1].find((a) => !seated.has(a.accountId));
+  if (!account) throw new Error("both test accounts already sit in this match");
+  const stake = BigInt(match.meta.stake);
+  if (stake > STAKE) throw new Error(`this helper stakes at most ${fmt(STAKE)} a seat; ${match.meta.id} asks for ${fmt(stake)}`);
+  await requireFunds(account, stake);
+  agents.set(match.meta.id, { seat: free.seat, account });
+  try {
+    await call(account, "join", { id: match.meta.id, seat: free.seat }, stake);
+  } catch (e) {
+    agents.delete(match.meta.id);
+    throw e;
+  }
+  void drive(match.meta.id, free.seat, account);
+  return { id: match.meta.id, seat: free.seat, accountId: account.accountId };
+}
+
 // ----- the stub ----------------------------------------------------------------------------------------------------
 
 function readBody(req) {
@@ -192,7 +300,7 @@ function serve() {
       if (req.method === "OPTIONS") return send(204);
       const route = `${req.method} ${new URL(req.url, "http://x").pathname}`;
       if (route === "GET /config") {
-        return send(200, { networkId: NET, contractId, house, players: players().map((a) => a.accountId), stake: STAKE.toString(), solo: false });
+        return send(200, { networkId: NET, contractId, house, players: players().map((a) => a.accountId), stake: STAKE.toString(), solo: false, faucet: FAUCET_AMOUNT.toString(), agent: true });
       }
       if (req.method !== "POST") return send(404, { error: "not found" });
       if (!String(req.headers["content-type"] ?? "").startsWith("application/json")) return send(415, { error: "content-type must be application/json" });
@@ -201,6 +309,8 @@ function serve() {
       if (route === "POST /session") return send(200, await addSessionKey(body));
       if (route === "POST /match") return send(200, { id: await createMatch(body) });
       if (route === "POST /join") return send(200, await join(body));
+      if (route === "POST /fund") return send(200, await fund(body));
+      if (route === "POST /agent") return send(200, await seatAgent(body));
       return send(404, { error: "not found" });
     } catch (e) {
       const message = String(e && e.message ? e.message : e).slice(0, 600);
@@ -233,6 +343,8 @@ function serve() {
     if (!(await keyStore.getKey(NET, id))) throw new Error(`no key for ${id} in the credentials directory: run \`testnet.js run\` first`);
     acc[name] = await near.account(id);
   }
+  if (!(await keyStore.getKey(NET, parent))) throw new Error(`no key for ${parent} in the credentials directory`);
+  acc.faucet = await near.account(parent);
   const config = await view("get_config");
   house = config.house;
   if (config.fee_bps === undefined) throw new Error(`${contractId} runs the contract from before the fee: upgrade it with \`testnet.js run\` first`);
@@ -261,6 +373,8 @@ function serve() {
   await serve();
   console.log(`testnet helper ready on http://127.0.0.1:${PORT}`);
   console.log(`  signs for ${players().map((a) => a.accountId).join(" and ")}: session keys, duels at ${fmt(STAKE)} a seat (+ ${fmt(STORAGE_DEPOSIT)} storage deposit), joins`);
+  console.log(`  ${acc.faucet.accountId} (${fmt((await acc.faucet.state()).amount)}) sends ${fmt(FAUCET_AMOUNT)} to a new game account that asks, ${MAX_FUNDINGS} times at most`);
+  console.log(`  POST /agent seats p2 (or p1) as an AGENT in a lobby and plays it by the plans of ${WEB_URL}/api/agent`);
   console.log(`  at most ${MAX_MATCHES} matches and ${MAX_KEYS} session keys this run; Ctrl-C removes the session keys`);
   // Keeps the process alive and tells how long it has been up when asked; nothing is signed on a timer.
   for (;;) await sleep(60_000);

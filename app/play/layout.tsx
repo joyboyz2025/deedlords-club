@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { alfaSlab, beVietnam } from "@/lib/fonts";
 import "../co-ty-phu/co-ty-phu.css";
+import "./play.css";
 
 export const metadata: Metadata = {
   title: "Deedlords",

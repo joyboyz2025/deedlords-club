@@ -1945,3 +1945,23 @@
   padding-top: 12px;
   border-top: 1px solid rgb(255 247 230 / 20%);
 }
+
+.tp-chain-form {
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.tp-chain-as strong {
+  color: var(--cream);
+  overflow-wrap: anywhere;
+}
+
+.tp-chain-as .tp-btn {
+  flex: none;
+  white-space: nowrap;
+}
+
+.tp-chain-as select.tp-input {
+  width: auto;
+  min-width: 7.5em;
+}

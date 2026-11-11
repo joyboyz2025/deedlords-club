@@ -23,6 +23,10 @@ export type DevConfig = {
   stake: string;
   /** Whether it can open a match against the house (it needs a house runner for that). */
   solo: boolean;
+  /** What it sends a new game account that asks (`devFund`), in yoctoNEAR; `null` when it hands out nothing. */
+  faucet: string | null;
+  /** Whether it can sit one of its test accounts in a lobby and play it as an agent (`devSeatAgent`). */
+  agent?: boolean;
 };
 
 async function dev<T>(path: string, body?: unknown): Promise<T> {
@@ -43,17 +47,25 @@ export function devConfig(): Promise<DevConfig> {
   return config;
 }
 
-/** `null` until the helper has answered, and for as long as it cannot be reached. */
+/** `null` until the helper has answered, and for as long as it cannot be reached: it is asked again every few seconds. */
 export function useDevConfig(): DevConfig | null {
   const [known, setKnown] = useState<DevConfig | null>(null);
   useEffect(() => {
+    if (!CHAIN.devUrl) return;
     let stale = false;
-    devConfig().then(
-      (answer) => !stale && setKnown(answer),
-      () => undefined,
-    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const ask = () =>
+      devConfig().then(
+        (answer) => !stale && setKnown(answer),
+        () => {
+          // The helper may still be starting (on testnet it first clears old session keys).
+          if (!stale) timer = setTimeout(ask, 3_000);
+        },
+      );
+    void ask();
     return () => {
       stale = true;
+      clearTimeout(timer);
     };
   }, []);
   return known;
@@ -63,6 +75,9 @@ export type NewMatch = { kind: "solo" | "duel"; open?: boolean; player?: string;
 export const devCreateMatch = (match: NewMatch) => dev<{ id: string }>("/match", match);
 
 export const devJoin = (id: string, seat: number, accountId: string) => dev<{ id: string }>("/join", { id, seat, accountId });
+
+/** Asks the helper for test NEAR for a game account. It sends nothing to an account that already has some. */
+export const devFund = (accountId: string) => dev<{ funded: boolean; balance: string }>("/fund", { accountId });
 
 const keyStorage = (accountId: string) => `deedlords:session:${CHAIN.network}:${CHAIN.contractId}:${accountId}`;
 
@@ -91,4 +106,9 @@ export async function openDevSession(accountId: string): Promise<Session> {
     for (let i = 0; i < 20 && !(await session.ready()); i++) await new Promise((resolve) => setTimeout(resolve, 500));
   }
   return session;
+}
+
+/** The helper seats one of its test accounts in the open seat of the lobby and plays it as an agent until the match ends. */
+export function devSeatAgent(id: string): Promise<{ id: string; seat: number; accountId: string }> {
+  return dev("/agent", { id });
 }
