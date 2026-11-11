@@ -55,3 +55,30 @@ Copied unchanged unless they are listed under "Changed during extraction":
 
 - Extraction of the property game into this standalone repo
 - Rules engine aligned with `docs/ENGINE-RULES.md` for the Rust port: board and English card texts loaded from `shared/board.json`; integer `cityRents`; every random value through an injectable `Rng` (documented Fisher–Yates, dice drawn only after a roll is legal); cards drawn with replacement (`decks` removed); `round` and `maxRounds`; Blitz rules (deal, build once per city per turn, `builtThisTurn`, 75% house value); English log texts. New `tools/diff/` (snapshot, seeded recording Rng, trace generator with coverage table; `npm run diff:gen`, `npm run diff:check`) and tests for all of the above.
+
+## Deedlords Arena (in-window, 2026-11-11)
+
+A second game, written in this repo during the hackathon window. Nothing of it was copied from the earlier platform or from another project. Commits `7912f3b`, `530eb0d`, `aea0424`.
+
+### Code
+
+- Written on 2026-11-11 with an AI coding assistant (Claude) at the owner's direction: the rules (`games/arena/`, `shared/arena.json`), their Rust port and the NEAR contract (`contracts/arena-engine/`, `contracts/arena/`), the three.js scene, the match screen (`app/arena/`), the tests and the tools (`tools/arena/`, `tools/diff/arena-gen.ts`, `contracts/sandbox/arena-run.js`).
+- It reuses code already in this repo: `painted` and `merged` from `games/ma-soi/scene/parts.ts`, the chain client in `lib/chain/`, the game account in `games/co-ty-phu/chain/keySession.ts`, and the randomness construction of `contracts/deedlords/src/rng.rs` (rewritten for the Arena contract, not shared).
+- The game is an auto-battler by genre. Its rules (a shared market, sealed first-price bids, the hex fight), the 16 units, the four guilds and every name and text are this project's own; no name, art, level or wording of an existing game is used.
+- Deployed on NEAR testnet at `arena.deedlords.testnet` on 2026-11-11. Settled matches there: `a-mwbnogk7` (script, two test accounts) and `a-mwbnwzyl-nl22` (played from the browser).
+
+### Generated art
+
+Everything under `public/arena/` was made with generative tools on 2026-11-11, from prompts written for this project.
+
+| Files | How they were made |
+| --- | --- |
+| Concept images, kept outside the repo in `_notes/arena-art/` (16 units and a map) | Text to image, model `gpt-image-2.6-flare-all`, called through the ShopAIKey gateway (`api.shopaikey.com`). One prompt template for every unit; only the character line changes. The prompts are in `_notes/arena-art/concepts.py` and next to each image. |
+| `public/arena/portraits/<id>.jpg` (16) | Cut from those concept images and resized to 256 px. |
+| `public/arena/units/<id>.glb` (15 of the 16) | Image to 3D in Tripo Studio (model "H3.1 – Best Quality") from the concept image, then Tripo's retopology (triangles, about 8,000), exported as GLB with a 1k texture. |
+| `public/arena/units/hask.glb` | The same in Tripo Studio, from an earlier concept image of the same character made with Higgsfield (model `gpt_image_2_6`). |
+| `public/arena/map.glb` | Text to 3D in Tripo Studio (same model) from a written description, retopology to about 10,000 triangles, exported as GLB with a 2k texture. |
+
+- After export every GLB went through `tools/arena/slim-glb.py`: geometry kept, the colour image kept as one JPEG (1024 px for units, 2048 px for the map), normal and metal maps dropped.
+- The 16 fighters built from primitives in `games/arena/scene/figures.ts`, and the floor drawn in `games/arena/scene/arena.ts`, are code, not generated assets; the scene falls back to them when `public/arena/models.json` is missing.
+- Not reviewed: the licence terms of ShopAIKey, Tripo and Higgsfield for these outputs. Check them before any use beyond this submission.
