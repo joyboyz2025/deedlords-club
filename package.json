@@ -2,6 +2,7 @@
   "name": "deedlords",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "concurrently -n web,room -c yellow,magenta \"npm:dev:web\" \"npm:dev:room\"",
