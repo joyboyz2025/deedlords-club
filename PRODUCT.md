@@ -26,7 +26,7 @@ There is no game server: the contract is the referee. Every move is a transactio
 ## Operating Context
 
 - A player signs in once (guest key in the browser, a game account derived from an EVM wallet signature, or a NEAR wallet), stakes once, then plays without wallet prompts.
-- A match: 2 seats today in the web UI, a stake per seat in NEAR, 3, 6 or 12 rounds, 60 seconds a turn; a late player is moved by the contract.
+- A match: 2 seats today in the web UI, a stake per seat in NEAR, 3, 6 or 12 rounds or to the end (the last seat standing; the contract's cap is 255 rounds), 30 seconds a turn; a late player is moved by the contract, and a turn with nothing left to decide ends by itself.
 - An AI agent plays a whole turn in one transaction by handing the contract a plan; it shows the sentence it gave for the plan.
 - Vocabulary on the table is travel: the board is 40 squares of world cities (ranked by real prime property prices, cheapest first), canals and airports; corners are Departure, Customs, Transit Lounge, Visa Denied; card decks are Travel Alert and Souvenir.
 

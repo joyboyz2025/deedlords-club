@@ -19,7 +19,15 @@ export function useChainRoom(
   session: Session | null,
 ): RoomState & { send: Send; playTurn: (plan: Plan, proof?: TeeProof | null) => boolean; retry: () => void; refresh: () => Promise<void> } {
   const room = useMemo(
-    () => new ChainRoom({ id, reader: chainClient, caller: session && seatCaller(session), pollMs: CHAIN.pollMs, isVisible: () => document.visibilityState !== "hidden" }),
+    () =>
+      new ChainRoom({
+        id,
+        reader: chainClient,
+        caller: session && seatCaller(session),
+        pollMs: CHAIN.pollMs,
+        autoEnd: true,
+        isVisible: () => document.visibilityState !== "hidden",
+      }),
     [id, session],
   );
 

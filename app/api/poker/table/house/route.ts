@@ -10,6 +10,8 @@ import { STAKE } from "@/games/poker/table/contract";
 import { houseModels, houseStep, houses, modelsAt, watch } from "@/games/poker/table/house";
 
 export const dynamic = "force-dynamic";
+/** Room for a house seat's shuffle and its proof, on a host that limits how long a request may run. */
+export const maxDuration = 60;
 
 const TABLE_ID = /^[A-Za-z0-9_-]{1,32}$/;
 // Every seat the house takes holds a stake of its money until the seat is given up.
@@ -35,7 +37,8 @@ export async function POST(request: Request): Promise<Response> {
   }
   const { id, add, model } = body;
   if (typeof id !== "string" || !TABLE_ID.test(id)) return Response.json({ error: "send JSON: { id }" }, { status: 400, headers: fresh });
-  if (model !== undefined && (typeof model !== "string" || !houseModels().includes(model))) return Response.json({ error: `model: one of ${houseModels().join(", ")}` }, { status: 400, headers: fresh });
+  if (model !== undefined && (typeof model !== "string" || !houseModels().includes(model)))
+    return Response.json({ error: `model: one of ${houseModels().join(", ")}` }, { status: 400, headers: fresh });
   watch();
   const mayJoin = () => joinsPerIp.allow(clientKey(request)) && joinsInAll.allow("*");
   return Response.json(await houseStep(id, { add: add === true, model: model as string | undefined, mayJoin }), { headers: fresh });

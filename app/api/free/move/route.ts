@@ -17,6 +17,8 @@ import { chainClient } from "@/lib/chain/shared";
 import { sponsor } from "@/lib/chain/sponsor";
 
 export const dynamic = "force-dynamic";
+/** Room for a model's answer, its proof and the transaction, on a host that limits how long a request may run. */
+export const maxDuration = 60;
 
 type Played = { played: true; hash: string; driver: string; reason: string; proven: boolean } | { played: false; why: string };
 

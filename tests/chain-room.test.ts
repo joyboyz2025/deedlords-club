@@ -165,7 +165,13 @@ test("a seated player is their seat; anybody else watches", async () => {
   assert.equal(seen.seat, 0);
   assert.equal(seen.view!.you.id, "s0");
   assert.equal(seen.view!.current, "s0");
-  assert.deepEqual(seen.view!.players.map((p) => [p.name, p.color, p.cash]), [["alice", 0, 1500], ["bob", 1, 1500]]);
+  assert.deepEqual(
+    seen.view!.players.map((p) => [p.name, p.color, p.cash]),
+    [
+      ["alice", 0, 1500],
+      ["bob", 1, 1500],
+    ],
+  );
 
   const guest = roomFor(chain, null);
   await guest.refresh();
@@ -230,7 +236,10 @@ test("a move without dice shows at once; moves made meanwhile go out together", 
   open();
   await room.idle();
 
-  assert.deepEqual(chain.calls.map((c) => c.actions), [["Roll"], ["Buy"], [{ Mortgage: 3 }, "End"]]);
+  assert.deepEqual(
+    chain.calls.map((c) => c.actions),
+    [["Roll"], ["Buy"], [{ Mortgage: 3 }, "End"]],
+  );
   const view = room.getState().view!;
   assert.equal(view.current, "s1");
   assert.equal(view.props[3].mortgaged, true);
@@ -348,4 +357,80 @@ test("a match opened after its payout shows the result; an unknown one says so",
   await room.refresh();
   assert.equal(room.getState().error, "no-match");
   assert.equal(room.getState().view, null);
+});
+
+test("with autoEnd, a turn with nothing left to decide is ended for the viewer, a moment after the chain shows it", async () => {
+  const chain = new FakeChain();
+  let now = 0;
+  const room = new ChainRoom({ id: "m1", reader: chain.reader, caller: chain.caller("alice.test"), pollMs: 1_000, now: () => now, sleep: async () => {}, autoEnd: true });
+  await room.refresh();
+  await room.idle();
+  assert.equal(chain.calls.length, 0, "the dice are the player's to throw");
+
+  // 1 + 2: Cape Town, nobody's. To buy or not is the player's to say, however long they take.
+  room.send({ t: "roll" });
+  await room.idle();
+  now += 60_000;
+  await room.refresh();
+  await room.idle();
+  assert.deepEqual(
+    chain.calls.map((call) => call.actions),
+    [["Roll"]],
+  );
+  assert.equal(room.getState().view!.stage, "buy");
+
+  // Passed over: nothing is left but to end the turn. Not at once, so the landing is seen first.
+  room.send({ t: "skip" });
+  await room.idle();
+  now += 500;
+  await room.refresh();
+  await room.idle();
+  assert.equal(chain.calls.length, 2, "too soon");
+  now += 2_000;
+  await room.refresh();
+  await room.idle();
+  assert.deepEqual(
+    chain.calls.map((call) => call.actions),
+    [["Roll"], ["Skip"], ["End"]],
+  );
+  assert.equal(room.getState().view!.current, "s1");
+
+  // Somebody else's turn is never ended from here.
+  now += 60_000;
+  await room.refresh();
+  await room.idle();
+  assert.equal(chain.calls.length, 3);
+});
+
+test("with autoEnd, a double is thrown again by the player, and a room without it ends nothing", async () => {
+  const chain = new FakeChain();
+  chain.dice = [[2, 2]];
+  let now = 0;
+  const room = new ChainRoom({ id: "m1", reader: chain.reader, caller: chain.caller("alice.test"), pollMs: 1_000, now: () => now, sleep: async () => {}, autoEnd: true });
+  await room.refresh();
+  room.send({ t: "roll" });
+  await room.idle();
+  assert.equal(room.getState().view!.stage, "end");
+  now += 60_000;
+  await room.refresh();
+  await room.idle();
+  assert.deepEqual(
+    chain.calls.map((call) => call.actions),
+    [["Roll"]],
+    "a double: the next throw is theirs",
+  );
+
+  const plain = new FakeChain();
+  plain.dice = [[1, 3]];
+  const manual = roomFor(plain, "alice.test", () => now);
+  await manual.refresh();
+  manual.send({ t: "roll" });
+  await manual.idle();
+  now += 60_000;
+  await manual.refresh();
+  await manual.idle();
+  assert.deepEqual(
+    plain.calls.map((call) => call.actions),
+    [["Roll"]],
+  );
 });

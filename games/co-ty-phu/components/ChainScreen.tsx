@@ -6,7 +6,7 @@ import { Arrow, Bot, Copy, Seat } from "@/components/landing/icons";
 import { CHAIN } from "@/lib/chain/config";
 import { TOKEN_COLORS } from "../board";
 import { accountLabel, formatBps, formatNear, playerName, seatNames } from "../chain/adapt";
-import { MOVE_HOLD, joinCalls, near, startCall, upfront } from "../chain/calls";
+import { MOVE_HOLD, joinCalls, near, roundsLabel, startCall, upfront } from "../chain/calls";
 import { devJoin, devSeatAgent, useDevConfig, type DevConfig } from "../chain/devSession";
 import type { ChainMatch, ChainResult } from "../chain/types";
 import { armAgent, useAgent } from "../chain/useAgent";
@@ -212,7 +212,7 @@ function Lobby({
   // Whoever sits stands in the room whole: their own character, or the seat's stock figure for the house and for an
   // account that has made none. An open seat has no figure.
   const figures = useLookPictures(
-    meta.seats.map((seat) => (seat.backer === null ? null : ((!seat.house && characters.get(seat.backer)?.look) || lookFromSeat(seat.seat)))),
+    meta.seats.map((seat) => (seat.backer === null ? null : (!seat.house && characters.get(seat.backer)?.look) || lookFromSeat(seat.seat))),
     FIGURE_PX,
     "figure",
   );
@@ -329,7 +329,13 @@ function Lobby({
                 const empty = seat.backer === null;
                 const mine = !empty && seat.backer === accountId;
                 return (
-                  <li key={seat.seat} className="fd-guest" data-free={empty || undefined} data-you={mine || undefined} style={{ "--seat": TOKEN_COLORS[seat.seat] } as CSSProperties}>
+                  <li
+                    key={seat.seat}
+                    className="fd-guest"
+                    data-free={empty || undefined}
+                    data-you={mine || undefined}
+                    style={{ "--seat": TOKEN_COLORS[seat.seat] } as CSSProperties}
+                  >
                     <span className="fd-guest__figure">
                       {empty ? <i className="fd-guest__ghost" aria-hidden="true" /> : figures[seat.seat] ? <img src={figures[seat.seat]!} alt="" /> : <b>{seat.seat + 1}</b>}
                     </span>
@@ -345,7 +351,7 @@ function Lobby({
             <dl className="fd-terms">
               <div>
                 <dt>Rounds</dt>
-                <dd>{meta.rules.maxRounds}</dd>
+                <dd>{roundsLabel(meta.rules.maxRounds)}</dd>
               </div>
               <div>
                 <dt>A turn</dt>

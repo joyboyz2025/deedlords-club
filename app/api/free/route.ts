@@ -9,7 +9,7 @@
 
 import { clientKey } from "@/games/co-ty-phu/agent/rateLimit";
 import { RULES_MODEL, llmModels } from "@/games/co-ty-phu/agent/llm";
-import { freeTableCalls, inTransactions, newMatchId, SEAT_COUNTS } from "@/games/co-ty-phu/chain/calls";
+import { freeTableCalls, inTransactions, newMatchId, ROUND_CHOICES, SEAT_COUNTS, TURN_SECONDS } from "@/games/co-ty-phu/chain/calls";
 import { MAX_FREE_TABLES, MAX_HOUSE_AGENTS, idWithHouseSeats, jsonAnswer, limits, rememberHouseSeats, rememberSponsored, sponsoredTables } from "@/games/co-ty-phu/chain/freeDesk";
 import { CHAIN } from "@/lib/chain/config";
 import { chainClient } from "@/lib/chain/shared";
@@ -17,10 +17,10 @@ import type { ChainMatch } from "@/games/co-ty-phu/chain/types";
 import { sponsor } from "@/lib/chain/sponsor";
 
 export const dynamic = "force-dynamic";
+/** Room for up to two transactions and a re-read after a node's timeout, on a host that limits how long a request may run. */
+export const maxDuration = 60;
 
-const ROUNDS = [3, 6, 12];
 const ACCOUNT_ID = /^(?:[0-9a-f]{64}|(?=.{2,64}$)[a-z0-9]+(?:[-_.][a-z0-9]+)*)$/;
-const TURN_SECONDS = 60;
 /** The contract lets anyone abandon a lobby 15 minutes after it was created; a little longer, for clocks that differ. */
 const ABANDON_AFTER_MS = 16 * 60_000;
 const ABANDON_GAS = 30_000_000_000_000n;
@@ -49,7 +49,7 @@ export async function POST(request: Request): Promise<Response> {
     // No body: the defaults.
   }
   const rounds = body.rounds === undefined ? 6 : body.rounds;
-  if (typeof rounds !== "number" || !ROUNDS.includes(rounds)) return jsonAnswer(400, { error: `rounds: one of ${ROUNDS.join(", ")}` });
+  if (typeof rounds !== "number" || !ROUND_CHOICES.includes(rounds)) return jsonAnswer(400, { error: `rounds: one of ${ROUND_CHOICES.join(", ")}` });
   if (body.opponent !== undefined && body.opponent !== "agent" && body.opponent !== "friend") return jsonAnswer(400, { error: "opponent: agent or friend" });
   const withAgent = body.opponent !== "friend";
   // Against the house: one agent per model asked for (one with the house model when none is), each in its own seat.

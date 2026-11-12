@@ -6,7 +6,23 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { chainClient } from "@/lib/chain/shared";
 import { formatBps, formatNear } from "../chain/adapt";
-import { FREE_GUEST_SEAT, joinCalls, near, neededToOpen, newMatchId, openDuelCalls, ownStake, SEAT_COUNTS, SMALLEST_STAKE, SPLITS, STORAGE_DEPOSIT } from "../chain/calls";
+import {
+  FREE_GUEST_SEAT,
+  joinCalls,
+  near,
+  neededToOpen,
+  newMatchId,
+  openDuelCalls,
+  ownStake,
+  ROUND_CHOICES,
+  roundsLabel,
+  SEAT_COUNTS,
+  SMALLEST_STAKE,
+  SPLITS,
+  STORAGE_DEPOSIT,
+  TO_THE_END,
+  TURN_SECONDS,
+} from "../chain/calls";
 import { devCreateMatch, useDevConfig, type DevConfig, type NewMatch } from "../chain/devSession";
 import { openFreeTable, requestFreeTable, type FreeOpponent } from "../chain/free";
 import type { ChainListed } from "../chain/types";
@@ -19,8 +35,6 @@ import { AgentStub, DeparturesBoard, Hall, PassengerStub } from "./Desk";
 const REFRESH_MS = 3_000;
 /** What a seat may cost in a match opened here, in NEAR; the contract's own cap cuts the list. */
 const STAKES = [SMALLEST_STAKE, 0.1, 0.25, 0.5, 1];
-const ROUNDS = [3, 6, 12];
-const TURN_SECONDS = 60;
 type Limits = { max_stake: string; fee_bps: number };
 
 const problemText = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -135,7 +149,7 @@ function FlightStub({
   // A stake of the visitor's own, typed in NEAR: it stands instead of the chips while it is filled in.
   const [typed, setTyped] = useState("");
   const [opponent, setOpponent] = useState<FreeOpponent>("agent");
-  const [rounds, setRounds] = useState(ROUNDS[1]);
+  const [rounds, setRounds] = useState(TO_THE_END);
   const [seatCount, setSeatCount] = useState(SEAT_COUNTS[0]);
   // The house's agents at a free table: one model each, picked from what this server offers.
   const offered = useOfferedModels();
@@ -333,9 +347,9 @@ function FlightStub({
       <div className="fd-pick">
         <span id="fd-rounds">Rounds</span>
         <div className="fd-segments" role="group" aria-labelledby="fd-rounds">
-          {ROUNDS.map((count) => (
+          {ROUND_CHOICES.map((count) => (
             <button key={count} type="button" aria-pressed={count === rounds} onClick={() => setRounds(count)}>
-              {count}
+              {roundsLabel(count)}
             </button>
           ))}
         </div>

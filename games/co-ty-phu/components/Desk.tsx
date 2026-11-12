@@ -10,7 +10,7 @@ import { MAX_STYLE, MAX_WISH, RULES_MODEL } from "../agent/llm";
 import { BAIL_RULES, BUILD_ORDERS, MAX_CAUTION, MAX_CUSHION, MAX_RESERVE, PRESETS, SELL_ORDERS, describePlaybook, type Playbook } from "../agent/playbook";
 import { MAX_NAME, MAX_RULE, MAX_RULES, instructions } from "../agent/roster";
 import { formatNear, seatNames, shortAccount } from "../chain/adapt";
-import { SMALLEST_STAKE, near, neededToOpen } from "../chain/calls";
+import { SMALLEST_STAKE, TURN_SECONDS, near, neededToOpen, roundOf, roundsLabel } from "../chain/calls";
 import { devFund, type DevConfig } from "../chain/devSession";
 import { googleSignInOffered, warmGoogleSignIn } from "../chain/googleSession";
 import { exportGameKey } from "../chain/keySession";
@@ -232,14 +232,10 @@ export function DeparturesBoard({ matches, offline, linkTo, you }: { matches: Ch
                     )}
                   </span>
                   <span role="cell" data-label="Rounds">
-                    {match.rules.maxRounds}
+                    {roundsLabel(match.rules.maxRounds)}
                   </span>
                   <span className="fd-row__status" role="cell">
-                    {boarding ? (
-                      <span className="fd-chip">{open > 0 ? "Boarding" : "Starting"}</span>
-                    ) : (
-                      <Flap text={`ROUND ${Math.min(match.round + 1, match.rules.maxRounds)}/${match.rules.maxRounds}`} />
-                    )}
+                    {boarding ? <span className="fd-chip">{open > 0 ? "Boarding" : "Starting"}</span> : <Flap text={`ROUND ${roundOf(match.round, match.rules.maxRounds)}`} />}
                     <Arrow size={18} className="fd-row__go" />
                   </span>
                 </Link>
@@ -278,7 +274,7 @@ function sourceLine(player: Player): string {
 /** Below this a game account cannot open the smallest match, and the helper's faucet may top it up. */
 const LOW_BALANCE = near(0.25);
 /** What the smallest match of the page needs on a game account: the one amount a newcomer is told to send. */
-const TO_START = neededToOpen({ stake: near(SMALLEST_STAKE), maxRounds: 6, turnSeconds: 60 });
+const TO_START = neededToOpen({ stake: near(SMALLEST_STAKE), maxRounds: 6, turnSeconds: TURN_SECONDS });
 
 /** The first stub: who plays here. Three ways in for a visitor; the account, its balance and its keys for a player. */
 export function PassengerStub({
@@ -511,7 +507,8 @@ export function PassengerStub({
       )}
       {unfunded && freePlay && (
         <p className="fd-fine">
-          Free tables are open to this account as it is. To play for a stake, deposit {formatNear(TO_START.toString(), 2)} NEAR or more ({CHAIN.network === "mainnet" ? "from a NEAR wallet, or from another chain on your account page" : `test NEAR on ${CHAIN.network}`})
+          Free tables are open to this account as it is. To play for a stake, deposit {formatNear(TO_START.toString(), 2)} NEAR or more (
+          {CHAIN.network === "mainnet" ? "from a NEAR wallet, or from another chain on your account page" : `test NEAR on ${CHAIN.network}`})
           {approvesInWindow(player) ? "; you approve each stake in the sign-in window." : "."}
         </p>
       )}
@@ -775,7 +772,8 @@ export function AgentStub({ desk, signedIn, roomy = false }: { desk: AgentDesk; 
           </Link>
         </div>
         <p className="fd-fine">
-          <strong>{agent.name}</strong>: {hasModel ? shown : isOwnModel(agent.model) ? `${shown}, but no NEAR AI key in this browser: fallback numbers` : "fallback numbers, no model"}
+          <strong>{agent.name}</strong>:{" "}
+          {hasModel ? shown : isOwnModel(agent.model) ? `${shown}, but no NEAR AI key in this browser: fallback numbers` : "fallback numbers, no model"}
           {hasModel &&
             (told
               ? `, told ${told.length.toLocaleString("en-US")} characters${rules > 0 ? ` and ${rules} ${rules === 1 ? "rule" : "rules"}` : ""} of yours`

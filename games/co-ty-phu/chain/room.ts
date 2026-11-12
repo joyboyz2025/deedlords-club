@@ -8,7 +8,7 @@
 // nothing else can be played (`busy`). If the contract refuses anything, what was shown ahead of the chain is dropped.
 
 import type { TeeProof } from "../../../lib/teeProof.ts";
-import { currentPlayer, type Game } from "../engine.ts";
+import { canBuild, currentPlayer, type Game } from "../engine.ts";
 import type { Plan } from "../agent/plan.ts";
 import type { ClientMessage } from "../protocol.ts";
 import type { View } from "../view.ts";
@@ -56,6 +56,8 @@ export type RoomOptions = {
   sleep?: (ms: number) => Promise<void>;
   /** Polling rests while this says no (a hidden tab). */
   isVisible?: () => boolean;
+  /** Ends the viewer's turn for them once nothing is left to decide in it (see `endIdleTurn`). */
+  autoEnd?: boolean;
 };
 
 /** `play` takes at most this many actions. */
@@ -67,6 +69,17 @@ const RESYNC_WAIT_MS = 200;
 const TIMEOUT_GRACE_MS = 1_500;
 const TIMEOUT_RETRY_MS = 1_200;
 const OFFLINE_AFTER = 2;
+/** With `autoEnd`: a turn with nothing left to decide is ended this long after the chain shows it, so the landing is seen first. */
+const AUTO_END_AFTER_MS = 1_800;
+
+/**
+ * Whether `playerId`'s turn has nothing left for them to decide: the dice are thrown, there is nothing to buy or owe,
+ * no second throw is due, and no house can go up. What is left is to end the turn.
+ */
+export function nothingToDecide(game: Game, playerId: string): boolean {
+  if (game.phase !== "playing" || currentPlayer(game)?.id !== playerId || game.stage !== "end" || game.again) return false;
+  return !Object.keys(game.props).some((square) => canBuild(game, playerId, Number(square)));
+}
 
 const text = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -79,6 +92,7 @@ export class ChainRoom {
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly isVisible: () => boolean;
+  private readonly autoEnd: boolean;
 
   private chain: ChainMatch | null = null;
   private chainJson = "";
@@ -95,6 +109,9 @@ export class ChainRoom {
   private notice: string | null = null;
   private failures = 0;
   private nextTimeoutAt = 0;
+  /** The viewer's turn seen with nothing left to decide, and when it was first seen so. */
+  private idleTurn: { key: string; since: number } | null = null;
+  private stopped = false;
   private sent: MoveTx[] = [];
   /** The transaction (and the re-read after it) in progress. One at a time. */
   private working: Promise<void> | null = null;
@@ -112,6 +129,7 @@ export class ChainRoom {
     this.now = options.now ?? Date.now;
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.isVisible = options.isVisible ?? (() => true);
+    this.autoEnd = options.autoEnd ?? false;
     this.state = { match: null, view: null, result: null, seat: null, link: "connecting", error: null, busy: false, notice: null, sent: [], at: this.now() };
   }
 
@@ -124,11 +142,14 @@ export class ChainRoom {
 
   /** Starts polling. Safe to call again after `stop`. */
   start(): void {
+    this.stopped = false;
     const loop = ++this.loop;
     void this.tick(loop);
   }
 
   stop(): void {
+    this.idleTurn = null;
+    this.stopped = true;
     this.loop += 1;
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
@@ -231,6 +252,7 @@ export class ChainRoom {
       this.emit();
     } else if (!wasOnline) this.emit();
     this.forceOverdueTurn();
+    this.endIdleTurn();
   }
 
   /** Takes the answer unless it is the one already held or an older one. */
@@ -284,6 +306,7 @@ export class ChainRoom {
         this.working = null;
         this.emit();
         this.kick();
+        this.endIdleTurn();
       });
   }
 
@@ -375,6 +398,31 @@ export class ChainRoom {
       await this.transact(caller, "timeout", { id: this.id }).catch(() => undefined);
       await this.resync(false);
     });
+  }
+
+  /**
+   * With `autoEnd`: the viewer's turn has nothing left to decide, so it is ended for them, a moment after the chain
+   * first showed it. A turn with something to choose (a square to buy, a house to build, a debt) waits for them.
+   */
+  private endIdleTurn(): void {
+    const match = this.chain;
+    if (!this.autoEnd || this.stopped || !match || !this.caller || this.working || this.queue.length > 0 || this.dicePending || this.result || match.meta.status !== "playing")
+      return;
+    const seat = seatOf(match.meta, this.accountId);
+    if (seat === null || match.meta.current_seat !== seat || !nothingToDecide(toGame(match), match.meta.seats[seat].player)) {
+      this.idleTurn = null;
+      return;
+    }
+    const key = `${match.game.round}:${match.game.rolls}`;
+    const now = this.now();
+    if (this.idleTurn?.key !== key) {
+      this.idleTurn = { key, since: now };
+      void this.sleep(AUTO_END_AFTER_MS).then(() => this.endIdleTurn());
+      return;
+    }
+    if (now - this.idleTurn.since < AUTO_END_AFTER_MS) return;
+    this.idleTurn = null;
+    this.send({ t: "end" });
   }
 
   private emit(): void {

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { formatNear, seatNames } from "@/games/co-ty-phu/chain/adapt";
+import { roundOf } from "@/games/co-ty-phu/chain/calls";
 import type { ChainListed } from "@/games/co-ty-phu/chain/types";
 import { CHAIN } from "@/lib/chain/config";
 import { chainClient } from "@/lib/chain/shared";
@@ -77,7 +78,7 @@ export function Departures() {
               </span>
               <span role="cell">
                 <i className="lp-status" data-live={!boarding || undefined}>
-                  {boarding ? "Boarding" : `In play · ${Math.min(match.round + 1, match.rules.maxRounds)}/${match.rules.maxRounds}`}
+                  {boarding ? "Boarding" : `In play · ${roundOf(match.round, match.rules.maxRounds)}`}
                 </i>
               </span>
               <Arrow size={20} />

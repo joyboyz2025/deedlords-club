@@ -145,6 +145,23 @@ export const near = (amount: number): bigint => BigInt(Math.round(amount * 1000)
 export const SMALLEST_STAKE = 0.05;
 
 /**
+ * "To the end": the contract's longest match, 255 rounds. The game is over long before, when all but one seat are
+ * bankrupt; the contract asks for a limit so that stakes can never stay locked in a match nobody finishes.
+ */
+export const TO_THE_END = 255;
+/** How many rounds a match opened from the web page may last. */
+export const ROUND_CHOICES = [3, 6, 12, TO_THE_END];
+/** A round limit as the pages say it. */
+export const roundsLabel = (maxRounds: number): string => (maxRounds >= TO_THE_END ? "To the end" : String(maxRounds));
+/** "ROUND 3/12", or "ROUND 3" in a match played to the end. `round` counts the rounds completed. */
+export const roundOf = (round: number, maxRounds: number): string => (maxRounds >= TO_THE_END ? `${round + 1}` : `${Math.min(round + 1, maxRounds)}/${maxRounds}`);
+/**
+ * A turn's clock, in seconds, in matches opened from the web page: after it the contract moves for whoever is late
+ * (`timeout`). Long enough for an AI seat's model to answer and its transaction to land.
+ */
+export const TURN_SECONDS = 30;
+
+/**
  * A stake typed by the visitor, in NEAR: from the smallest the page opens with to the largest the contract allows, in
  * thousandths of a NEAR at most (what `near()` turns into yoctoNEAR exactly).
  */

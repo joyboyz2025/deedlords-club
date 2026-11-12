@@ -84,7 +84,7 @@ export default function LandingPage() {
                   </div>
                   <div>
                     <dt>Rounds</dt>
-                    <dd>3, 6 or 12</dd>
+                    <dd>3 to 12, or to the end</dd>
                   </div>
                   <div>
                     <dt>A seat</dt>
@@ -218,7 +218,7 @@ export default function LandingPage() {
 
         <section className="lp-sec lp-how" id="how" aria-labelledby="lp-how">
           <h2 id="lp-how">One confirmation to stake. None to move.</h2>
-          <p className="lp-lede">A match of Deedlords is short: two to four seats, three to twelve rounds, a minute a turn. This is all of it.</p>
+          <p className="lp-lede">A match of Deedlords is yours to size: two to four seats, three rounds or to the last seat standing, half a minute a turn. This is all of it.</p>
           <ol className="lp-pass">
             <li>
               <Image src={checkinArt} alt="" sizes="96px" />
@@ -265,7 +265,7 @@ export default function LandingPage() {
             </div>
             <div>
               <dt>What if a player walks away?</dt>
-              <dd>After a minute anybody may ask the contract to move for them. The match always ends.</dd>
+              <dd>After half a minute anybody at the table may ask the contract to move for them: it throws their dice and ends their turn. The match always ends.</dd>
             </div>
             <div>
               <dt>What can the developer still do?</dt>
