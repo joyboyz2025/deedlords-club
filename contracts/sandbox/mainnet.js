@@ -22,7 +22,11 @@
 //   5. free.<parent>  the sponsor of free tables (FREE_SPONSOR_NEAR, default 1.5; 0 leaves it out): it opens a table
 //                      with nothing staked, sits the house's AI agents at it and pays every move's gas, so a visitor
 //                      plays the AI on mainnet with no NEAR at all.
-//   6. pokerhouse.<parent>, pokerhouse2…  only with POKER_HOUSES=<n> (default 0): accounts whose AI agents take seats
+//   6. chibi.<parent>  the characters, items and boxes (contracts/chibi; CHIBI_WASM, default the release build;
+//                      CHIBI=0 leaves it out): new(owner = parent, minter = free.<parent>, box price CHIBI_BOX_NEAR,
+//                      default 0.1) in the deploy transaction, then its free pool topped up to CHIBI_POOL_NEAR (default
+//                      1) from the parent: the pool pays the storage of the characters the sponsor makes for guests.
+//   7. pokerhouse.<parent>, pokerhouse2…  only with POKER_HOUSES=<n> (default 0): accounts whose AI agents take seats
 //                      at poker tables and stake REAL NEAR there (1 NEAR each, POKER_HOUSE_NEAR). Off unless asked.
 // Every account made here gets its key in ~/.near-credentials/mainnet/, where the server reads it on this machine.
 //
@@ -59,6 +63,9 @@ const STATE_ROOM = NEAR(0.5);
 const HOUSE_FUND = NEAR(0.2);
 const SWEEP_FUND = NEAR(0.3);
 const SPONSOR_FUND = NEAR(Number(process.env.FREE_SPONSOR_NEAR ?? 1.5));
+const CHIBI_WASM = process.env.CHIBI === "0" ? null : (process.env.CHIBI_WASM ?? path.join(__dirname, "../target/wasm32-unknown-unknown/release/deedlords_chibi.wasm"));
+const CHIBI_BOX = NEAR(Number(process.env.CHIBI_BOX_NEAR ?? 0.1));
+const CHIBI_POOL = NEAR(Number(process.env.CHIBI_POOL_NEAR ?? 1));
 const POKER_HOUSES = Number(process.env.POKER_HOUSES ?? 0);
 const POKER_HOUSE_FUND = NEAR(Number(process.env.POKER_HOUSE_NEAR ?? 1));
 /** Left on the parent after everything, for its own gas. */
@@ -77,6 +84,8 @@ async function rpc(method, params) {
   }
   return body.result;
 }
+const view = async (id, method, args = {}) =>
+  JSON.parse(Buffer.from((await rpc("query", { request_type: "call_function", finality: "final", account_id: id, method_name: method, args_base64: Buffer.from(JSON.stringify(args)).toString("base64") })).result).toString());
 const viewAccount = (id) => rpc("query", { request_type: "view_account", finality: "final", account_id: id });
 
 async function main() {
@@ -111,8 +120,9 @@ async function rehearse() {
     // The plan reads final state, a couple of blocks behind.
     for (let i = 0; i < 40 && !(await viewAccount(PARENT)); i++) await new Promise((done) => setTimeout(done, 250));
     await deploy("run", keyStore, null);
-    const view = async (method, args = {}) => JSON.parse(Buffer.from((await rpc("query", { request_type: "call_function", finality: "final", account_id: `game.${PARENT}`, method_name: method, args_base64: Buffer.from(JSON.stringify(args)).toString("base64") })).result).toString());
-    const config = await view("get_config");
+    const rpcView = view;
+    const viewGame = async (method, args = {}) => JSON.parse(Buffer.from((await rpc("query", { request_type: "call_function", finality: "final", account_id: `game.${PARENT}`, method_name: method, args_base64: Buffer.from(JSON.stringify(args)).toString("base64") })).result).toString());
+    const config = await viewGame("get_config");
     assert.equal(config.owner, PARENT);
     assert.equal(config.house, `house.${PARENT}`);
     assert.equal(config.fee_bps, 0);
@@ -135,8 +145,13 @@ async function rehearse() {
       }
       console.log(`  poker.${PARENT}: code live${init.owner ? ", owner and fee as planned" : ""}`);
     }
-    for (let i = 0; i < 40 && (await view("get_config")).fee_bps !== 100; i++) await new Promise((done) => setTimeout(done, 250));
-    assert.equal((await view("get_config")).fee_bps, 100);
+    if (CHIBI_WASM) {
+      const settings = await rpcView(`chibi.${PARENT}`, "settings");
+      assert.equal(BigInt(settings.freePool), CHIBI_POOL, "the free pool is funded");
+      console.log(`  chibi.${PARENT}: code live, free pool ${fmt(settings.freePool)}`);
+    }
+    for (let i = 0; i < 40 && (await viewGame("get_config")).fee_bps !== 100; i++) await new Promise((done) => setTimeout(done, 250));
+    assert.equal((await viewGame("get_config")).fee_bps, 100);
     console.log("REHEARSAL PASSED: the run creates, deploys and initialises as planned, a second run has nothing to do, and the owner can set a fee");
   } finally {
     sandbox.childProcess.kill("SIGKILL");
@@ -185,6 +200,25 @@ async function deploy(mode, keyStore, keyFile) {
   const sponsorId = `free.${PARENT}`;
   if (SPONSOR_FUND > 0n && !(await viewAccount(sponsorId)))
     steps.push({ what: `create ${sponsorId} with ${fmt(SPONSOR_FUND)} (free tables: the house's AI agents play, this account pays the gas)`, cost: SPONSOR_FUND, kind: "create", id: sponsorId, fund: SPONSOR_FUND });
+  // The characters: created, deployed with its new in one transaction, and its free pool topped up.
+  const chibi = `chibi.${PARENT}`;
+  const chibiWasm = CHIBI_WASM && fs.existsSync(CHIBI_WASM) ? fs.readFileSync(CHIBI_WASM) : null;
+  if (CHIBI_WASM && !chibiWasm) throw new Error(`no chibi wasm at ${CHIBI_WASM}: build it (contracts/README.md) or set CHIBI=0`);
+  const chibiOnChain = chibiWasm ? await viewAccount(chibi) : null;
+  if (chibiWasm) {
+    const chibiFund = BigInt(chibiWasm.length + 2_000) * BYTE + STATE_ROOM;
+    if (!chibiOnChain) steps.push({ what: `create ${chibi} with ${fmt(chibiFund)}`, cost: chibiFund, kind: "create", id: chibi, fund: chibiFund });
+    const fresh = !chibiOnChain || chibiOnChain.code_hash === "11111111111111111111111111111111";
+    if (!chibiOnChain || chibiOnChain.code_hash !== hashOf(chibiWasm))
+      steps.push({
+        what: `deploy ${path.basename(CHIBI_WASM)} (hash ${hashOf(chibiWasm)}) to ${chibi}${fresh ? ` and call new(owner_id=${PARENT}, minter_id=${sponsorId}, box_price=${fmt(CHIBI_BOX)}) in one transaction` : " (state kept)"}`,
+        cost: NEAR(0.01),
+        kind: "deploy-chibi",
+        fresh,
+      });
+    const pool = fresh ? 0n : BigInt((await view(chibi, "settings")).freePool);
+    if (pool < CHIBI_POOL) steps.push({ what: `fund_free_pool on ${chibi} with ${fmt(CHIBI_POOL - pool)} from ${PARENT} (pays the storage of guests' free characters)`, cost: CHIBI_POOL - pool, kind: "chibi-pool", deposit: CHIBI_POOL - pool });
+  }
   const houseIds = Array.from({ length: pokerWasm ? POKER_HOUSES : 0 }, (_, i) => `pokerhouse${i === 0 ? "" : i + 1}.${PARENT}`);
   for (const id of houseIds)
     if (!(await viewAccount(id))) steps.push({ what: `create ${id} with ${fmt(POKER_HOUSE_FUND)} (an AI seat at poker: it stakes REAL NEAR)`, cost: POKER_HOUSE_FUND, kind: "create", id, fund: POKER_HOUSE_FUND });
@@ -195,6 +229,7 @@ async function deploy(mode, keyStore, keyFile) {
   console.log(`game   ${game}: ${gameOnChain ? `exists, ${fmt(gameOnChain.amount)}, code ${gameOnChain.code_hash}` : "to create"}`);
   console.log(`house  ${house}: ${houseOnChain ? `exists, ${fmt(houseOnChain.amount)}` : "to create"}`);
   console.log(`poker  ${poker}: ${pokerWasm ? (pokerOnChain ? `exists, code ${pokerOnChain.code_hash}` : "to create") : "skipped (no POKER_WASM)"}`);
+  if (chibiWasm) console.log(`chibi  ${chibi}: ${chibiOnChain ? `exists, code ${chibiOnChain.code_hash}` : "to create"}`);
   if (pokerWasm) console.log(`sweep  ${sweep}: ${sweepOnChain ? `exists, ${fmt(sweepOnChain.amount)}` : "to create"} (server: POKER_SWEEP_ACCOUNT=${sweep})`);
   console.log(steps.length ? "\nTransactions, in order:" : "\nNothing to do: everything is in place.");
   steps.forEach((step, i) => console.log(`  ${i + 1}. ${step.what}`));
@@ -219,6 +254,15 @@ async function deploy(mode, keyStore, keyFile) {
       }
       const done = await parent.createAccount(step.id, key.getPublicKey(), step.fund);
       console.log(`  created ${step.id}: tx ${done.transaction.hash}`);
+    } else if (step.kind === "deploy-chibi") {
+      const account = await near.account(chibi);
+      const actions = [transactions.deployContract(chibiWasm)];
+      if (step.fresh) actions.push(transactions.functionCall("new", { owner_id: PARENT, minter_id: sponsorId, box_price: CHIBI_BOX.toString() }, 100n * TGAS, 0n));
+      const done = await account.signAndSendTransaction({ receiverId: chibi, actions });
+      console.log(`  deployed to ${chibi}: tx ${done.transaction.hash}`);
+    } else if (step.kind === "chibi-pool") {
+      const done = await parent.functionCall({ contractId: chibi, methodName: "fund_free_pool", args: {}, gas: 30n * TGAS, attachedDeposit: step.deposit });
+      console.log(`  free pool of ${chibi} topped up: tx ${done.transaction.hash}`);
     } else {
       const forGame = step.kind === "deploy-game";
       const id = forGame ? game : poker;
