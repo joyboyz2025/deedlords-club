@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { chainClient } from "@/lib/chain/shared";
 import { formatBps, formatNear } from "../chain/adapt";
-import { FREE_GUEST_SEAT, joinCalls, near, neededToOpen, newMatchId, openDuelCalls, SEAT_COUNTS, SMALLEST_STAKE, SPLITS, STORAGE_DEPOSIT } from "../chain/calls";
+import { FREE_GUEST_SEAT, joinCalls, near, neededToOpen, newMatchId, openDuelCalls, ownStake, SEAT_COUNTS, SMALLEST_STAKE, SPLITS, STORAGE_DEPOSIT } from "../chain/calls";
 import { devCreateMatch, useDevConfig, type DevConfig, type NewMatch } from "../chain/devSession";
 import { openFreeTable, requestFreeTable, type FreeOpponent } from "../chain/free";
 import type { ChainListed } from "../chain/types";
@@ -68,7 +68,8 @@ export function ChainHome() {
         <section className="fd-wall">
           <h1 className="fd-line">Pick a flight, or open one.</h1>
           <p className="fd-lede">
-            The contract holds every match on this board. Stakes are {CHAIN.network === "mainnet" ? "real NEAR" : "test NEAR"}{limits && limits.fee_bps > 0 ? `; it keeps ${formatBps(limits.fee_bps)} of each pot` : ""}.
+            The contract holds every match on this board. Stakes are {CHAIN.network === "mainnet" ? "real NEAR" : "test NEAR"}
+            {limits && limits.fee_bps > 0 ? `; it keeps ${formatBps(limits.fee_bps)} of each pot` : ""}.
             {sponsor && " A free table costs nothing and needs no NEAR: the house pays the gas."}
           </p>
           <a className="fd-jump" href="#departures">
@@ -131,6 +132,8 @@ function FlightStub({
   const router = useRouter();
   // `null`: not chosen yet, so the first offer stands: a free table where there is one.
   const [chosen, setChosen] = useState<number | null>(null);
+  // A stake of the visitor's own, typed in NEAR: it stands instead of the chips while it is filled in.
+  const [typed, setTyped] = useState("");
   const [opponent, setOpponent] = useState<FreeOpponent>("agent");
   const [rounds, setRounds] = useState(ROUNDS[1]);
   const [seatCount, setSeatCount] = useState(SEAT_COUNTS[0]);
@@ -187,8 +190,13 @@ function FlightStub({
   }
 
   const stakes = [...(sponsor ? [0] : []), ...STAKES.filter((amount) => limits === null || near(amount) <= BigInt(limits.max_stake))];
-  const stake = chosen !== null && stakes.includes(chosen) ? chosen : (stakes[0] ?? STAKES[0]);
-  const free = stake === 0;
+  const largest = limits === null ? 1 : Number(BigInt(limits.max_stake) / 10n ** 21n) / 1000;
+  const own = ownStake(typed, largest);
+  const preset = chosen !== null && stakes.includes(chosen) ? chosen : (stakes[0] ?? STAKES[0]);
+  const stake = typed.trim() && "amount" in own ? own.amount : preset;
+  const typedProblem = typed.trim() && "problem" in own ? own.problem : null;
+  // A stake typed in, even one not taken yet, is never a free table.
+  const free = stake === 0 && !typed.trim();
   const cost = near(stake) + STORAGE_DEPOSIT;
   // Against the house agent: two seats, and the game starts as soon as the visitor sits. Any other table is a room:
   // whoever opens it hosts it, the seats fill as people come, and the game starts when the host says so.
@@ -229,12 +237,42 @@ function FlightStub({
         <span id="fd-stake">Stake a seat</span>
         <div className="fd-segments" role="group" aria-labelledby="fd-stake">
           {stakes.map((amount) => (
-            <button key={amount} type="button" aria-pressed={amount === stake} onClick={() => setChosen(amount)}>
+            <button
+              key={amount}
+              type="button"
+              aria-pressed={!typed.trim() && amount === stake}
+              onClick={() => {
+                setChosen(amount);
+                setTyped("");
+              }}
+            >
               {amount === 0 ? "Free" : amount}
             </button>
           ))}
         </div>
       </div>
+      <div className="fd-pick fd-own">
+        <label htmlFor="fd-own-stake">Or your own</label>
+        <span className="fd-own__box">
+          <input
+            id="fd-own-stake"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
+            placeholder={`${SMALLEST_STAKE} to ${largest}`}
+            value={typed}
+            aria-invalid={typedProblem ? true : undefined}
+            aria-describedby={typedProblem ? "fd-own-problem" : undefined}
+            onChange={(event) => setTyped(event.target.value.replace(",", "."))}
+          />
+          <span aria-hidden="true">NEAR</span>
+        </span>
+      </div>
+      {typedProblem && (
+        <p id="fd-own-problem" className="fd-problem fd-own__problem" role="alert">
+          {typedProblem}
+        </p>
+      )}
       {free && (
         <div className="fd-pick">
           <span id="fd-opponent">Opponent</span>
@@ -329,7 +367,7 @@ function FlightStub({
           </div>
         </dl>
       )}
-      <button type="button" className="fd-go" disabled={!player || opening || short || stakes.length === 0} onClick={open}>
+      <button type="button" className="fd-go" disabled={!player || opening || short || stakes.length === 0 || Boolean(typedProblem)} onClick={open}>
         {!player
           ? free
             ? "Check in to play for free"

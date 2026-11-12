@@ -1836,3 +1836,43 @@ a.fd-row:hover .fd-row__go {
   justify-self: start;
   background: var(--paper, #f8f0d4);
 }
+
+/* A stake of the visitor's own, under the chips: typed in NEAR. */
+.fd-own__box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(100%, 190px);
+}
+
+.fd-own__box input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1.5px solid rgb(42 18 8 / 30%);
+  border-radius: 10px;
+  background-color: #fffaf0;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.fd-own__box input[aria-invalid="true"] {
+  border-color: #b3261e;
+}
+
+.fd-own__box > span {
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
+.fd-own > label {
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.fd-own__problem {
+  margin: 0;
+}

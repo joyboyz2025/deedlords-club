@@ -86,10 +86,13 @@ const seatCall = (method: string, id: string, accountId: string, stake: bigint, 
   deposit: stake + RECORD_FEE,
 });
 
-/** Opens a table of `seats` seats (2 to 9) and takes seat 0. It starts when it is full, or when the host starts it. Returns the table id. */
-export async function openTable(session: Session, seats: number): Promise<string> {
+/**
+ * Opens a table of `seats` seats (2 to 9) and takes seat 0, every seat bought with `stake` (at least 0.1 NEAR) for 100
+ * chips. It starts when it is full, or when the host starts it. Returns the table id.
+ */
+export async function openTable(session: Session, seats: number, stake: bigint = STAKE): Promise<string> {
   const id = newTableId();
-  await session.transact([seatCall("create_match", id, session.accountId, STAKE, { stake: STAKE.toString(), seats, turn_seconds: TURN_SECONDS })]);
+  await session.transact([seatCall("create_match", id, session.accountId, stake, { stake: stake.toString(), seats, turn_seconds: TURN_SECONDS })]);
   return id;
 }
 

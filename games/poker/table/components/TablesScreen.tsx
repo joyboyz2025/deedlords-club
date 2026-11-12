@@ -13,6 +13,7 @@ import { Arrow, Chain, Copy, Seat, User } from "@/components/landing/icons";
 import type { Session } from "@/lib/chain/client";
 import { CHAIN } from "@/lib/chain/config";
 import { useCharacters } from "../../../chibi/useChibi";
+import { near, ownStake } from "../../../co-ty-phu/chain/calls";
 import { signInAsGuest } from "../../../co-ty-phu/chain/keySession";
 import { Flap, Ledger, type LogLine } from "../../components/TableView";
 import {
@@ -142,6 +143,12 @@ function LiveLobby(props: LobbyProps) {
 export function TablesLobby({ session, onSignIn, onOpen, wall, houses }: LobbyProps & { wall: Tables; houses: string[] }) {
   const [balance, setBalance] = useState<bigint | null | undefined>(undefined);
   const [seats, setSeats] = useState(6);
+  // The stake of each seat at the table opened here: a chip, or an amount typed in NEAR (which stands while filled in).
+  const [chip, setChip] = useState(STAKE_CHIPS[0]);
+  const [typed, setTyped] = useState("");
+  const own = ownStake(typed, LARGEST_STAKE, STAKE_CHIPS[0]);
+  const typedProblem = typed.trim() && "problem" in own ? own.problem : null;
+  const stake = near(typed.trim() && "amount" in own ? own.amount : chip);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [copied, setCopied] = useState(false);
@@ -160,7 +167,7 @@ export function TablesLobby({ session, onSignIn, onOpen, wall, houses }: LobbyPr
     setNote("");
     try {
       // The table has changed once when it is created.
-      onOpen(await openTable(session, seats), 1);
+      onOpen(await openTable(session, seats, stake), 1);
     } catch (error) {
       setNote(text(error));
       setBusy(false);
@@ -268,11 +275,48 @@ export function TablesLobby({ session, onSignIn, onOpen, wall, houses }: LobbyPr
               </button>
             ))}
           </div>
+          <div className="pt-stake">
+            <span id="pt-stake">Stake a seat</span>
+            <div className="pt-picker pt-picker--stake" role="group" aria-labelledby="pt-stake">
+              {STAKE_CHIPS.map((amount) => (
+                <button
+                  key={amount}
+                  type="button"
+                  aria-pressed={!typed.trim() && amount === chip}
+                  className="pt-picker__seat"
+                  onClick={() => {
+                    setChip(amount);
+                    setTyped("");
+                  }}
+                >
+                  {amount}
+                </button>
+              ))}
+            </div>
+            <label className="pt-stake__own">
+              <span>Or your own</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                placeholder={`${STAKE_CHIPS[0]} to ${LARGEST_STAKE}`}
+                value={typed}
+                aria-invalid={typedProblem ? true : undefined}
+                onChange={(event) => setTyped(event.target.value.replace(",", "."))}
+              />
+              <b aria-hidden="true">NEAR</b>
+            </label>
+            {typedProblem && (
+              <p className="pk-problem" role="alert">
+                {typedProblem}
+              </p>
+            )}
+          </div>
           <dl className="pk-terms">
             <div>
               <dt>A seat</dt>
               <dd>
-                <b>{asNear(STAKE).replace(" NEAR", "")}</b> NEAR for 100 chips, and a record fee of {asNear(RECORD_FEE)}
+                <b>{asNear(stake).replace(" NEAR", "")}</b> NEAR for 100 chips, and a record fee of {asNear(RECORD_FEE)}
               </dd>
             </div>
             <div>
@@ -290,7 +334,7 @@ export function TablesLobby({ session, onSignIn, onOpen, wall, houses }: LobbyPr
               <dd>when full, or when you start it with two or more</dd>
             </div>
           </dl>
-          <button type="button" className="pk-go" disabled={!session || busy} onClick={open}>
+          <button type="button" className="pk-go" disabled={!session || busy || Boolean(typedProblem)} onClick={open}>
             {busy ? "Opening the table…" : `Open a table of ${seats}`}
           </button>
           {note && (
@@ -671,6 +715,10 @@ function LiveTable({ id, firstSeq, session, onSignIn, onBack }: { id: string; fi
     </>
   );
 }
+
+/** What a seat may cost at a table opened here, in NEAR: the contract takes 0.1 and up; the page stops at 1. */
+const STAKE_CHIPS = [0.1, 0.25, 0.5, 1];
+const LARGEST_STAKE = 1;
 
 /** What the table shows before it is read: nine empty seats. */
 const UNREAD: TableView = {

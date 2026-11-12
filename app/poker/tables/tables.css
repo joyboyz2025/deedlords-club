@@ -618,7 +618,8 @@
   background: rgb(42 18 8 / 6%);
 }
 
-.pt-picker__seat[aria-checked="true"] {
+.pt-picker__seat[aria-checked="true"],
+.pt-picker__seat[aria-pressed="true"] {
   border-color: var(--ink);
   background: var(--ink);
   color: var(--cream);
@@ -772,4 +773,50 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 4px;
   }
+}
+
+/* The stake of a table opened here: chips, or an amount of one's own. */
+.pt-stake {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.pt-stake > span,
+.pt-stake__own > span {
+  color: var(--ink-soft, rgb(42 18 8 / 72%));
+  font-weight: 600;
+}
+
+.pt-picker--stake {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.pt-picker--stake .pt-picker__seat {
+  font-size: 16px;
+}
+
+.pt-stake__own {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.pt-stake__own input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1.5px solid rgb(42 18 8 / 30%);
+  border-radius: 10px;
+  background-color: #fffaf0;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.pt-stake__own input[aria-invalid="true"] {
+  border-color: #b3261e;
 }

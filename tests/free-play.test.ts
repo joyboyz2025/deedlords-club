@@ -247,3 +247,23 @@ test("a free table's id carries its house agents' models, for a server that reme
   assert.equal(idWithHouseSeats("f-abc-wxyz", ["unknown"], offered), "f-abc-wxyz");
   assert.equal(houseSeatModel("f-abc-wxyz", 1, offered), null);
 });
+
+test("a stake of one's own is taken from 0.05 NEAR to the contract's largest, in thousandths at most", async () => {
+  const { ownStake, near } = await import("../games/co-ty-phu/chain/calls.ts");
+  assert.deepEqual(ownStake("0.3", 1), { amount: 0.3 });
+  assert.deepEqual(ownStake(" 0.125 ", 1), { amount: 0.125 });
+  assert.deepEqual(ownStake("1", 1), { amount: 1 });
+  assert.deepEqual(ownStake(".5", 1), { amount: 0.5 });
+  assert.equal(near(0.125), 125_000_000_000_000_000_000_000n);
+  for (const [text, words] of [
+    ["0.01", "smallest"],
+    ["1.5", "at most 1 NEAR"],
+    ["0.1234", "three decimals"],
+    ["abc", "Type an amount"],
+    ["", "Type an amount"],
+    ["-1", "Type an amount"],
+  ] as const) {
+    const answer = ownStake(text, 1);
+    assert.ok("problem" in answer && answer.problem.includes(words), `${text}: ${JSON.stringify(answer)}`);
+  }
+});

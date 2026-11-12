@@ -85,7 +85,14 @@ export const FREE_AGENT_SEAT = 1;
  * also sits in the second seat, which its agent plays. `room`: a table for friends, of that many seats, which the
  * visitor who asked for it hosts: it starts when they say so.
  */
-export function freeTableCalls(id: string, maxRounds: number, turnSeconds: number, withAgent: boolean, room: { host: string; seats: number } | null = null, agents = 1): FunctionCall[] {
+export function freeTableCalls(
+  id: string,
+  maxRounds: number,
+  turnSeconds: number,
+  withAgent: boolean,
+  room: { host: string; seats: number } | null = null,
+  agents = 1,
+): FunctionCall[] {
   const seats = withAgent ? 1 + agents : room?.seats;
   const create = createDuelCall(id, { stake: 0n, maxRounds, turnSeconds, seats, host: room?.host });
   if (!withAgent) return [create];
@@ -136,6 +143,20 @@ export const near = (amount: number): bigint => BigInt(Math.round(amount * 1000)
 
 /** The smallest stake a seat may cost in a match opened from the web page, in NEAR. */
 export const SMALLEST_STAKE = 0.05;
+
+/**
+ * A stake typed by the visitor, in NEAR: from the smallest the page opens with to the largest the contract allows, in
+ * thousandths of a NEAR at most (what `near()` turns into yoctoNEAR exactly).
+ */
+export function ownStake(text: string, largest: number, smallest: number = SMALLEST_STAKE): { amount: number } | { problem: string } {
+  const clean = text.trim();
+  if (!/^\d*(\.\d*)?$/.test(clean) || clean === "" || clean === ".") return { problem: "Type an amount in NEAR, like 0.3" };
+  if (!/^\d*(\.\d{0,3})?$/.test(clean)) return { problem: "At most three decimals, like 0.125" };
+  const amount = Number(clean);
+  if (amount < smallest) return { problem: `The smallest stake is ${smallest} NEAR` };
+  if (amount > largest) return { problem: `This contract takes at most ${largest} NEAR a seat` };
+  return { amount };
+}
 
 /**
  * What a game account must hold to open a duel on these terms: enough for a node to take the transaction (stake,
