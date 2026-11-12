@@ -76,7 +76,11 @@ const fmt = (yocto) => `${(Number(BigInt(yocto) / 10n ** 18n) / 1e6).toFixed(4)}
 const hashOf = (bytes) => utils.serialize.base_encode(crypto.createHash("sha256").update(bytes).digest());
 
 async function rpc(method, params) {
-  const response = await fetch(RPC, { method: "POST", headers: { "content-type": "application/json", "user-agent": "deedlords-deploy/0.1" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
+  const response = await fetch(RPC, {
+    method: "POST",
+    headers: { "content-type": "application/json", "user-agent": "deedlords-deploy/0.1" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
   const body = await response.json();
   if (body.error) {
     if (body.error.cause?.name === "UNKNOWN_ACCOUNT") return null;
@@ -85,7 +89,19 @@ async function rpc(method, params) {
   return body.result;
 }
 const view = async (id, method, args = {}) =>
-  JSON.parse(Buffer.from((await rpc("query", { request_type: "call_function", finality: "final", account_id: id, method_name: method, args_base64: Buffer.from(JSON.stringify(args)).toString("base64") })).result).toString());
+  JSON.parse(
+    Buffer.from(
+      (
+        await rpc("query", {
+          request_type: "call_function",
+          finality: "final",
+          account_id: id,
+          method_name: method,
+          args_base64: Buffer.from(JSON.stringify(args)).toString("base64"),
+        })
+      ).result,
+    ).toString(),
+  );
 const viewAccount = (id) => rpc("query", { request_type: "view_account", finality: "final", account_id: id });
 
 async function main() {
@@ -121,7 +137,20 @@ async function rehearse() {
     for (let i = 0; i < 40 && !(await viewAccount(PARENT)); i++) await new Promise((done) => setTimeout(done, 250));
     await deploy("run", keyStore, null);
     const rpcView = view;
-    const viewGame = async (method, args = {}) => JSON.parse(Buffer.from((await rpc("query", { request_type: "call_function", finality: "final", account_id: `game.${PARENT}`, method_name: method, args_base64: Buffer.from(JSON.stringify(args)).toString("base64") })).result).toString());
+    const viewGame = async (method, args = {}) =>
+      JSON.parse(
+        Buffer.from(
+          (
+            await rpc("query", {
+              request_type: "call_function",
+              finality: "final",
+              account_id: `game.${PARENT}`,
+              method_name: method,
+              args_base64: Buffer.from(JSON.stringify(args)).toString("base64"),
+            })
+          ).result,
+        ).toString(),
+      );
     const config = await viewGame("get_config");
     assert.equal(config.owner, PARENT);
     assert.equal(config.house, `house.${PARENT}`);
@@ -139,7 +168,19 @@ async function rehearse() {
       assert.equal(poker.code_hash, hashOf(fs.readFileSync(POKER_WASM)), "the poker code is live");
       const init = JSON.parse(pokerInit());
       if (init.owner) {
-        const config = JSON.parse(Buffer.from((await rpc("query", { request_type: "call_function", finality: "final", account_id: `poker.${PARENT}`, method_name: "get_config", args_base64: Buffer.from("{}").toString("base64") })).result).toString());
+        const config = JSON.parse(
+          Buffer.from(
+            (
+              await rpc("query", {
+                request_type: "call_function",
+                finality: "final",
+                account_id: `poker.${PARENT}`,
+                method_name: "get_config",
+                args_base64: Buffer.from("{}").toString("base64"),
+              })
+            ).result,
+          ).toString(),
+        );
         assert.equal(config.owner, PARENT);
         assert.equal(config.fee_bps, init.fee_bps);
       }
@@ -161,7 +202,6 @@ async function rehearse() {
 }
 
 async function deploy(mode, keyStore, keyFile) {
-
   const game = `game.${PARENT}`;
   const house = `house.${PARENT}`;
   const poker = `poker.${PARENT}`;
@@ -174,7 +214,14 @@ async function deploy(mode, keyStore, keyFile) {
 
   const steps = [];
   const gameFund = BigInt(wasm.length + 2_000) * BYTE + STATE_ROOM;
-  if (!gameOnChain) steps.push({ what: `create ${game} with ${fmt(gameFund)} (${wasm.length} bytes of code at 1 NEAR per 100 KB, plus ${fmt(STATE_ROOM)} for state)`, cost: gameFund, kind: "create", id: game, fund: gameFund });
+  if (!gameOnChain)
+    steps.push({
+      what: `create ${game} with ${fmt(gameFund)} (${wasm.length} bytes of code at 1 NEAR per 100 KB, plus ${fmt(STATE_ROOM)} for state)`,
+      cost: gameFund,
+      kind: "create",
+      id: game,
+      fund: gameFund,
+    });
   if (!gameOnChain || gameOnChain.code_hash !== hashOf(wasm))
     steps.push({
       what: `deploy ${path.basename(GAME_WASM)} (hash ${hashOf(wasm)}) to ${game} and call new(owner=${PARENT}, house=${house}, max_stake=${fmt(MAX_STAKE)}, fee_bps=${FEE_BPS}) in one transaction`,
@@ -194,12 +241,25 @@ async function deploy(mode, keyStore, keyFile) {
         kind: "deploy-poker",
         fresh: !pokerOnChain || pokerOnChain.code_hash === "11111111111111111111111111111111",
       });
-    if (!sweepOnChain) steps.push({ what: `create ${sweep} with ${fmt(SWEEP_FUND)} (calls time on abandoned poker tables; never sits down)`, cost: SWEEP_FUND, kind: "create", id: sweep, fund: SWEEP_FUND });
+    if (!sweepOnChain)
+      steps.push({
+        what: `create ${sweep} with ${fmt(SWEEP_FUND)} (calls time on abandoned poker tables; never sits down)`,
+        cost: SWEEP_FUND,
+        kind: "create",
+        id: sweep,
+        fund: SWEEP_FUND,
+      });
   }
   // The AI's accounts: the free tables' sponsor, and poker house seats only when asked for.
   const sponsorId = `free.${PARENT}`;
   if (SPONSOR_FUND > 0n && !(await viewAccount(sponsorId)))
-    steps.push({ what: `create ${sponsorId} with ${fmt(SPONSOR_FUND)} (free tables: the house's AI agents play, this account pays the gas)`, cost: SPONSOR_FUND, kind: "create", id: sponsorId, fund: SPONSOR_FUND });
+    steps.push({
+      what: `create ${sponsorId} with ${fmt(SPONSOR_FUND)} (free tables: the house's AI agents play, this account pays the gas)`,
+      cost: SPONSOR_FUND,
+      kind: "create",
+      id: sponsorId,
+      fund: SPONSOR_FUND,
+    });
   // The characters: created, deployed with its new in one transaction, and its free pool topped up.
   const chibi = `chibi.${PARENT}`;
   const chibiWasm = CHIBI_WASM && fs.existsSync(CHIBI_WASM) ? fs.readFileSync(CHIBI_WASM) : null;
@@ -217,15 +277,30 @@ async function deploy(mode, keyStore, keyFile) {
         fresh,
       });
     const pool = fresh ? 0n : BigInt((await view(chibi, "settings")).freePool);
-    if (pool < CHIBI_POOL) steps.push({ what: `fund_free_pool on ${chibi} with ${fmt(CHIBI_POOL - pool)} from ${PARENT} (pays the storage of guests' free characters)`, cost: CHIBI_POOL - pool, kind: "chibi-pool", deposit: CHIBI_POOL - pool });
+    if (pool < CHIBI_POOL)
+      steps.push({
+        what: `fund_free_pool on ${chibi} with ${fmt(CHIBI_POOL - pool)} from ${PARENT} (pays the storage of guests' free characters)`,
+        cost: CHIBI_POOL - pool,
+        kind: "chibi-pool",
+        deposit: CHIBI_POOL - pool,
+      });
   }
   const houseIds = Array.from({ length: pokerWasm ? POKER_HOUSES : 0 }, (_, i) => `pokerhouse${i === 0 ? "" : i + 1}.${PARENT}`);
   for (const id of houseIds)
-    if (!(await viewAccount(id))) steps.push({ what: `create ${id} with ${fmt(POKER_HOUSE_FUND)} (an AI seat at poker: it stakes REAL NEAR)`, cost: POKER_HOUSE_FUND, kind: "create", id, fund: POKER_HOUSE_FUND });
+    if (!(await viewAccount(id)))
+      steps.push({
+        what: `create ${id} with ${fmt(POKER_HOUSE_FUND)} (an AI seat at poker: it stakes REAL NEAR)`,
+        cost: POKER_HOUSE_FUND,
+        kind: "create",
+        id,
+        fund: POKER_HOUSE_FUND,
+      });
   const total = steps.reduce((sum, step) => sum + step.cost, 0n) + PARENT_KEEPS;
 
   console.log(`NEAR ${NETWORK.toUpperCase()} via ${RPC}`);
-  console.log(`parent ${PARENT}: ${parentOnChain ? `exists, ${fmt(parentOnChain.amount)}` : "DOES NOT EXIST: create it in a NEAR wallet first"}; key ${hasKey ? (keyFile ?? "in memory") : `MISSING at ${keyFile}`}`);
+  console.log(
+    `parent ${PARENT}: ${parentOnChain ? `exists, ${fmt(parentOnChain.amount)}` : "DOES NOT EXIST: create it in a NEAR wallet first"}; key ${hasKey ? (keyFile ?? "in memory") : `MISSING at ${keyFile}`}`,
+  );
   console.log(`game   ${game}: ${gameOnChain ? `exists, ${fmt(gameOnChain.amount)}, code ${gameOnChain.code_hash}` : "to create"}`);
   console.log(`house  ${house}: ${houseOnChain ? `exists, ${fmt(houseOnChain.amount)}` : "to create"}`);
   console.log(`poker  ${poker}: ${pokerWasm ? (pokerOnChain ? `exists, code ${pokerOnChain.code_hash}` : "to create") : "skipped (no POKER_WASM)"}`);
@@ -235,7 +310,9 @@ async function deploy(mode, keyStore, keyFile) {
   steps.forEach((step, i) => console.log(`  ${i + 1}. ${step.what}`));
   console.log(`\nThe parent needs about ${fmt(total)} (the steps, plus ${fmt(PARENT_KEEPS)} kept for gas).`);
   console.log(`\nThe mainnet server then runs with (npm run start:mainnet sets these):`);
-  console.log(`  NEXT_PUBLIC_NEAR_NETWORK=mainnet${SPONSOR_FUND > 0n ? ` DEEDLORDS_SPONSOR_ACCOUNT=${sponsorId}` : ""}${pokerWasm ? ` POKER_SWEEP_ACCOUNT=pokersweep.${PARENT}` : ""}${houseIds.length ? ` POKER_HOUSE_ACCOUNTS=${houseIds.join(",")}` : ""}`);
+  console.log(
+    `  NEXT_PUBLIC_NEAR_NETWORK=mainnet${SPONSOR_FUND > 0n ? ` DEEDLORDS_SPONSOR_ACCOUNT=${sponsorId}` : ""}${pokerWasm ? ` POKER_SWEEP_ACCOUNT=pokersweep.${PARENT}` : ""}${houseIds.length ? ` POKER_HOUSE_ACCOUNTS=${houseIds.join(",")}` : ""}`,
+  );
   const short = parentOnChain ? total - BigInt(parentOnChain.amount) : total;
   if (short > 0n) console.log(`It is ${fmt(short)} short: send that much to ${PARENT} before run.`);
   if (mode === "plan" || steps.length === 0) return;
@@ -278,7 +355,13 @@ async function deploy(mode, keyStore, keyFile) {
       console.log(`  deployed to ${id}: tx ${done.transaction.hash}`);
     }
   }
-  const config = await rpc("query", { request_type: "call_function", finality: "final", account_id: game, method_name: "get_config", args_base64: Buffer.from("{}").toString("base64") });
+  const config = await rpc("query", {
+    request_type: "call_function",
+    finality: "final",
+    account_id: game,
+    method_name: "get_config",
+    args_base64: Buffer.from("{}").toString("base64"),
+  });
   console.log(`\n${game} get_config: ${Buffer.from(config.result).toString()}`);
 }
 
