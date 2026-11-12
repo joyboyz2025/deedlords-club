@@ -11,12 +11,31 @@ import paper from "@/assets/plates/strip-paper.png";
 import { Chain, Copy, Seat, User } from "@/components/landing/icons";
 import type { Session } from "@/lib/chain/client";
 import { CHAIN } from "@/lib/chain/config";
+import { useCharacters } from "../../chibi/useChibi";
 import { signInAsGuest } from "../../co-ty-phu/chain/keySession";
-import { POKER_CONTRACT, STAKE, TURN_SECONDS, type Result, explorerLink, openTable, pokerClient, pokerSession, readMatch, seatKeys, seatStore, send, takeSeat, viewResult } from "../chain";
-import { type MatchView, duty, holeCards } from "../seat";
+import {
+  POKER_CONTRACT,
+  STAKE,
+  TURN_SECONDS,
+  type Result,
+  explorerLink,
+  openTable,
+  pokerClient,
+  pokerSession,
+  readMatch,
+  seatKeys,
+  seatStore,
+  send,
+  takeSeat,
+  viewResult,
+} from "../chain";
+import { type MatchView, betOptions, duty, holeCards } from "../seat";
+import { askHouse, useHouse } from "../useHouse";
+import { useSeatAgent } from "../useSeatAgent";
+import { type Tables, useTables } from "../useTables";
 import { PlayingCard } from "./Cards";
 import { DemoTable } from "./Demo";
-import { type Doing, Flap, type Hole, Ledger, type LogLine, TableView } from "./TableView";
+import { type Doing, Flap, type Hole, Ledger, type LogLine, TableView, Wall } from "./TableView";
 
 export const inNear = (yocto: string | bigint): string => `${(Number(BigInt(yocto) / 10n ** 20n) / 10_000).toFixed(4)} NEAR`;
 const text = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -41,17 +60,25 @@ const SENT: Record<string, (view: MatchView) => string> = {
 /** The page: the red hall, the top row, and the two plates the stylesheet paints with. */
 export function Shell({ children }: { children: ReactNode }) {
   return (
-    <main className="pk" style={{ "--pk-paper": `url(${paper.src})`, "--pk-foil": `url(${goldFoil.src})` } as CSSProperties}>
+    <main
+      className="pk"
+      style={
+        {
+          "--pk-paper": `url(${paper.src})`,
+          "--pk-foil": `url(${goldFoil.src})`,
+        } as CSSProperties
+      }
+    >
       <header className="pk-top">
-        <Link className="pk-mark" href="/">
-          Deedlords
+        <Link className="pk-mark" href="/" aria-label="Deedlords Club, home">
+          Deedlords <small>Club</small>
         </Link>
         <nav aria-label="Deedlords">
-          <Link href="/play">Board game</Link>
+          <Link href="/play">Deedlords</Link>
+          <Link href="/poker/tables">Poker</Link>
           <Link href="/arena">Arena</Link>
-          <Link href="/poker" aria-current="page">
-            Poker
-          </Link>
+          <Link href="/character">Character</Link>
+          <Link href="/agents">Agents</Link>
         </nav>
         <span className="pk-net">
           <Chain size={16} /> NEAR {CHAIN.network}
@@ -66,7 +93,11 @@ export function Shell({ children }: { children: ReactNode }) {
 export function PokerScreen() {
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
-  const [table, setTable] = useState<{ id: string; seq: number } | null>(null);
+  const [table, setTable] = useState<{
+    id: string;
+    seq: number;
+    note?: string;
+  } | null>(null);
   const [demo, setDemo] = useState<string | null>(null);
 
   useEffect(() => {
@@ -78,7 +109,7 @@ export function PokerScreen() {
     setReady(true);
   }, []);
 
-  const show = (next: { id: string; seq: number } | null) => {
+  const show = (next: { id: string; seq: number; note?: string } | null) => {
     window.history.replaceState(null, "", next ? `/poker?m=${next.id}` : "/poker");
     setTable(next);
   };
@@ -92,9 +123,9 @@ export function PokerScreen() {
       {!ready ? null : demo !== null ? (
         <DemoTable start={demo} />
       ) : table && session ? (
-        <Table key={table.id} id={table.id} firstSeq={table.seq} session={session} onBack={() => show(null)} />
+        <Table key={table.id} id={table.id} firstSeq={table.seq} firstNote={table.note} session={session} onBack={() => show(null)} />
       ) : (
-        <Lobby session={session} invited={table?.id ?? null} onSignIn={signIn} onSeated={(id, seq) => show({ id, seq })} />
+        <LiveLobby session={session} invited={table?.id ?? null} onSignIn={signIn} onSeated={(id, seq, note) => show({ id, seq, note })} />
       )}
     </Shell>
   );
@@ -102,16 +133,56 @@ export function PokerScreen() {
 
 /** How a hand is dealt, as the lobby's board lists it. The times are what the steps took on testnet. */
 const STEPS: { step: string; by: string; check: string; time: string }[] = [
-  { step: "Shuffle", by: "each seat, the button first", check: "a zero-knowledge proof that the new deck is a shuffle of the one before it", time: "5 s a seat" },
-  { step: "Deal", by: "each seat", check: "a proof that every share unlocking the other seat's cards was made with the right key", time: "3 s a seat" },
-  { step: "Bet", by: "the seat to act", check: "whose turn it is, and what the bet may be", time: "2 s" },
-  { step: "Flop, turn, river", by: "both seats", check: "the same proof for every share; a card turns when both seats' shares are in", time: "9 s a street" },
-  { step: "Showdown", by: "both seats", check: "the shares that open each seat's own cards; then it ranks the hands and pays the pot", time: "3 s a seat" },
+  {
+    step: "Shuffle",
+    by: "each seat, the button first",
+    check: "a zero-knowledge proof that the new deck is a shuffle of the one before it",
+    time: "5 s a seat",
+  },
+  {
+    step: "Deal",
+    by: "each seat",
+    check: "a proof that every share unlocking the other seat's cards was made with the right key",
+    time: "3 s a seat",
+  },
+  {
+    step: "Bet",
+    by: "the seat to act",
+    check: "whose turn it is, and what the bet may be",
+    time: "2 s",
+  },
+  {
+    step: "Flop, turn, river",
+    by: "both seats",
+    check: "the same proof for every share; a card turns when both seats' shares are in",
+    time: "9 s a street",
+  },
+  {
+    step: "Showdown",
+    by: "both seats",
+    check: "the shares that open each seat's own cards; then it ranks the hands and pays the pot",
+    time: "3 s a seat",
+  },
 ];
 
-export function Lobby({ session, invited, onSignIn, onSeated }: { session: Session | null; invited: string | null; onSignIn: () => void; onSeated: (id: string, seq: number) => void }) {
+type LobbyProps = {
+  session: Session | null;
+  invited: string | null;
+  onSignIn: () => void;
+  onSeated: (id: string, seq: number, note?: string) => void;
+};
+
+/** The lobby fed from the chain and from this server: the tables the contract holds, and whether there is a house. */
+function LiveLobby(props: LobbyProps) {
+  const wall = useTables();
+  const house = useHouse(null, null).account;
+  return <Lobby {...props} wall={wall} house={house} />;
+}
+
+export function Lobby({ session, invited, onSignIn, onSeated, wall, house }: LobbyProps & { wall: Tables; house: string | null | undefined }) {
   const [balance, setBalance] = useState<bigint | null | undefined>(undefined);
-  const [busy, setBusy] = useState(false);
+  /** What is under way: opening a table (`table`), or opening one and asking the house to sit (`house`). */
+  const [busy, setBusy] = useState<"" | "table" | "house">("");
   const [note, setNote] = useState("");
   const [copied, setCopied] = useState(false);
 
@@ -125,14 +196,35 @@ export function Lobby({ session, invited, onSignIn, onSeated }: { session: Sessi
 
   const open = async (bothSeats: boolean) => {
     if (!session) return;
-    setBusy(true);
+    setBusy("table");
     setNote("");
     try {
       // The match has changed once when it is created, twice when both seats are taken.
       onSeated(await openTable(session, bothSeats), bothSeats ? 2 : 1);
     } catch (error) {
       setNote(text(error));
-      setBusy(false);
+      setBusy("");
+    }
+  };
+
+  /** Opens a table and asks the house to take its second seat. If it will not, the table stays open for a friend. */
+  const playHouse = async () => {
+    if (!session) return;
+    setBusy("house");
+    setNote("");
+    let id: string;
+    try {
+      id = await openTable(session, false);
+    } catch (error) {
+      setNote(text(error));
+      setBusy("");
+      return;
+    }
+    try {
+      const played = await askHouse(id);
+      onSeated(id, 1, played.played ? undefined : `The house did not sit: ${played.why} Your table is open; send its link to a friend, or close it.`);
+    } catch (error) {
+      onSeated(id, 1, `The house did not answer (${text(error)}). Your table is open; send its link to a friend, or close it.`);
     }
   };
 
@@ -146,8 +238,8 @@ export function Lobby({ session, invited, onSignIn, onSeated }: { session: Sessi
           <h1 className="pk-line">Poker with no dealer.</h1>
           <div className="pk-wallhead__lede">
             <p className="pk-lede">
-              Heads-up Texas Hold&apos;em on NEAR {CHAIN.network}. The two seats shuffle and deal one deck with their own keys. The contract takes a deck only with a zero-knowledge proof that it is an honest shuffle, and a card only with a
-              proof that it was turned with the right key.
+              Heads-up Texas Hold&apos;em on NEAR {CHAIN.network}. The two seats shuffle and deal one deck with their own keys. The contract takes a deck only with a zero-knowledge
+              proof that it is an honest shuffle, and a card only with a proof that it was turned with the right key.
             </p>
           </div>
           <div className="pk-fan" aria-hidden="true">
@@ -158,6 +250,8 @@ export function Lobby({ session, invited, onSignIn, onSeated }: { session: Sessi
             ))}
           </div>
         </div>
+
+        <Wall wall={wall} you={session?.accountId ?? null} house={house ?? null} onOpen={(id) => onSeated(id, 0)} />
 
         <section className="pk-board" aria-label="How a hand is dealt">
           <h2 className="pk-board__title">
@@ -231,7 +325,8 @@ export function Lobby({ session, invited, onSignIn, onSeated }: { session: Sessi
               {short && (
                 <>
                   <p className="pk-fine">
-                    This account holds too little to play. Keep about 0.6 NEAR on it for one seat, 0.8 to play both. Send it test NEAR on {CHAIN.network} and this page shows the balance.{" "}
+                    This account holds too little to play. Keep about 0.6 NEAR on it for one seat, 0.8 to play both. Send it test NEAR on {CHAIN.network} and this page shows the
+                    balance.{" "}
                     {CHAIN.network === "testnet" && (
                       <a href="https://docs.near.org/getting-started/faucet" target="_blank" rel="noreferrer noopener">
                         Ask a testnet faucet
@@ -289,11 +384,28 @@ export function Lobby({ session, invited, onSignIn, onSeated }: { session: Sessi
               <dd>about 0.03 NEAR a seat, a hand</dd>
             </div>
           </dl>
-          <button type="button" className="pk-go" disabled={!session || busy} onClick={() => open(true)}>
-            {busy ? "Opening the table…" : "Play both seats in this browser"}
-          </button>
+          {house !== null && (
+            <>
+              <button type="button" className="pk-go" disabled={!session || busy !== "" || house === undefined} onClick={playHouse}>
+                {busy === "house" ? "Opening the table, asking the house…" : house === undefined ? "Looking for the house…" : "Play the house"}
+              </button>
+              <p className="pk-fine">
+                The house is this server&apos;s own account. It stakes its own NEAR and a model plays it (or the odds, when the model is busy). It sees only its own two cards, like
+                any seat.
+              </p>
+            </>
+          )}
           <div className="pk-acts">
-            <button type="button" className="pk-pill" disabled={!session || busy} onClick={() => open(false)}>
+            {house === null ? (
+              <button type="button" className="pk-go" disabled={!session || busy !== ""} onClick={() => open(true)}>
+                {busy === "table" ? "Opening the table…" : "Play both seats in this browser"}
+              </button>
+            ) : (
+              <button type="button" className="pk-pill" disabled={!session || busy !== ""} onClick={() => open(true)}>
+                {busy === "table" ? "Opening the table…" : "Play both seats here"}
+              </button>
+            )}
+            <button type="button" className="pk-pill" disabled={!session || busy !== ""} onClick={() => open(false)}>
               Open a table for a friend
             </button>
           </div>
@@ -303,8 +415,8 @@ export function Lobby({ session, invited, onSignIn, onSeated }: { session: Sessi
             </p>
           )}
           <p className="pk-fine">
-            Keep about 0.6 NEAR in the account for one seat, 0.8 to play both. Nearly all the gas of a hand goes to checking the shuffle proof, and that call must be able to reserve 0.26 NEAR before it is sent. The stakes are test NEAR:
-            what a seat holds when the table closes is paid back; the record fee is not.
+            Keep about 0.6 NEAR in the account for one seat, 0.8 to play both. Nearly all the gas of a hand goes to checking the shuffle proof, and that call must be able to
+            reserve 0.26 NEAR before it is sent. The stakes are test NEAR: what a seat holds when the table closes is paid back; the record fee is not.
           </p>
         </section>
       </div>
@@ -312,7 +424,7 @@ export function Lobby({ session, invited, onSignIn, onSeated }: { session: Sessi
   );
 }
 
-function Table({ id, firstSeq, session, onBack }: { id: string; firstSeq: number; session: Session; onBack: () => void }) {
+function Table({ id, firstSeq, firstNote, session, onBack }: { id: string; firstSeq: number; firstNote?: string; session: Session; onBack: () => void }) {
   /** `undefined`: not read yet. `null`: the match is gone (settled, or there never was one). */
   const [view, setView] = useState<MatchView | null | undefined>(undefined);
   const [result, setResult] = useState<Result | null>(null);
@@ -320,7 +432,7 @@ function Table({ id, firstSeq, session, onBack }: { id: string; firstSeq: number
   const [log, setLog] = useState<LogLine[]>([]);
   /** What the reading loop could not do, and what the last click could not do. */
   const [trouble, setTrouble] = useState("");
-  const [refused, setRefused] = useState("");
+  const [refused, setRefused] = useState(firstNote ?? "");
   const [doing, setDoing] = useState<Doing>(null);
   const [sending, setSending] = useState(false);
   /** After a click the buttons stay off until the page has read the match that click made. */
@@ -383,7 +495,10 @@ function Table({ id, firstSeq, session, onBack }: { id: string; firstSeq: number
           if (seat !== undefined && at.phase !== "bet" && at.phase !== "lobby" && !waitsForClick) {
             // Proving a shuffle holds the page for a second or two: the table is drawn at this step first, so the
             // deck is already being riffled when the work starts.
-            setDoing({ seat, what: at.phase === "showdown" ? "show" : at.phase });
+            setDoing({
+              seat,
+              what: at.phase === "showdown" ? "show" : at.phase,
+            });
             await painted();
             try {
               const call = await duty(at, seat, seatKeys(id, seat)!, store);
@@ -440,6 +555,30 @@ function Table({ id, firstSeq, session, onBack }: { id: string; firstSeq: number
   };
   const call = (line: string, seat: number | undefined, method: string, args: Record<string, unknown>) => click(line, seat, () => send(session, { method, args: { id, ...args } }));
 
+  // The house plays its seat when the table waits for it; the player's own agent may bet for the player's seats.
+  const house = useHouse(id, view);
+  const latestView = useRef(view);
+  useEffect(() => {
+    latestView.current = view;
+  }, [view]);
+  const latestCall = useRef(call);
+  useEffect(() => {
+    latestCall.current = call;
+  });
+  const [agentSaid, setAgentSaid] = useState<string | null>(null);
+  const agentBet = useCallback(async (seat: number, action: "fold" | "call" | "raise", amount?: number): Promise<boolean> => {
+    const at = latestView.current;
+    const owed = at ? betOptions(at, seat).owed : 0;
+    const words = action === "fold" ? "folds" : action === "raise" ? `raises to ${amount}` : owed > 0 ? `calls ${owed}` : "checks";
+    const took = await latestCall.current(`Seat ${seat + 1}'s agent ${words}`, seat, "act", { seat, action, amount: amount ?? null });
+    if (took) setAgentSaid(words);
+    return took;
+  }, []);
+  const mineNow = view ? seatsOf(view) : [];
+  // The seats by their chibi characters, read from the chibi contract: the table draws them and shows their names.
+  const characterOf = useCharacters(view?.players ?? []);
+  const agent = useSeatAgent(id, view, mineNow, hole.hand === view?.hand ? hole.cards : [null, null], sending || (view ? view.seq < lockUntil : true), agentBet, session.accountId);
+
   if (view === undefined) {
     return (
       <TableView
@@ -457,11 +596,18 @@ function Table({ id, firstSeq, session, onBack }: { id: string; firstSeq: number
         explorer={explorerLink}
         stake=""
         reading
-        on={{ act: idle, deal: idle, leave: idle, claim: idle, close: idle, take: idle }}
+        on={{
+          act: idle,
+          deal: idle,
+          leave: idle,
+          claim: idle,
+          close: idle,
+          take: idle,
+        }}
       />
     );
   }
-  if (view === null) return <Settled id={id} result={result} log={log} onBack={onBack} />;
+  if (view === null) return <Settled id={id} result={result} log={log} onBack={onBack} house={house.account} />;
 
   return (
     <TableView
@@ -478,8 +624,16 @@ function Table({ id, firstSeq, session, onBack }: { id: string; firstSeq: number
       link={`${window.location.origin}/poker?m=${id}`}
       explorer={explorerLink}
       stake={inNear(BigInt(view.stake) + RECORD_FEE)}
+      characters={[0, 1].map((seat) => (view.players[seat] ? characterOf.get(view.players[seat]) : null))}
+      house={house}
+      agent={{ ...agent, said: agentSaid }}
       on={{
-        act: (seat, action, amount, line) => void call(`Seat ${seat + 1} ${line}`, seat, "act", { seat, action, amount }),
+        act: (seat, action, amount, line) =>
+          void call(`Seat ${seat + 1} ${line}`, seat, "act", {
+            seat,
+            action,
+            amount,
+          }),
         deal: () => {
           dealt.current = view.hand;
           setDealtHand(view.hand);
@@ -528,7 +682,22 @@ const REASONS: Record<string, string> = {
   busted: "a seat ran out of chips",
 };
 
-export function Settled({ id, result, log, onBack, explorer = explorerLink }: { id: string; result: Result | null; log: LogLine[]; onBack: () => void; explorer?: (hash: string) => string | null }) {
+export function Settled({
+  id,
+  result,
+  log,
+  onBack,
+  explorer = explorerLink,
+  house = null,
+}: {
+  id: string;
+  result: Result | null;
+  log: LogLine[];
+  onBack: () => void;
+  explorer?: (hash: string) => string | null;
+  /** The house's account, to name its seat. */
+  house?: string | null;
+}) {
   const back = (
     <button type="button" className="pk-go" onClick={onBack}>
       Back to the lobby
@@ -559,7 +728,8 @@ export function Settled({ id, result, log, onBack, explorer = explorerLink }: { 
       <div>
         <h1 className="pk-line">Table settled.</h1>
         <p className="pk-lede">
-          Table <span className="pk-code">{id}</span> closed after {result.hands} {result.hands === 1 ? "hand" : "hands"}: {REASONS[result.reason] ?? result.reason}. The contract paid out in the transaction that closed it.
+          Table <span className="pk-code">{id}</span> closed after {result.hands} {result.hands === 1 ? "hand" : "hands"}: {REASONS[result.reason] ?? result.reason}. The contract
+          paid out in the transaction that closed it.
         </p>
         <section className="pk-board" aria-label="What the table paid">
           <h2 className="pk-board__title">
@@ -575,7 +745,7 @@ export function Settled({ id, result, log, onBack, explorer = explorerLink }: { 
                   <small className="pk-label">
                     Seat {seat + 1} · {result.chips[seat]} chips
                   </small>
-                  <strong title={result.players[seat]}>{result.players[seat]}</strong>
+                  <strong title={result.players[seat]}>{result.players[seat] === house ? "The house" : result.players[seat]}</strong>
                 </span>
                 <Flap text={first === second ? "EVEN" : (seat === 0 ? first > second : second > first) ? "AHEAD" : "BEHIND"} />
                 <span className="pk-result__paid">

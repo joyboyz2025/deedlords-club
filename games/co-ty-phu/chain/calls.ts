@@ -85,9 +85,26 @@ export const FREE_AGENT_SEAT = 1;
  * also sits in the second seat, which its agent plays. `room`: a table for friends, of that many seats, which the
  * visitor who asked for it hosts: it starts when they say so.
  */
-export function freeTableCalls(id: string, maxRounds: number, turnSeconds: number, withAgent: boolean, room: { host: string; seats: number } | null = null): FunctionCall[] {
-  const create = createDuelCall(id, { stake: 0n, maxRounds, turnSeconds, seats: room?.seats, host: room?.host });
-  return withAgent ? [create, ...joinCalls(id, FREE_AGENT_SEAT, 0n)] : [create];
+export function freeTableCalls(id: string, maxRounds: number, turnSeconds: number, withAgent: boolean, room: { host: string; seats: number } | null = null, agents = 1): FunctionCall[] {
+  const seats = withAgent ? 1 + agents : room?.seats;
+  const create = createDuelCall(id, { stake: 0n, maxRounds, turnSeconds, seats, host: room?.host });
+  if (!withAgent) return [create];
+  // The house's agents take every seat but the visitor's: the last seat taken, the visitor's, starts the game.
+  return [create, ...Array.from({ length: agents }, (_, i) => joinCalls(id, FREE_AGENT_SEAT + i, 0n)).flat()];
+}
+
+/** The most gas one transaction may carry. */
+const TX_GAS = 300n * TGAS;
+
+/** Calls in order, cut into transactions that each fit the gas one transaction may carry. */
+export function inTransactions(calls: FunctionCall[]): FunctionCall[][] {
+  const batches: FunctionCall[][] = [];
+  for (const call of calls) {
+    const last = batches.at(-1);
+    if (last && last.reduce((sum, one) => sum + one.gas, 0n) + call.gas <= TX_GAS) last.push(call);
+    else batches.push([call]);
+  }
+  return batches;
 }
 
 export function joinCalls(id: string, seat: number, stake: bigint): FunctionCall[] {

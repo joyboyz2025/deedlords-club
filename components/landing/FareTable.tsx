@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 
-// What a seat in a duel returns, by the contract's own arithmetic: the pot is two stakes, the contract keeps 2.5% of
-// it, first place takes 70% of the rest and second place 30%. Nothing here is a forecast: the win rate is the reader's.
+// What a seat in a duel returns, by the contract's own arithmetic: the pot is two stakes, the contract keeps its fee
+// (0 for now; its owner may set up to 5% for matches opened later), first place takes 70% of the rest and second place
+// 30%. Nothing here is a forecast: the win rate is the reader's.
 
 const STAKES = [0.05, 0.1, 0.25, 0.5, 1];
-const FEE = 0.025;
+/** The fee of a match opened today. Keep in step with the contract's `fee_bps` (its `get_config`). */
+const FEE = 0;
 const SHARES = [0.7, 0.3];
 
 const near = (amount: number) => `${Number(amount.toFixed(5))} NEAR`;
@@ -46,7 +48,7 @@ export function FareTable() {
         </div>
         <div>
           <dt>The contract keeps</dt>
-          <dd>{near(stake * 2 * FEE)} of the pot (2.5%)</dd>
+          <dd>{FEE > 0 ? `${near(stake * 2 * FEE)} of the pot (${FEE * 100}%)` : "Nothing: no fee for now"}</dd>
         </div>
       </dl>
       <label className="lp-fare__rate">

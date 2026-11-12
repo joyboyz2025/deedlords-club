@@ -7,7 +7,7 @@
 
 import { decodeBase58, fromBase64, toBase64 } from "./base58.ts";
 import { type ChainConfig, MOVE_GAS } from "./config.ts";
-import { type KeyPair, publicKeyText } from "./keys.ts";
+import { type KeyPair, publicKeyText, sign } from "./keys.ts";
 import { RpcError, rpc } from "./rpc.ts";
 import { type Action, type FunctionCall, jsonArgs, signDelegateAction, signTransaction } from "./transaction.ts";
 
@@ -234,6 +234,11 @@ export class Session {
 
   get publicKey(): Uint8Array {
     return this.pair.publicKey;
+  }
+
+  /** Signs `message` with this session's key: shows a server that this browser holds a key of the account. Sends nothing. */
+  signMessage(message: Uint8Array): Uint8Array {
+    return sign(this.pair, message);
   }
 
   /** Whether the account still has this key. */

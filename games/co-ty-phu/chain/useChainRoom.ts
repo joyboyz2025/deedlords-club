@@ -1,5 +1,6 @@
 "use client";
 
+import type { TeeProof } from "@/lib/teeProof";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import type { Session } from "@/lib/chain/client";
 import { CHAIN } from "@/lib/chain/config";
@@ -16,7 +17,7 @@ import { ChainRoom, type RoomState } from "./room";
 export function useChainRoom(
   id: string,
   session: Session | null,
-): RoomState & { send: Send; playTurn: (plan: Plan) => boolean; retry: () => void; refresh: () => Promise<void> } {
+): RoomState & { send: Send; playTurn: (plan: Plan, proof?: TeeProof | null) => boolean; retry: () => void; refresh: () => Promise<void> } {
   const room = useMemo(
     () => new ChainRoom({ id, reader: chainClient, caller: session && seatCaller(session), pollMs: CHAIN.pollMs, isVisible: () => document.visibilityState !== "hidden" }),
     [id, session],

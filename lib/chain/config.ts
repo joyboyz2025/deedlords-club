@@ -1,17 +1,21 @@
-// Which chain the web app talks to. Testnet by default; `sandbox` is the local playground started by
-// `npm run dev:chain` in contracts/sandbox (a near-sandbox node behind a loopback stub). Mainnet is not wired yet.
+// Which chain the web app talks to: NEXT_PUBLIC_NEAR_NETWORK, testnet by default. `mainnet` is the real-money
+// deployment (contracts under deedlords.near unless the environment names others; 1Click brings stakes in from other
+// chains); `sandbox` is the local playground started by `npm run dev:chain` in contracts/sandbox (a near-sandbox node
+// behind a loopback stub). One deployment of the web app talks to one network.
 //
 // Who can take a seat: anybody with a game account (a key made in the browser, or derived from an EVM wallet), and on a
 // real network anybody who connects a NEAR wallet. A helper on this machine can also sign for test accounts and hand
 // out test NEAR: the sandbox stub (always there on `sandbox`), or on testnet `npm run play:testnet` in
 // contracts/sandbox, named by NEXT_PUBLIC_DEEDLORDS_DEV_URL.
 
-export type Network = "testnet" | "sandbox";
+export type Network = "mainnet" | "testnet" | "sandbox";
 
 export type ChainConfig = {
   network: Network;
   rpcUrl: string;
   contractId: string;
+  /** The chibi characters' NFT contract (contracts/chibi). */
+  chibiId: string;
   /** The local helper that seats test accounts and adds session keys. `null`: there is none. */
   devUrl: string | null;
   /** Whether NEAR wallets can connect (through NEAR Connect): on testnet, not on the sandbox, which no wallet knows. */
@@ -25,16 +29,32 @@ export type ChainConfig = {
   blockHashTtlMs: number;
 };
 
-const network: Network = process.env.NEXT_PUBLIC_NEAR_NETWORK === "sandbox" ? "sandbox" : "testnet";
+const asked = process.env.NEXT_PUBLIC_NEAR_NETWORK;
+const network: Network = asked === "sandbox" || asked === "mainnet" ? asked : "testnet";
 const helperUrl = process.env.NEXT_PUBLIC_DEEDLORDS_DEV_URL?.replace(/\/$/, "") || null;
 const devUrl = helperUrl ?? "http://127.0.0.1:8791";
 
 export const CHAIN: ChainConfig =
-  network === "sandbox"
+  network === "mainnet"
+    ? {
+        network,
+        rpcUrl: process.env.NEXT_PUBLIC_NEAR_RPC ?? "https://free.rpc.fastnear.com,https://near.drpc.org,https://rpc.mainnet.near.org",
+        contractId: process.env.NEXT_PUBLIC_DEEDLORDS_CONTRACT ?? "game.deedlords.near",
+        chibiId: process.env.NEXT_PUBLIC_DEEDLORDS_CHIBI ?? "chibi.deedlords.near",
+        // No helper hands out real NEAR.
+        devUrl: null,
+        wallets: true,
+        explorerUrl: "https://nearblocks.io",
+        indexerUrl: "https://api.nearblocks.io",
+        pollMs: 1_300,
+        blockHashTtlMs: 60_000,
+      }
+    : network === "sandbox"
     ? {
         network,
         rpcUrl: process.env.NEXT_PUBLIC_NEAR_RPC ?? `${devUrl}/rpc`,
         contractId: process.env.NEXT_PUBLIC_DEEDLORDS_CONTRACT ?? "game.sandbox",
+        chibiId: process.env.NEXT_PUBLIC_DEEDLORDS_CHIBI ?? "chibi.sandbox",
         devUrl,
         wallets: false,
         explorerUrl: null,
@@ -48,6 +68,7 @@ export const CHAIN: ChainConfig =
         // visitors names a node of its own here.
         rpcUrl: process.env.NEXT_PUBLIC_NEAR_RPC ?? "https://test.rpc.fastnear.com,https://near-testnet.drpc.org,https://rpc.testnet.near.org",
         contractId: process.env.NEXT_PUBLIC_DEEDLORDS_CONTRACT ?? "game.deedlords.testnet",
+        chibiId: process.env.NEXT_PUBLIC_DEEDLORDS_CHIBI ?? "chibi.deedlords.testnet",
         devUrl: helperUrl,
         wallets: true,
         explorerUrl: "https://testnet.nearblocks.io",

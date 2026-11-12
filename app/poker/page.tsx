@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { PokerScreen } from "@/games/poker/components/PokerScreen";
+import { CHAIN } from "@/lib/chain/config";
 
 export const metadata: Metadata = {
   title: "Deedlords Poker",
@@ -7,5 +9,8 @@ export const metadata: Metadata = {
 };
 
 export default function PokerPage() {
+  // Mainnet has one poker contract, the one for tables of two to nine seats (poker.deedlords.near); the heads-up
+  // table speaks another protocol and lives on testnet only.
+  if (CHAIN.network === "mainnet") redirect("/poker/tables");
   return <PokerScreen />;
 }

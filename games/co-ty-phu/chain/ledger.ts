@@ -15,6 +15,8 @@ export type MoveTx = {
   /** Block time, or when this browser sent it. */
   atMs: number;
   ok: boolean;
+  /** An AI turn whose plan carries NEAR AI's TEE signature (lib/teeProof.ts): the model that signed it. */
+  signedBy?: string;
 };
 
 /** The contract's methods that belong to a match. */
@@ -113,7 +115,7 @@ export type LedgerSources = {
   readTx: (hash: string, signer: string) => Promise<RpcTx>;
   fetch?: typeof fetch;
   /** What is known of each transaction already, by hash: `null` for one that is not a call of the game. Filled here. */
-  known: Map<string, { id: string | null; method: string; what: string } | null>;
+  known: Map<string, { id: string | null; method: string; what: string; signedBy?: string } | null>;
   /** How many of the contract's latest transactions are looked at: one page of the indexer per hundred. */
   depth?: number;
 };
@@ -164,7 +166,9 @@ export async function matchTransactions(id: string, sources: LedgerSources): Pro
             const said = calls.map((call) => describeCall(call.method, call.args)).join(" · ");
             // A turn by plan and a timeout say nothing of what happened in their arguments: the contract's event does.
             const what = did === null ? said : calls[0]?.method === "turn" ? `AI turn: ${did}` : calls[0]?.method === "timeout" ? `Timeout: ${did}` : did;
-            sources.known.set(row.transaction_hash, calls.length > 0 ? { id: typeof matchId === "string" ? matchId : null, method: calls[0].method, what } : null);
+            const proof = calls[0]?.method === "turn" ? (calls[0].args as { proof?: { model?: unknown } } | null)?.proof : undefined;
+            const signedBy = typeof proof?.model === "string" ? proof.model : undefined;
+            sources.known.set(row.transaction_hash, calls.length > 0 ? { id: typeof matchId === "string" ? matchId : null, method: calls[0].method, what, signedBy } : null);
           } catch {
             // Not remembered: read again the next time the list is asked for.
           }
@@ -182,6 +186,7 @@ export async function matchTransactions(id: string, sources: LedgerSources): Pro
         what: known.what,
         atMs: Math.floor(Number(row.block?.block_timestamp ?? 0) / 1e6),
         ok: row.outcomes?.status !== false,
+        ...(known.signedBy ? { signedBy: known.signedBy } : {}),
       });
       if (known.method === "create_match") opened = true;
     }

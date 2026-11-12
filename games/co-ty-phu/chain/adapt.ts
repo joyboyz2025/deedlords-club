@@ -3,7 +3,8 @@
 // other, maps the screen's messages to contract actions, and applies the actions that need no dice with the reference
 // engine, which replays the Rust engine step for step (tools/diff), so a move shows at once instead of after a block.
 
-import { lookFromSeat } from "../../ma-soi/look.ts";
+import { characterOf } from "../../chibi/known.ts";
+import { lookFromSeat, roomLook } from "../../ma-soi/look.ts";
 import { BOARD_SIZE, CARDS, DECK_NAMES, JAIL, JAIL_FINE, SQUARES } from "../board.ts";
 import {
   build,
@@ -52,12 +53,28 @@ export function knowHouseAgent(accountId: string | null): void {
 export const isHouseAgentSeat = (meta: ChainMeta, seat: { backer: string | null }): boolean =>
   houseAgent !== null && seat.backer === houseAgent && meta.creator === houseAgent && meta.stake === "0";
 
+/** The model each house agent of a free table plays with, by table and seat, once the page has asked (useFree.ts). */
+const houseModels = new Map<string, Record<number, string>>();
+
+export function knowHouseModels(id: string, models: Record<number, string>): void {
+  houseModels.set(id, models);
+}
+
+/** A house agent's seat by its model: "AI · gpt-4.1-mini"; "House agent" while the model is not known. */
+const houseSeatName = (meta: ChainMeta, seat: number): string => {
+  const model = houseModels.get(meta.id)?.[seat];
+  return model ? `AI · ${model === "rules" ? "house numbers" : (model.split("/").pop() ?? model)}` : "House agent";
+};
+
 /** An account as a line of text names it: the sponsor's as what it is here, any other by `shortAccount`. */
 export const accountLabel = (accountId: string): string => (accountId === houseAgent ? "the house agent" : shortAccount(accountId));
 
+/** An account by its chibi character's name when this page has read one (games/chibi), else by `shortAccount`. */
+export const playerName = (accountId: string): string => characterOf(accountId)?.name ?? shortAccount(accountId);
+
 /** A name per seat, by seat. Seats that would share a name are numbered. */
 export function seatNames(meta: ChainMeta): string[] {
-  const names = meta.seats.map((seat) => (seat.house ? "House" : isHouseAgentSeat(meta, seat) ? "House agent" : seat.backer ? shortAccount(seat.backer) : `Seat ${seat.seat + 1}`));
+  const names = meta.seats.map((seat) => (seat.house ? "House" : isHouseAgentSeat(meta, seat) ? houseSeatName(meta, seat.seat) : seat.backer ? playerName(seat.backer) : `Seat ${seat.seat + 1}`));
   return names.map((name, i) => {
     const same = names.filter((other) => other === name).length;
     return same > 1 ? `${name} ${names.slice(0, i + 1).filter((other) => other === name).length}` : name;
@@ -135,8 +152,12 @@ export function toGame(match: ChainMatch): Game {
   const names = seatNames(meta);
   const playing = game.phase !== "lobby";
   const players: Player[] = game.players.map((player) => {
-    const seat = meta.seats.find((s) => s.player === player.id)?.seat ?? 0;
-    return { ...player, secret: "", name: names[seat] ?? player.id, isHost: false, wantsToPlay: true, color: playing ? seat : null, look: lookFromSeat(seat) };
+    const backing = meta.seats.find((s) => s.player === player.id);
+    const seat = backing?.seat ?? 0;
+    // The seat's backer's chibi character when this page has read it (no pet or ride at a table), else the seat's default.
+    const character = backing?.house ? null : characterOf(backing?.backer);
+    const look = character ? roomLook(character.look) : lookFromSeat(seat);
+    return { ...player, secret: "", name: names[seat] ?? player.id, isHost: false, wantsToPlay: true, color: playing ? seat : null, look };
   });
   const nameOf = (id: string) => players.find((p) => p.id === id)?.name ?? id;
   const { salary, cash, blitz, maxRounds } = meta.rules;

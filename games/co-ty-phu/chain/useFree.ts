@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { knowHouseModels } from "./adapt";
 import { freeSponsor, isFreeTable, nudgeHouseAgent } from "./free";
 import type { RoomState } from "./room";
 
@@ -46,3 +47,31 @@ export function useHouseAgent(id: string, state: RoomState, sponsor: string | nu
     void nudgeHouseAgent(id).catch(() => undefined);
   }, [due, key, tick, id]);
 }
+
+/**
+ * At a free table: the model each of the house's agents plays with, asked once from the server and handed to the
+ * seat names (adapt.ts). Returns a number that changes when they arrive, for the page to draw the names again.
+ */
+export function useHouseModels(id: string, state: RoomState, sponsor: string | null | undefined): number {
+  const [known, setKnown] = useState(0);
+  const { match } = state;
+  const seats = match && isFreeTable(match.meta, sponsor) ? match.meta.seats.filter((seat) => seat.backer === sponsor).map((seat) => seat.seat) : [];
+  const ask = seats.join(",");
+  useEffect(() => {
+    if (!ask) return;
+    let stopped = false;
+    fetch(`/api/free/move?id=${encodeURIComponent(id)}&seats=${ask}`)
+      .then((response) => (response.ok ? (response.json() as Promise<{ models: Record<number, string> }>) : null))
+      .then((answer) => {
+        if (stopped || !answer) return;
+        knowHouseModels(id, answer.models);
+        setKnown((n) => n + 1);
+      })
+      .catch(() => undefined);
+    return () => {
+      stopped = true;
+    };
+  }, [id, ask]);
+  return known;
+}
+

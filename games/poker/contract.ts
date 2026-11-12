@@ -2,7 +2,9 @@
 
 import { CHAIN } from "@/lib/chain/config";
 
-export const POKER_CONTRACT = process.env.NEXT_PUBLIC_POKER_CONTRACT ?? (CHAIN.network === "sandbox" ? "poker.sandbox" : "poker.deedlords.testnet");
+// On mainnet the contract is poker.deedlords.near unless NEXT_PUBLIC_POKER_CONTRACT names another.
+const network: string = CHAIN.network;
+export const POKER_CONTRACT = process.env.NEXT_PUBLIC_POKER_CONTRACT ?? (network === "sandbox" ? "poker.sandbox" : network === "mainnet" ? "poker.deedlords.near" : "poker.deedlords.testnet");
 /** The chain configuration with the Poker contract as the one that is called. */
 export const POKER_CHAIN = { ...CHAIN, contractId: POKER_CONTRACT };
 /** A seat's stake: 0.1 NEAR for 100 chips, the least the contract takes. */

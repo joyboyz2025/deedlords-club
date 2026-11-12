@@ -1,21 +1,24 @@
-# Deedlords
+# Deedlords Club
 
-A property-trading board game whose rules, dice and stakes live entirely in a **NEAR smart contract**. There is no
-game server: every roll, every rent, every payout is a transaction anyone can open in an explorer. Built for **NEAR
-HACKATHON** (November 2026), `games` track.
+A club of games whose rules, dice, decks and stakes live entirely in **NEAR smart contracts**. There is no game
+server: every roll, every rent, every card and every payout is a transaction anyone can open in an explorer. One
+account and one character sit at every table. Built for **NEAR HACKATHON** (November 2026), `games` track.
 
 Humans and AI agents sit at the same table through the same contract calls. A seat can be handed to an agent and
 taken back mid-game; the agent plays by a **playbook** its owner writes and adjusts, or by one it asks a language
 model to write from a wish in plain words.
 
-This repo ships **two** games built the same way (contract is the referee, a human or an agent can hold any seat):
+The club's games, built the same way (the contract is the referee, a human or an agent can hold any seat):
 
-| | Deedlords | Deedlords Arena |
-|---|---|---|
-| What it is | An original property-trading game. 40 squares of world cities (ranked by real prime-property prices, cheapest first), buy, build, collect rent. | An original auto-battler. A shared market, sealed first-price bids, a hex-grid fight with no randomness. |
-| Contract (testnet) | `game.deedlords.testnet` | `arena.deedlords.testnet` |
-| Web route | `/play` | `/arena` |
-| Status | Playable end to end on testnet | Playable end to end on testnet |
+| | Deedlords | Poker | Arena |
+|---|---|---|---|
+| What it is | An original property-trading board game. 40 squares of world cities (ranked by real prime-property prices, cheapest first), buy, build, collect rent. 2 to 4 seats. | Texas Hold'em for 2 to 9 seats with no dealer: every seat shuffles the deck under its own key, each shuffle comes with a zero-knowledge proof the contract checks, and every card turned is proved. | An original auto-battler. A shared market, sealed first-price bids, a hex-grid fight with no randomness. |
+| Contract (testnet) | `game.deedlords.testnet` | `pokertable.deedlords.testnet` (2–9 seats; `poker.deedlords.testnet` is the first, heads-up one) | `arena.deedlords.testnet` |
+| Web route | `/play` | `/poker/tables` (heads-up: `/poker`) | `/arena` (its trailer; the game's screen is not routed for now) |
+| Status | Playable end to end on testnet | Playable end to end on testnet. The proof code has had no outside review. | On hold: the contract, the engines and the screen are in the repo, the web page shows the trailer |
+
+A player's **character** (a name and a chibi look) and each piece it wears are NFTs of `chibi.deedlords.testnet`; the
+tables of every game show it (`/character`, `/shop`, `/bag`).
 
 No Monopoly (or any existing game's) name, art, or wording is used anywhere; see [PROVENANCE.md](PROVENANCE.md) for
 exactly what in this repo predates the hackathon, what was written during it, and how the generated art was made.
@@ -52,8 +55,10 @@ npm run dev:web
 
 Then open `http://localhost:3000`:
 
-- **`/play`** — sign in as a guest (or with an EVM/NEAR wallet), open or join a duel, watch the board play out in 3D.
-- **`/arena`** — the auto-battler, same sign-in.
+- **`/`** — the club: its three gates.
+- **`/play`** — sign in as a guest (or with an EVM/NEAR wallet), open or join a room of Deedlords, watch the board play out in 3D.
+- **`/poker/tables`** — open or join a table of 2 to 9 seats, with house agents on the models you pick; `/poker` is the first, heads-up table, and `/poker?demo=1` steps through recorded views of one hand without touching the chain.
+- **`/arena`** — the auto-battler's trailer and its sixteen units. Its gate is closed for now: the game's own screen (`games/arena/components/ArenaScreen.tsx`) is not routed.
 
 A guest account needs about **0.23 NEAR** to open the smallest staked Deedlords match (the stake, a refundable
 storage deposit, and gas the network holds while you play); the page tells you the exact figure and the address to
@@ -131,10 +136,29 @@ holds is what a leaked key can cost.
 An agent never signs anything the contract doesn't also check: `turn`/`play_turn` re-derives the outcome from the
 engine, so a bad or malicious plan can only cost that seat's own game, never bypass the rules.
 
+## Mainnet and other chains
+
+The same app runs on NEAR mainnet with `NEXT_PUBLIC_NEAR_NETWORK=mainnet`: contracts default to `game.deedlords.near`
+(and `poker.deedlords.near`), the explorer to nearblocks.io. One deployment talks to one network; the chip at the top
+right links the other when `NEXT_PUBLIC_DEEDLORDS_MAINNET_URL` / `_TESTNET_URL` is set.
+
+- **Putting the contracts there:** `node contracts/sandbox/mainnet.js plan` reads mainnet and prints every transaction
+  and what the parent account must hold; `rehearse` runs the very same steps on a local near-sandbox; `run --yes` sends
+  them, signed by the parent's key from `~/.near-credentials/mainnet/`. The board game's fee starts at 0.
+- **Other chains, through NEAR Intents' 1Click:** on the account page, "Other chains" brings NEAR in from USDC, USDT,
+  ETH, SOL or BTC on their own chains (an exact amount of NEAR arrives on the game account; 1Click names the address
+  and the amount to send from your own wallet), and takes NEAR back out to an address on one of those chains. The pot
+  stays plain NEAR: 1Click only sits at the edges. `/api/oneclick` asks for the quotes (`ONECLICK_JWT`, optional, is a
+  partner key). 1Click has no testnet, so on testnet the same form shows a real price and nothing to send.
+- **Not on mainnet:** Google sign-in (NEAR Auth's shared client is testnet-only), the free tables' sponsor (until one
+  is funded there), the local test helper.
+
 ## Fees
 
-The contract keeps a fixed **2.5%** of each pot (set once at deploy, capped at 5%, no setter). Of the rest, a duel's
-winner takes 70%, second place 30%.
+There is **no fee for now** (`fee_bps` 0 since 2026-11-12). The contract's owner may set one with `set_fee`, at most
+5% (`MAX_FEE_BPS`), signed by a full-access key; each match keeps the fee in force when it was opened, so a change never
+reaches a stake already made. Matches opened on testnet before that day keep the 2.5% they were opened with. Of what
+is left of the pot, a duel's winner takes 70%, second place 30%.
 
 ## Repository layout
 
@@ -172,12 +196,32 @@ Each account can carry its own agent (kept in that browser, never on chain):
   This is also the fallback whenever a language model is slow, refused, or unreachable.
 - **A model**, picked from whatever the server is configured to offer (`DEEDLORDS_LLM_MODELS`); it can write a
   playbook from a one-line wish, and is asked for each live turn with the playbook as its standing instructions.
+- **A model on the player's own NEAR AI key.** On `/agents` a player can paste a [NEAR AI Cloud](https://docs.near.ai)
+  key (checked with one tiny request, then kept in `localStorage` only). Each agent may then run on any chat model
+  NEAR AI serves (Claude, GPT, Gemini, DeepSeek, Qwen, GLM…, listed live from `cloud-api.near.ai/v1/models` with
+  prices). The player's tab asks NEAR AI directly (its gateway allows browser calls): the key and the player's secret
+  instructions never reach this site's server. See `lib/agentKey.ts`.
+
+**Verifiable AI moves (TEE proofs).** When an agent's plan comes from a model NEAR AI Cloud runs in a Trusted
+Execution Environment, the model's enclave signs `<model>:<sha256 of the request>:<sha256 of the response>` with a key
+that never leaves it, and NEAR AI's public attestation report names that key next to its Intel TDX and NVIDIA
+evidence. The agent puts the proof in its `turn` transaction as one more argument (the contract ignores it; the chain
+keeps it): the exact response bytes, the signature and its signer, and only the *hash* of the request, which holds the
+seat owner's secret instructions. In a match's transaction list such a turn is tagged "TEE-signed", and `/verify`
+re-checks it in the browser from the transaction alone: the response hashes to what was signed, the signature
+recovers the signer, NEAR AI attests that signer for that model today, and the plan played is the plan in the signed
+response. It works for agents on the player's own key and for the house's agents on the server's (`NEARAI_API_KEY`,
+`NEARAI_MODELS`). See `lib/teeProof.ts`, `games/co-ty-phu/components/VerifyTurn.tsx`, `tests/tee-proof.test.ts`.
+
+A free table can seat **one to three house agents, each on its own model**: whoever opens it picks how many and
+which model each plays with (`/api/free` `agents`, `/api/free/move` per seat); the table names each seat by its
+model ("AI · gemini-2.5-flash") and shows the sentence each gave for its turn.
 
 Every model call is paid for by whoever deploys the server, so both endpoints are rate-limited (per caller and
 across everyone, both configurable, see `.env.example`); past the limit a turn quietly falls back to the playbook
 instead of being refused, and writing a new playbook answers with a plain "try again in a few minutes" instead.
 
-See `games/co-ty-phu/agent/` (`playbook.ts`, `llm.ts`, `advise.ts`, `rateLimit.ts`) and `app/api/agent/`.
+See `games/co-ty-phu/agent/` (`playbook.ts`, `llm.ts`, `advise.ts`, `rateLimit.ts`), `lib/agentKey.ts`, `app/api/agent/` and `app/api/free/`.
 
 ## Tests
 

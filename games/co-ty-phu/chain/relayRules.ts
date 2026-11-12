@@ -16,6 +16,8 @@ export const RELAY_METHODS = ["join", "leave", "set_driver", "play", "turn", "ti
 export const RELAY_MAX_GAS = 100_000_000_000_000n;
 /** `play` takes at most 32 actions and a plan at most 80 squares: well under this. */
 export const RELAY_MAX_ARGS = 4_096;
+/** A `turn` may also carry NEAR AI's proof of the plan (lib/teeProof.ts): the model's whole response, in base64. */
+export const RELAY_MAX_TURN_ARGS = 16_384;
 export const MATCH_ID = /^[A-Za-z0-9_-]{1,32}$/;
 
 /** The relayer says no, and why. Nothing was sent. */
@@ -41,7 +43,7 @@ export function relayable(action: DelegateAction, contractId: string): { matchId
   if (!(RELAY_METHODS as readonly string[]).includes(call.method)) throw new Refused(`${call.method} is not a seat's call`);
   if (call.deposit !== 0n) throw new Refused("a free table takes no deposit");
   if (call.gas > RELAY_MAX_GAS) throw new Refused("too much gas attached");
-  if (call.args.length > RELAY_MAX_ARGS) throw new Refused("the call is too long");
+  if (call.args.length > (call.method === "turn" ? RELAY_MAX_TURN_ARGS : RELAY_MAX_ARGS)) throw new Refused("the call is too long");
   let id: unknown;
   try {
     id = (JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(call.args)) as { id?: unknown } | null)?.id;
@@ -68,14 +70,25 @@ export function grantable(grant: KeyGrant, contractId: string): void {
 /** What an account signed in through NEAR Auth does with its own NEAR at the game: opening a match, taking a seat. */
 export const STAKE_METHODS = ["create_match", "join"] as const;
 
+/** The most a box purchase may attach: the price is 0.1 NEAR, the rest of a deposit comes back. */
+export const BOX_MAX_DEPOSIT = 1_000_000_000_000_000_000_000_000n;
+
 /**
  * A transaction the sponsor may carry to NEAR Auth for signing. The account's own NEAR is what moves, and the
  * account sends and pays for the transaction itself: all the sponsor pays is the call that gets it signed. It is
- * still not a signing service for anything at all: a stake at the game contract (`stake`), or one plain transfer
- * out of the account (`withdraw`). Throws `Refused` for any other.
+ * still not a signing service for anything at all: a stake at the game contract (`stake`), one plain transfer out of
+ * the account (`withdraw`), or one box bought at the chibi contract (`box`, with `chibiId`). Throws `Refused` for any
+ * other.
  */
-export function signable(tx: Transaction, contractId: string): "stake" | "withdraw" {
+export function signable(tx: Transaction, contractId: string, chibiId: string | null = null): "stake" | "withdraw" | "box" {
   if (!/^[0-9a-f]{64}$/.test(tx.signerId) || tx.signerId !== implicitAccountId(tx.publicKey)) throw new Refused("only a game account's own transactions are signed");
+  if (chibiId !== null && tx.receiverId === chibiId) {
+    const [call, ...more] = tx.actions;
+    if (more.length > 0 || !call || !("method" in call) || call.method !== "buy_box") throw new Refused("only buying a box is signed at the chibi contract");
+    if (call.deposit <= 0n || call.deposit > BOX_MAX_DEPOSIT) throw new Refused("a box is paid with at most 1 NEAR attached");
+    if (call.gas > RELAY_MAX_GAS || call.args.length > 64) throw new Refused("a box takes no arguments and little gas");
+    return "box";
+  }
   if (tx.actions.length === 1 && "transfer" in tx.actions[0]) {
     if (tx.actions[0].transfer <= 0n) throw new Refused("nothing to send");
     if (tx.receiverId === tx.signerId) throw new Refused("a withdrawal goes to another account");

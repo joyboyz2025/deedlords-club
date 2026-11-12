@@ -21,7 +21,9 @@
     "bots:co-ty-phu": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/co-ty-phu-bots.ts join",
     "diff:gen": "node --experimental-strip-types --disable-warning=ExperimentalWarning tools/diff/gen.ts",
     "diff:check": "cargo run --release --manifest-path contracts/Cargo.toml --bin replay -- traces",
-    "deploy:room": "wrangler deploy"
+    "deploy:room": "wrangler deploy",
+    "chibi:catalog": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/chibi-catalog.ts",
+    "start:mainnet": "NEXT_PUBLIC_NEAR_NETWORK=mainnet DEEDLORDS_SPONSOR_ACCOUNT=free.deedlords.near POKER_SWEEP_ACCOUNT=pokersweep.deedlords.near sh -c 'npm run build:chibi && next build && next start -p 3001'"
   },
   "dependencies": {
     "@auth0/auth0-spa-js": "^2.30.0",

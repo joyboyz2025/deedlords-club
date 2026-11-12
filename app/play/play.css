@@ -176,3 +176,22 @@ a.dl-ledger__note {
 .tp-result .dl-ledger {
   text-align: left;
 }
+
+/* An AI turn whose plan came signed from a NEAR AI enclave: a small green tag above its row, leading to the check. */
+.dl-ledger__tee {
+  display: inline-block;
+  margin: 0 0 3px 4px;
+  padding: 2px 9px;
+  border: 1px solid #4fae6c;
+  border-radius: 999px;
+  background: rgb(47 154 92 / 18%);
+  color: #bfeccb;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+}
+
+.dl-ledger__tee:hover {
+  background: rgb(47 154 92 / 30%);
+}

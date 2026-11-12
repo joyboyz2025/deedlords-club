@@ -89,17 +89,24 @@ async function dry(wasm) {
     assert.equal(before.running.meta.status, "playing");
     assert.ok(before.running.log.length > 0);
 
-    // The new build over it: a plain deploy, no migrate.
+    // The new build over it: a plain deploy, no migrate. Everything open reads exactly as it did.
     await game.deployContract(wasm);
-    const withoutHost = (match) => ({ ...match, meta: Object.fromEntries(Object.entries(match.meta).filter(([key]) => key !== "host")) });
     const after = { lobby: await view("get_match", { id: "lobby" }), running: await view("get_match", { id: "running" }), config: await view("get_config") };
-    assert.deepEqual(withoutHost(after.lobby), before.lobby, "the lobby reads as it was");
-    assert.deepEqual(withoutHost(after.running), before.running, "the game in progress reads as it was, log included");
-    assert.equal(after.lobby.meta.host, null, "a match opened before hosts existed has none");
+    assert.deepEqual(after.lobby, before.lobby, "the lobby reads as it was");
+    assert.deepEqual(after.running, before.running, "the game in progress reads as it was, log included");
     assert.deepEqual(after.config, before.config);
     console.log("  the open lobby and the game in progress read the same after the deploy");
 
-    // They play on: the old lobby still starts by itself, the old game takes turns, and a player can now give up.
+    // The owner makes the fee free for matches opened from now on. The two matches opened before keep their 2.5%.
+    await assert.rejects(call(alice, "set_fee", { fee_bps: 0 }, 1n), /only the owner may set the fee/);
+    await call(owner, "set_fee", { fee_bps: 0 }, 1n);
+    assert.equal((await view("get_config")).fee_bps, 0);
+    assert.equal((await view("get_match", { id: "running" })).meta.fee_bps, 250, "an old match keeps the fee it was opened with");
+    await open(alice, "free");
+    assert.equal((await view("get_match", { id: "free" })).meta.fee_bps, 0, "a new match is opened free");
+    console.log("  the owner set the fee to 0: old matches keep 2.5%, new ones are free");
+
+    // They play on: the old lobby still starts by itself, the old game takes turns, and giving up settles it, at 2.5%.
     await call(bob, "join", { id: "lobby", seat: 1 }, Y / 10n);
     assert.equal((await view("get_match", { id: "lobby" })).meta.status, "playing", "an old lobby still starts with its last seat");
     await playTurn("running");
@@ -111,7 +118,17 @@ async function dry(wasm) {
     const result = await view("get_result", { id: "running" });
     assert.equal(result.reason, "last");
     assert.equal(result.backers[0], waiting === alice ? bob.accountId : alice.accountId, "whoever stayed wins");
-    console.log("  an old game played on, and giving up settled it");
+    assert.equal(result.fee, String((2n * Y) / 10n / 40n), "the old game paid the 2.5% it was opened with");
+    console.log("  an old game played on, giving up settled it, at the fee it was opened with");
+
+    // The free match plays out with no fee.
+    await call(alice, "join", { id: "free", seat: 0 }, Y / 10n);
+    await call(bob, "join", { id: "free", seat: 1 }, Y / 10n);
+    const free = await view("get_match", { id: "free" });
+    const leaver = free.meta.current_seat === seatOf(free, alice) ? bob : alice;
+    await call(leaver, "play", { id: "free", seat: seatOf(free, leaver), actions: ["Resign"] });
+    assert.equal((await view("get_result", { id: "free" })).fee, "0", "a match opened free pays no fee");
+    console.log("  a match opened after the change paid no fee");
 
     // A hosted match: full is not started; only the host starts it, also with a key that can only call `play`.
     await open(alice, "room", { host: alice.accountId, seats: 3, split: [6000, 3000, 1000] });

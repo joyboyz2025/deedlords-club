@@ -1,5 +1,7 @@
 "use client";
 
+import { CHAIN } from "@/lib/chain/config";
+import { RULES_MODEL } from "../agent/llm";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { chainClient } from "@/lib/chain/shared";
@@ -66,7 +68,7 @@ export function ChainHome() {
         <section className="fd-wall">
           <h1 className="fd-line">Pick a flight, or open one.</h1>
           <p className="fd-lede">
-            The contract holds every match on this board. Stakes are test NEAR{limits && limits.fee_bps > 0 ? `; it keeps ${formatBps(limits.fee_bps)} of each pot` : ""}.
+            The contract holds every match on this board. Stakes are {CHAIN.network === "mainnet" ? "real NEAR" : "test NEAR"}{limits && limits.fee_bps > 0 ? `; it keeps ${formatBps(limits.fee_bps)} of each pot` : ""}.
             {sponsor && " A free table costs nothing and needs no NEAR: the house pays the gas."}
           </p>
           <a className="fd-jump" href="#departures">
@@ -94,6 +96,22 @@ export function ChainHome() {
  * The last stub: opening a match. A game account or a wallet picks the stake; a helper's test account takes the
  * helper's own. Where somebody sponsors play, the first choice is a free table: nothing staked, no NEAR needed.
  */
+/** The models this server offers for agents (GET /api/agent/playbook); empty while read, or when none is configured. */
+function useOfferedModels(): string[] {
+  const [models, setModels] = useState<string[]>([]);
+  useEffect(() => {
+    let stopped = false;
+    fetch("/api/agent/playbook")
+      .then((response) => (response.ok ? (response.json() as Promise<{ models: string[] }>) : { models: [] }))
+      .then((answer) => !stopped && setModels(answer.models ?? []))
+      .catch(() => undefined);
+    return () => {
+      stopped = true;
+    };
+  }, []);
+  return models;
+}
+
 function FlightStub({
   player,
   balance,
@@ -116,6 +134,16 @@ function FlightStub({
   const [opponent, setOpponent] = useState<FreeOpponent>("agent");
   const [rounds, setRounds] = useState(ROUNDS[1]);
   const [seatCount, setSeatCount] = useState(SEAT_COUNTS[0]);
+  // The house's agents at a free table: one model each, picked from what this server offers.
+  const offered = useOfferedModels();
+  const [agentModels, setAgentModels] = useState<string[]>([RULES_MODEL]);
+  const pickable = [...offered, RULES_MODEL];
+  // Until the visitor picks, the agents take the offered models in turn, so that two agents play two models.
+  const [pickedModels, setPickedModels] = useState(false);
+  useEffect(() => {
+    if (!pickedModels && offered.length > 0) setAgentModels((now) => now.map((_, i) => offered[i % offered.length]));
+  }, [offered, pickedModels]);
+  const setAgentCount = (count: number) => setAgentModels((now) => Array.from({ length: count }, (_, i) => now[i] ?? (offered.length ? offered[i % offered.length] : RULES_MODEL)));
   const [opening, setOpening] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -165,7 +193,7 @@ function FlightStub({
   // Against the house agent: two seats, and the game starts as soon as the visitor sits. Any other table is a room:
   // whoever opens it hosts it, the seats fill as people come, and the game starts when the host says so.
   const room = !(free && opponent === "agent");
-  const seats = room ? seatCount : 2;
+  const seats = room ? seatCount : 1 + agentModels.length;
   const terms = {
     stake: near(stake),
     maxRounds: rounds,
@@ -183,8 +211,9 @@ function FlightStub({
     run(async () => {
       if (free) {
         // The sponsor opens the table. A game account sits through the sponsor too; a wallet account signs its own seat.
-        if (player!.via === "key") return openFreeTable(player!.session, rounds, opponent, seats);
-        const id = await requestFreeTable(rounds, opponent, { host: player!.accountId, seats });
+        const agents = opponent === "agent" ? agentModels : undefined;
+        if (player!.via === "key") return openFreeTable(player!.session, rounds, opponent, seats, agents);
+        const id = await requestFreeTable(rounds, opponent, { host: player!.accountId, seats }, agents);
         await sendStake(player!, joinCalls(id, FREE_GUEST_SEAT, 0n));
         return id;
       }
@@ -218,6 +247,38 @@ function FlightStub({
             </button>
           </div>
         </div>
+      )}
+      {free && opponent === "agent" && (
+        <>
+          <div className="fd-pick">
+            <span id="fd-agents">AI opponents</span>
+            <div className="fd-segments" role="group" aria-labelledby="fd-agents">
+              {[1, 2, 3].map((count) => (
+                <button key={count} type="button" aria-pressed={count === agentModels.length} onClick={() => setAgentCount(count)}>
+                  {count}
+                </button>
+              ))}
+            </div>
+          </div>
+          {agentModels.map((model, i) => (
+            <label key={i} className="fd-field">
+              <span>AI {i + 1}</span>
+              <select
+                value={pickable.includes(model) ? model : RULES_MODEL}
+                onChange={(event) => {
+                  setPickedModels(true);
+                  setAgentModels((now) => now.map((old, j) => (j === i ? event.target.value : old)));
+                }}
+              >
+                {pickable.map((name) => (
+                  <option key={name} value={name}>
+                    {name === RULES_MODEL ? "No model: house numbers" : name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </>
       )}
       {room && (
         <div className="fd-pick">
@@ -289,7 +350,7 @@ function FlightStub({
       {free && (
         <p className="fd-fine">
           {opponent === "agent"
-            ? "The same contract, the same dice, every move a transaction. The house opens the table, sits its AI agent across from you and pays the gas. Nothing is staked, so nothing is won."
+            ? `The same contract, the same dice, every move a transaction. The house opens the table, sits ${agentModels.length === 1 ? "its AI agent" : `${agentModels.length} AI agents, each on its own model,`} across from you and pays the gas. Nothing is staked, so nothing is won.`
             : "The house opens the table and pays the gas. You host the room: send its link, and start the game when everybody is in. Nothing is staked, so nothing is won."}
         </p>
       )}

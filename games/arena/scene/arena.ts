@@ -3,9 +3,11 @@
 // events the engine produced, and reports which of your cells was tapped.
 
 import * as THREE from "three";
+import { clone as cloneWithSkeleton } from "three/addons/utils/SkeletonUtils.js";
 import { merged, painted } from "../../ma-soi/scene/parts.ts";
 import { GUILDS, UNITS } from "../data.ts";
 import { CELLS, COLS, ROWS, hexOf, startingHealth, type Fielded, type FightEvent, type Hex } from "../engine.ts";
+import { Effects, type Body } from "./effects.ts";
 import { FIGURE_SCALE, figureGeometry, type FigureGeometry } from "./figures.ts";
 import { disposeModel, laidOut, loadModel, manifest, standing } from "./models.ts";
 
@@ -21,7 +23,15 @@ const TICK = 0.18;
 /** How tall a loaded unit model is made, before its role's scale. */
 const MODEL_HEIGHT = 2.25;
 const SIDE_COLOR = ["#35c9b4", "#f0604a"];
-const OP_COLOR: Record<string, string> = { dmg: "#ff7a3d", heal: "#5fd38a", shield: "#9fd3ff", stun: "#ffe25a", haste: "#9fd3ff", energize: "#ffe25a", weaken: "#b48cf2", drain: "#b48cf2", ramp: "#ff7a3d" };
+/**
+ * The clips a model with a skeleton may bring are named `Idle`, `Walk`, `Attack` and `Cast`. The last two play once:
+ * they start `from` seconds in and run `rate` times faster, so that the blow lands close to the engine's event.
+ */
+const ONCE: Record<string, { from: number; rate: number }> = { Attack: { from: 0.25, rate: 2 }, Cast: { from: 0.2, rate: 2 } };
+/** Seconds from the engine's event to the blow landing: the reach of a lunge, the fall of a swung weapon. */
+const LANDS = 0.13;
+/** And to an ability going off: the top of a hop, the end of a cast's wind-up. */
+const CAST = 0.2;
 
 /** Where a hex of the board is in the world. Side 0's rows are near the camera. */
 export function hexPosition(hex: Hex): THREE.Vector3 {
@@ -36,6 +46,8 @@ type Actor = {
   group: THREE.Group;
   /** What swings on an attack: the built figure's right arm, or the whole of a loaded model. */
   arm: THREE.Object3D;
+  /** The clips of a model with a skeleton, by name, and the one playing; `null` for a figure the scene moves itself. */
+  motion: { mixer: THREE.AnimationMixer; clips: Record<string, THREE.AnimationAction>; now: string } | null;
   bars: THREE.Sprite[];
   /** Where it stands, and where it is walking from while `walk` runs. */
   at: THREE.Vector3;
@@ -52,7 +64,6 @@ type Actor = {
   fall: number;
   toward: THREE.Vector3;
 };
-type Effect = { mesh: THREE.Mesh; age: number; life: number; from?: THREE.Vector3; to?: THREE.Vector3 };
 
 function floorTexture(): THREE.CanvasTexture {
   const size = 2048;
@@ -148,9 +159,11 @@ export class ArenaScene {
   private figures = new Map<number, FigureGeometry>();
   private owned: { dispose(): void }[] = [];
   private ringShape = new THREE.RingGeometry(0.44, 0.58, 6).rotateX(-Math.PI / 2);
-  private shotShape = new THREE.SphereGeometry(0.09, 10, 8);
   private actors: Actor[] = [];
-  private effects: Effect[] = [];
+  private fx = new Effects(this.scene);
+  /** The hexes of your side, drawn on the map only while you are placing units. */
+  private grid: THREE.Mesh[] = [];
+  private placing = false;
   private marks: THREE.Mesh[] = [];
   private queue: { at: number; event: FightEvent }[] = [];
   private clock = 0;
@@ -172,6 +185,8 @@ export class ArenaScene {
   private loading = new Map<number, Promise<void>>();
   /** Shows again what was last asked for, once models have arrived. */
   private again: (() => void) | null = null;
+  /** The roster is on the floor: a tapped unit shows what it does. */
+  private roster = false;
   private gone = false;
 
   /** `onCell` is called with the cell of your side that was tapped. */
@@ -232,8 +247,8 @@ export class ArenaScene {
       const map = await loadModel(`/arena/${list.map}`).catch(() => null);
       if (this.gone) return void (map && disposeModel(map));
       if (map) {
-        // The map brings its own ground and walls. Its courtyard is not perfectly level, so the hexes are laid on it
-        // one by one and units stand at the height of the ground under them.
+        // The map brings its own ground and walls. Its courtyard is not perfectly level, so units stand at the height
+        // of the ground under them. The hexes of your side are laid on it one by one, to be shown while you place units.
         this.map = laidOut(map, BOARD_W * 1.24);
         this.scene.remove(...this.built, this.top);
         this.scene.add(this.map);
@@ -248,15 +263,17 @@ export class ArenaScene {
             // A stray prop under a hex would lift it: nothing on the courtyard is higher than a step.
             const y = Math.min(0.4, Math.max(-0.4, down.intersectObject(this.map, true)[0]?.point.y ?? 0));
             heights.push(y);
-            const color = SIDE_COLOR[row >= ROWS ? 0 : 1];
-            lines.push(part(new THREE.RingGeometry(HEX_R * 0.84, HEX_R * 0.93, 6, 1, Math.PI / 6).rotateX(-Math.PI / 2).translate(at.x, y + 0.05, at.z), color));
-            fills.push(part(new THREE.CircleGeometry(HEX_R * 0.84, 6, Math.PI / 6).rotateX(-Math.PI / 2).translate(at.x, y + 0.045, at.z), color));
+            if (row < ROWS) continue;
+            lines.push(part(new THREE.RingGeometry(HEX_R * 0.87, HEX_R * 0.93, 6, 1, Math.PI / 6).rotateX(-Math.PI / 2).translate(at.x, y + 0.05, at.z), SIDE_COLOR[0]));
+            fills.push(part(new THREE.CircleGeometry(HEX_R * 0.87, 6, Math.PI / 6).rotateX(-Math.PI / 2).translate(at.x, y + 0.045, at.z), SIDE_COLOR[0]));
           }
         }
         this.heights = heights;
         const own = <T extends { dispose(): void }>(thing: T): T => (this.owned.push(thing), thing);
         const flat = (opacity: number) => own(new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity, depthWrite: false }));
-        this.scene.add(new THREE.Mesh(own(merged(lines)), flat(0.95)), new THREE.Mesh(own(merged(fills)), flat(0.16)));
+        this.grid = [new THREE.Mesh(own(merged(lines)), flat(0.8)), new THREE.Mesh(own(merged(fills)), flat(0.1))];
+        for (const mesh of this.grid) mesh.visible = this.placing;
+        this.scene.add(...this.grid);
       }
     }
     for (const [id, file] of Object.entries(list.units)) {
@@ -318,14 +335,23 @@ export class ArenaScene {
     this.pressed = { x: event.clientX, y: event.clientY };
   };
 
-  /** A tap (not a drag) on one of your hexes reports its cell. */
+  /** A tap (not a drag) on one of your hexes reports its cell. On the roster, a tap on a unit has it show its blow and its ability. */
   private onPointerUp = (event: PointerEvent): void => {
     const pressed = this.pressed;
     this.pressed = null;
-    if (!this.onCell || !pressed || Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y) > 10) return;
+    if (!pressed || Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y) > 10) return;
     const box = this.canvas.getBoundingClientRect();
     const ray = new THREE.Raycaster();
     ray.setFromCamera(new THREE.Vector2(((event.clientX - box.left) / box.width) * 2 - 1, -((event.clientY - box.top) / box.height) * 2 + 1), this.camera);
+    if (this.roster) {
+      // The figure itself is what was tapped, not the ground behind it.
+      let hit: THREE.Object3D | null = ray.intersectObjects(this.actors.map((actor) => actor.group), true)[0]?.object ?? null;
+      while (hit && !this.actors.some((actor) => actor.group === hit)) hit = hit.parent;
+      const tapped = this.actors.find((actor) => actor.group === hit);
+      if (tapped) this.perform(tapped);
+      return;
+    }
+    if (!this.onCell) return;
     const point = ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
     if (!point) return;
     for (let cell = 0; cell < CELLS; cell++) {
@@ -347,10 +373,15 @@ export class ArenaScene {
         bar.material.dispose();
       }
       ((actor.group.children[0] as THREE.Mesh).material as THREE.Material).dispose();
+      if (actor.motion) {
+        actor.motion.mixer.stopAllAction();
+        actor.motion.mixer.uncacheRoot(actor.arm);
+        // Each copy of a model has bones of its own, and what the renderer keeps for them.
+        actor.arm.traverse((node) => (node as THREE.SkinnedMesh).skeleton?.dispose());
+      }
     }
-    for (const effect of this.effects) this.dropEffect(effect);
+    this.fx.clear();
     this.actors = [];
-    this.effects = [];
     this.queue = [];
     this.onDone = null;
   }
@@ -362,8 +393,23 @@ export class ArenaScene {
     const figure = new THREE.Group();
     const model = this.models.get(unit);
     let arm: THREE.Object3D;
-    if (model) {
-      // A loaded model has no separate arm: it leans into the blow as one piece.
+    let motion: Actor["motion"] = null;
+    if (model?.animations.length) {
+      // A model with a skeleton plays its own clips, on bones of its own.
+      arm = cloneWithSkeleton(model);
+      figure.add(arm);
+      const mixer = new THREE.AnimationMixer(arm);
+      const clips: Record<string, THREE.AnimationAction> = {};
+      for (const clip of model.animations) {
+        const action = (clips[clip.name] = mixer.clipAction(clip));
+        if (!ONCE[clip.name]) continue;
+        action.setLoop(THREE.LoopOnce, 1).timeScale = ONCE[clip.name].rate;
+        action.clampWhenFinished = true;
+      }
+      clips.Idle?.play();
+      motion = { mixer, clips, now: "Idle" };
+    } else if (model) {
+      // A loaded model without one has no separate arm: it leans into the blow as one piece.
       arm = model.clone();
       figure.add(arm);
     } else {
@@ -392,7 +438,7 @@ export class ArenaScene {
       }
     }
     this.scene.add(group);
-    this.actors.push({ key, side, unit, group, arm, bars, at: at.clone(), from: at.clone(), maxHp, health: 1, shield: 0, alive: true, walk: Infinity, lunge: Infinity, flinch: Infinity, hop: Infinity, fall: Infinity, toward: new THREE.Vector3() });
+    this.actors.push({ key, side, unit, group, arm, motion, bars, at: at.clone(), from: at.clone(), maxHp, health: 1, shield: 0, alive: true, walk: Infinity, lunge: Infinity, flinch: Infinity, hop: Infinity, fall: Infinity, toward: new THREE.Vector3() });
   }
 
   /** All sixteen units on the floor, a guild per row and a role per column, looking at the camera. */
@@ -400,21 +446,50 @@ export class ArenaScene {
     this.again = () => this.showRoster();
     this.showWhenFetched(UNITS.map((_, unit) => unit));
     this.clear();
+    this.roster = true;
+    this.place(false);
     this.setMarks([]);
     UNITS.forEach((def, unit) => this.addActor(unit, 0, unit, 1, new THREE.Vector3((def.role - 1.5) * 2.1, 0, (def.guild - 1.5) * 1.7), 0, 0, GUILDS[def.guild].color));
   }
 
-  /** Two floors standing ready. */
-  setTeams(teams: Fielded[][]): void {
-    this.again = () => this.setTeams(teams);
+  /** Shows or hides the hexes of your side. */
+  private place(on: boolean): void {
+    this.placing = on;
+    for (const mesh of this.grid) mesh.visible = on;
+  }
+
+  /** Two floors standing ready. `placing`: you are arranging yours, so the hexes of your side are drawn. */
+  setTeams(teams: Fielded[][], placing = false): void {
+    this.again = () => this.setTeams(teams, placing);
     this.showWhenFetched(teams.flat().map((piece) => piece.unit));
     this.clear();
+    this.roster = false;
+    this.place(placing);
     const health = startingHealth(teams);
     teams.forEach((team, side) => {
       for (const piece of team) {
         const key = side * CELLS + piece.cell;
         this.addActor(key, side, piece.unit, piece.rank, this.spot(hexOf(side, piece.cell)), side === 0 ? Math.PI : 0, health[key]);
       }
+    });
+  }
+
+  /** A unit of the roster strikes towards the camera, then uses its ability. */
+  private perform(actor: Actor): void {
+    actor.toward.set(0, 0, 1);
+    actor.lunge = 0;
+    this.show(actor, "Attack", true);
+    // Nobody stands in front of it: the blow and the ability land a step ahead, or on the unit itself when the
+    // ability is one for its own side.
+    const self = this.body(actor);
+    const step = new THREE.Vector3(0, 0, 1.4);
+    const ahead: Body = { foot: self.foot.clone().add(step), chest: self.chest.clone().add(step), head: self.head.clone().add(step) };
+    this.strike(actor, ahead);
+    const { op, who } = UNITS[actor.unit].ability;
+    this.fx.later(0.9, () => {
+      actor.hop = 0;
+      this.show(actor, "Cast", true);
+      this.fx.later(CAST, () => this.fx.cast(op, who, this.tint(actor.unit), self, [["self", "allies", "allyNear", "allyWeakest"].includes(who) ? self : ahead]));
     });
   }
 
@@ -474,16 +549,45 @@ export class ArenaScene {
     return this.actors.find((actor) => actor.key === key);
   }
 
-  private addRing(at: THREE.Vector3, color: string, life: number): void {
-    const mesh = new THREE.Mesh(this.ringShape, new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false }));
-    mesh.position.set(at.x, at.y + 0.07, at.z);
-    this.scene.add(mesh);
-    this.effects.push({ mesh, age: 0, life });
+  /** A unit's guild colour, lightened so that it glows. */
+  private tint(unit: number): string {
+    return new THREE.Color(GUILDS[UNITS[unit].guild].color).lerp(new THREE.Color("#ffffff"), 0.35).getStyle();
   }
 
-  private dropEffect(effect: Effect): void {
-    this.scene.remove(effect.mesh);
-    (effect.mesh.material as THREE.Material).dispose();
+  /** A blow from `from` landing on `struck`: a shot for those who fight from afar, a slash for the rest. `landed` runs as it lands. */
+  private strike(from: Actor, struck: Body, landed?: () => void): void {
+    const tint = this.tint(from.unit);
+    const land = () => {
+      this.fx.hit(struck.chest, tint);
+      landed?.();
+    };
+    if (UNITS[from.unit].ranged) this.fx.shot(this.body(from).chest, struck.chest, tint, 0.16, 0.2, land);
+    else
+      this.fx.later(LANDS, () => {
+        this.fx.slash(struck.chest, from.toward, "#fff4d6");
+        land();
+      });
+  }
+
+  /** Where an actor can be hit, where it stands now. */
+  private body(actor: Actor): Body {
+    const tall = this.tall(actor.unit) * FIGURE_SCALE[UNITS[actor.unit].role];
+    const foot = actor.at.clone();
+    return { foot, chest: foot.clone().setY(foot.y + tall * 0.5), head: foot.clone().setY(foot.y + tall * 0.95) };
+  }
+
+  /** Has a model with a skeleton play the clip `name`, from its start again when `restart`. Does nothing for other figures and missing clips. */
+  private show(actor: Actor, name: string, restart = false): void {
+    const motion = actor.motion;
+    const next = motion?.clips[name];
+    if (!motion || !next) return;
+    const last = motion.clips[motion.now];
+    if (next === last && !restart) return;
+    if (ONCE[name]) next.reset().time = ONCE[name].from;
+    else next.enabled = true;
+    next.play();
+    if (last && last !== next) last.crossFadeTo(next, 0.08, false);
+    motion.now = name;
   }
 
   /** Turns the figure to look from where it stands towards `point`. */
@@ -503,24 +607,30 @@ export class ArenaScene {
       const to = this.actor(event.to);
       if (!to) return;
       from.lunge = 0;
+      this.show(from, "Attack", true);
       from.toward.copy(to.at).sub(from.at).normalize();
       this.face(from, from.at, to.at);
-      to.flinch = 0;
-      if (UNITS[from.unit].ranged) {
-        const mesh = new THREE.Mesh(this.shotShape, new THREE.MeshBasicMaterial({ color: "#fff3b0" }));
-        this.scene.add(mesh);
-        this.effects.push({ mesh, age: 0, life: 0.16, from: from.at.clone().add(new THREE.Vector3(0, 0.9, 0)), to: to.at.clone().add(new THREE.Vector3(0, 0.7, 0)) });
-      }
+      this.strike(from, this.body(to), () => {
+        if (this.actors.includes(to)) to.flinch = 0;
+      });
     } else {
       from.hop = 0;
-      this.addRing(from.at, OP_COLOR[event.op], 0.6);
-      for (const key of event.to) {
+      this.show(from, "Cast", true);
+      const self = this.body(from);
+      const reached = event.to.flatMap((key) => {
         const to = this.actor(key);
-        if (to && to !== from) this.addRing(to.at, OP_COLOR[event.op], 0.45);
-      }
+        return to ? [to === from ? self : this.body(to)] : [];
+      });
+      this.fx.later(CAST, () => this.fx.cast(event.op, UNITS[from.unit].ability.who, this.tint(from.unit), self, reached));
     }
     for (const actor of this.actors) {
       const hp = event.hp[actor.key];
+      // What the event took or gave rises from the unit as a number, as the blow lands.
+      const before = Math.round(actor.health * actor.maxHp);
+      if (actor.alive && actor.maxHp > 0 && hp !== before) {
+        const head = this.body(actor).head;
+        this.fx.later(event.kind === "cast" ? CAST : LANDS, () => this.fx.number(head, hp < before ? `${before - hp}` : `+${hp - before}`, hp < before ? "#ffd27a" : "#8dffb5"));
+      }
       if (actor.alive && hp === 0) {
         actor.alive = false;
         actor.fall = 0;
@@ -540,7 +650,7 @@ export class ArenaScene {
     if (this.queue.length || this.onDone) {
       this.clock += step;
       while (this.queue.length && this.queue[0].at <= this.clock) this.apply(this.queue.shift()!.event);
-      if (!this.queue.length && this.onDone && this.effects.length === 0 && this.actors.every((actor) => actor.lunge > 0.5 && (actor.alive || actor.fall > 0.9))) {
+      if (!this.queue.length && this.onDone && !this.fx.busy && this.actors.every((actor) => actor.lunge > 0.5 && (actor.alive || actor.fall > 0.9))) {
         const done = this.onDone;
         this.onDone = null;
         done();
@@ -562,8 +672,16 @@ export class ArenaScene {
       const jump = actor.hop < 0.45 ? Math.sin((actor.hop / 0.45) * Math.PI) : 0;
       const far = UNITS[actor.unit].ranged ? 0.18 : 0.5;
       actor.group.position.lerpVectors(actor.from, actor.at, walked).addScaledVector(actor.toward, reach * far);
-      actor.arm.rotation.x = this.models.has(actor.unit) ? reach * 0.35 : reach * 1.3 - jump * 2.4;
-      figure.position.y = actor.alive ? jump * 0.5 + (walked < 1 ? Math.abs(Math.sin(walked * Math.PI * 2)) * 0.12 : Math.sin(seconds * 2.4 + actor.key) * 0.02) : 0;
+      if (actor.motion) {
+        // Its own clips do the swinging, hopping and stepping. A blow or a cast is played to its end; between them it
+        // walks while it is on its way (steps follow one another a tick apart) and stands otherwise.
+        const { clips, now, mixer } = actor.motion;
+        if (!ONCE[now] || !clips[now].isRunning()) this.show(actor, actor.walk < TICK * 1.5 ? "Walk" : "Idle");
+        mixer.update(step);
+      } else {
+        actor.arm.rotation.x = this.models.has(actor.unit) ? reach * 0.35 : reach * 1.3 - jump * 2.4;
+        figure.position.y = actor.alive ? jump * 0.5 + (walked < 1 ? Math.abs(Math.sin(walked * Math.PI * 2)) * 0.12 : Math.sin(seconds * 2.4 + actor.key) * 0.02) : 0;
+      }
       figure.rotation.z = shake * 0.22;
       if (!actor.alive) {
         const gone = Math.min(1, actor.fall / 0.6);
@@ -581,17 +699,9 @@ export class ArenaScene {
         bar.position.set(actor.group.position.x - width / 2, actor.group.position.y + y + (index === 2 ? 0.1 : 0), actor.group.position.z);
       });
     }
-    for (const effect of this.effects) {
-      effect.age += step;
-      const k = Math.min(1, effect.age / effect.life);
-      if (effect.from && effect.to) effect.mesh.position.lerpVectors(effect.from, effect.to, k);
-      else {
-        effect.mesh.scale.setScalar(1 + k * 1.3);
-        (effect.mesh.material as THREE.MeshBasicMaterial).opacity = 1 - k;
-      }
-    }
-    for (const effect of this.effects.filter((e) => e.age >= e.life)) this.dropEffect(effect);
-    this.effects = this.effects.filter((e) => e.age < e.life);
+    this.fx.update(step, this.renderer.domElement.height, this.camera);
+    // A heavy blow shakes the ground: the whole scene is nudged, the camera stays where it is.
+    this.scene.position.set((Math.random() - 0.5) * this.fx.shake, (Math.random() - 0.5) * this.fx.shake, 0);
 
     this.renderer.render(this.scene, this.camera);
   };
@@ -613,7 +723,7 @@ export class ArenaScene {
     for (const model of [this.map, ...this.models.values()]) if (model) disposeModel(model);
     const top = this.top.material as THREE.MeshLambertMaterial;
     top.map?.dispose();
-    for (const thing of [...this.owned, top, this.material, this.glowMaterial, this.ringShape, this.shotShape]) thing.dispose();
+    for (const thing of [...this.owned, top, this.material, this.glowMaterial, this.ringShape, this.fx]) thing.dispose();
     this.renderer.dispose();
   }
 }

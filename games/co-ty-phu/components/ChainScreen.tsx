@@ -5,7 +5,7 @@ import { useState, type CSSProperties, type ReactNode } from "react";
 import { Arrow, Bot, Copy, Seat } from "@/components/landing/icons";
 import { CHAIN } from "@/lib/chain/config";
 import { TOKEN_COLORS } from "../board";
-import { accountLabel, formatBps, formatNear, seatNames, shortAccount } from "../chain/adapt";
+import { accountLabel, formatBps, formatNear, playerName, seatNames } from "../chain/adapt";
 import { MOVE_HOLD, joinCalls, near, startCall, upfront } from "../chain/calls";
 import { devJoin, devSeatAgent, useDevConfig, type DevConfig } from "../chain/devSession";
 import type { ChainMatch, ChainResult } from "../chain/types";
@@ -13,15 +13,18 @@ import { armAgent, useAgent } from "../chain/useAgent";
 import { useAgentNotes, useAutopilot } from "../chain/useAutopilot";
 import { useChainRoom } from "../chain/useChainRoom";
 import { isFreeTable, seatCaller, takeFreeSeat } from "../chain/free";
-import { useFreeSponsor, useHouseAgent } from "../chain/useFree";
+import { useFreeSponsor, useHouseAgent, useHouseModels } from "../chain/useFree";
 import { approvesInWindow, sendStake, usePlayer, type PlayerState } from "../chain/usePlayer";
 import { AgentStub, Flap, Hall, PassengerStub } from "./Desk";
 import { Ledger } from "./Ledger";
-import { useSeatPortraits } from "./LobbyArt";
+import { useCharacters, useLookPictures } from "../../chibi/useChibi";
+import { lookFromSeat } from "../../ma-soi/look";
 import { TROPHY_ART } from "../scene/art";
 import { Stage, type AgentTag } from "./TycoonScreen";
 
 const problemText = (error: unknown) => (error instanceof Error ? error.message : String(error));
+/** A figure in the waiting room is drawn this large (square), enough for a two-seat room on a dense screen. */
+const FIGURE_PX = 560;
 
 /**
  * A match that lives in the Deedlords contract, on the same table as a room-server game. Whoever holds a seat plays
@@ -47,12 +50,16 @@ function Table({ id, state, helper }: { id: string; state: PlayerState; helper: 
   const player = state.player ?? null;
   const room = useChainRoom(id, player?.session ?? null);
   const { view, match, result, seat, link, error, busy, notice, sent, send, playTurn, retry, refresh } = room;
+  // The players' chibi characters: once read, the table shows their names and draws their looks (chain/adapt.ts).
+  useCharacters(match?.meta.seats.map((s) => (s.house ? null : s.backer)) ?? []);
   const accountId = player?.accountId ?? null;
   const autopilot = useAutopilot(id, room, playTurn, accountId);
   const notes = useAgentNotes(id, match?.meta.status === "playing");
   const sponsor = useFreeSponsor();
   // At a free table the house agent moves when somebody with the match open asks the server for its turn.
   useHouseAgent(id, room, sponsor);
+  // Its agents' seats are named by the model each plays with.
+  useHouseModels(id, room, sponsor);
 
   if (error) {
     return (
@@ -81,13 +88,13 @@ function Table({ id, state, helper }: { id: string; state: PlayerState; helper: 
         <div className="tp-result tp-result--page">
           <Payout
             result={result}
-            names={result.seats.map(shortAccount)}
+            names={result.seats.map(playerName)}
             accountId={accountId}
             ledger={(onClose) => (
               <Ledger
                 id={id}
                 sent={sent}
-                nameOf={(account) => (result.seats.includes(account) ? `${shortAccount(account)}${account === accountId ? " (you)" : ""}` : null)}
+                nameOf={(account) => (result.seats.includes(account) ? `${playerName(account)}${account === accountId ? " (you)" : ""}` : null)}
                 onClose={onClose}
               />
             )}
@@ -132,7 +139,7 @@ function Table({ id, state, helper }: { id: string; state: PlayerState; helper: 
         send={send}
         chain={{
           // In the menu, not floating over the table: the corners belong to the players' cards.
-          label: `${CHAIN.network} · ${accountId === null ? "watching" : seat === null ? `${shortAccount(accountId)} (no seat here)` : `${shortAccount(accountId)}, seat ${seat + 1}`}`,
+          label: `${CHAIN.network} · ${accountId === null ? "watching" : seat === null ? `${playerName(accountId)} (no seat here)` : `${playerName(accountId)}, seat ${seat + 1}`}`,
           busy,
           agents,
           autopilot: autopilot && {
@@ -199,8 +206,16 @@ function Lobby({
   const player = state.player ?? null;
   const accountId = player?.accountId ?? null;
   const desk = useAgent(accountId);
+  // Each seat by its backer's chibi character (name and face) once read; an open seat, or one with no character, by default.
+  const characters = useCharacters(meta.seats.map((seat) => (seat.house ? null : seat.backer)));
   const names = seatNames(meta);
-  const faces = useSeatPortraits(meta.seats.length);
+  // Whoever sits stands in the room whole: their own character, or the seat's stock figure for the house and for an
+  // account that has made none. An open seat has no figure.
+  const figures = useLookPictures(
+    meta.seats.map((seat) => (seat.backer === null ? null : ((!seat.house && characters.get(seat.backer)?.look) || lookFromSeat(seat.seat)))),
+    FIGURE_PX,
+    "figure",
+  );
   const [joining, setJoining] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -309,15 +324,18 @@ function Lobby({
               <Seat size={24} /> Gate
               <span className="fd-board__state">{open === 0 ? <Flap text={host ? "READY" : "STARTING"} /> : <span className="fd-chip">Boarding · {open} open</span>}</span>
             </h2>
-            <ul className="fd-seats">
+            <ul className="fd-lounge" style={{ "--seats": meta.seats.length } as CSSProperties}>
               {meta.seats.map((seat) => {
                 const empty = seat.backer === null;
+                const mine = !empty && seat.backer === accountId;
                 return (
-                  <li key={seat.seat} className="fd-seat" data-free={empty || undefined} style={{ "--seat": TOKEN_COLORS[seat.seat] } as CSSProperties}>
-                    <span className="fd-seat__face">{faces[seat.seat] ? <img src={faces[seat.seat]!} alt="" /> : <b>{seat.seat + 1}</b>}</span>
+                  <li key={seat.seat} className="fd-guest" data-free={empty || undefined} data-you={mine || undefined} style={{ "--seat": TOKEN_COLORS[seat.seat] } as CSSProperties}>
+                    <span className="fd-guest__figure">
+                      {empty ? <i className="fd-guest__ghost" aria-hidden="true" /> : figures[seat.seat] ? <img src={figures[seat.seat]!} alt="" /> : <b>{seat.seat + 1}</b>}
+                    </span>
                     <p>
                       <small>Seat {seat.seat + 1}</small>
-                      <strong>{empty ? "Open" : seat.backer === accountId ? `${names[seat.seat]} (you)` : names[seat.seat]}</strong>
+                      <strong>{empty ? "Open seat" : mine ? `${names[seat.seat]} (you)` : names[seat.seat]}</strong>
                     </p>
                     <Flap text={empty ? "WAITING" : seat.house ? "THE HOUSE" : sponsored && seat.backer === sponsor ? "AI AGENT" : seat.backer === host ? "HOST" : "SEATED"} />
                   </li>
@@ -493,13 +511,13 @@ function Payout({
   return (
     <>
       <img className="tp-result__trophy" src={TROPHY_ART} alt="" width={132} height={132} />
-      <p className="tp-result__title">{winner === accountId ? "You win!" : `${names[result.ranking[0]] ?? shortAccount(winner)} wins`}</p>
+      <p className="tp-result__title">{winner === accountId ? "You win!" : `${names[result.ranking[0]] ?? playerName(winner)} wins`}</p>
       <p className="tp-result__line">{result.reason === "time" ? "Out of rounds: ranked by net worth." : "Everybody else went bankrupt or gave up."}</p>
       <ol className="tp-ranking">
         {result.ranking.map((seat, rank) => (
           <li key={seat}>
             <i className="tp-token" style={{ background: TOKEN_COLORS[seat] }} />
-            <span>{names[seat] ?? shortAccount(result.backers[rank])}</span>
+            <span>{names[seat] ?? playerName(result.backers[rank])}</span>
             <strong>{pot > 0n ? `${formatNear(result.payouts[rank], 5)} NEAR` : rank === 0 ? "1st" : rank === 1 ? "2nd" : rank === 2 ? "3rd" : "4th"}</strong>
           </li>
         ))}

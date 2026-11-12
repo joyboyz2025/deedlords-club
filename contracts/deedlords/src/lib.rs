@@ -9,8 +9,8 @@
 //!   is reported), and every call that may draw needs [`MIN_MOVE_GAS`] attached so it cannot be made to run out of gas.
 //! * Each turn has a deadline, renewed only when the seat to move changes or the current seat rolls; after it anyone
 //!   may call `timeout`, so no one can stall a match.
-//! * When the engine reports the end, the contract settles once: takes the fee off the pot (`fee_bps`, fixed at
-//!   deployment, at most 5%), pays the rest by rank, locks the house's shares forever (`forfeited`), mints a Deed NFT
+//! * When the engine reports the end, the contract settles once: takes the fee off the pot (the `fee_bps` in force
+//!   when the match was opened, at most 5%; the owner may change it for matches opened later), pays the rest by rank, locks the house's shares forever (`forfeited`), mints a Deed NFT
 //!   (NEP-171) to a non-house winner, records stats and a summary, deletes the match and refunds the creator's storage
 //!   deposit (minus the bytes the permanent records occupy). The fees add up in a counter; the owner can withdraw
 //!   exactly that and nothing else.
@@ -60,7 +60,8 @@ pub const SPLIT_TOTAL: u32 = 10_000;
 /// Upper bound of a deployment's stake cap (1,000,000 NEAR), so `pot * basis points` always fits in a u128. The cap
 /// that matches are checked against is `max_stake`, set once in `new`.
 pub const MAX_STAKE: u128 = 1_000_000 * 10u128.pow(24);
-/// The most a deployment may take from a pot: 500 basis points, 5%. `fee_bps` is set once, in `new`.
+/// The most a deployment may take from a pot: 500 basis points, 5%. `fee_bps` is set in `new` and changed by
+/// `set_fee`; a match keeps the fee in force when it was opened.
 pub const MAX_FEE_BPS: u16 = 500;
 pub const MAX_ID_LEN: usize = 32;
 pub const MAX_ACTIONS_PER_CALL: usize = 32;
@@ -177,7 +178,8 @@ pub struct Contract {
     tokens: NonFungibleToken,
     /// Largest stake per seat a match may ask for. Set in `new`; no method changes it.
     max_stake: NearToken,
-    /// Basis points of every pot kept as the fee when a match is settled. Set in `new`; no method changes it.
+    /// Basis points of the pot kept as the fee, for matches opened from now on. Set in `new`, changed by the owner with
+    /// `set_fee`; each match keeps the fee it was opened with under a key of its own (see [`fee_key`]).
     fee_bps: u16,
     /// Fees collected and not yet withdrawn. Only `withdraw_fees` moves them, and only this much.
     fees: NearToken,
@@ -296,6 +298,20 @@ fn restarts_clock(game: &Game, s: usize, seat_before: Option<usize>, rolls_befor
 /// existed read as they were written, with no host, and start by themselves as they always did.
 fn host_key(id: &str) -> Vec<u8> {
     [b"host:".as_slice(), id.as_bytes()].concat()
+}
+
+/// The fee a match was opened with, kept under a storage key of its own outside [`Match`], like the host: changing
+/// the fee never reaches a match already open. Two bytes, little-endian basis points.
+fn fee_key(id: &str) -> Vec<u8> {
+    [b"fee:".as_slice(), id.as_bytes()].concat()
+}
+
+/// Written by the first `set_fee`: the fee in force until then, which is the fee of every match opened before match
+/// fees were recorded. Its name cannot be a [`fee_key`] (no colon).
+const FEE_BEFORE_KEY: &[u8] = b"fee_before_set";
+
+fn read_bps(key: &[u8]) -> Option<u16> {
+    env::storage_read(key).and_then(|bytes| <[u8; 2]>::try_from(bytes.as_slice()).ok()).map(u16::from_le_bytes)
 }
 
 /// The account that starts the match `id`, if it is a hosted one still in the lobby.
@@ -471,10 +487,11 @@ impl Contract {
             game: Game::new(rules, players),
         };
         let before = env::storage_usage();
-        // Inside what is measured: the creator's deposit pays for the host's record too.
+        // Inside what is measured: the creator's deposit pays for the host's record and the fee's too.
         if let Some(host) = &host {
             env::storage_write(&host_key(&id), host.as_bytes());
         }
+        env::storage_write(&fee_key(&id), &self.fee_bps.to_le_bytes());
         let data = json!({ "id": id, "meta": new_match.meta_json(&id, &self.house, self.fee_bps) });
         let id_for_error = id.clone();
         self.matches.insert(id, new_match);
@@ -484,6 +501,7 @@ impl Contract {
         if deposit.as_yoctonear() < required {
             // The receipt reverts anyway; removing keeps unit-test state consistent too.
             env::storage_remove(&host_key(&id_for_error));
+            env::storage_remove(&fee_key(&id_for_error));
             self.matches.remove(&id_for_error);
             self.matches.flush();
             panic_msg(format!(
@@ -684,6 +702,7 @@ impl Contract {
         }
         self.matches.remove(&id);
         env::storage_remove(&host_key(&id));
+        env::storage_remove(&fee_key(&id));
         let mut transfers: BTreeMap<AccountId, u128> = BTreeMap::new();
         let mut refunds = Vec::new();
         for (k, seat) in m.seats.iter().enumerate() {
@@ -704,6 +723,21 @@ impl Contract {
                 "storage_refund": yocto_json(m.storage_deposit),
             }),
         );
+    }
+
+    /// Owner only, with exactly 1 yoctoNEAR attached (so a full-access key has to sign): sets the fee, in basis points
+    /// of the pot, at most [`MAX_FEE_BPS`], for matches opened from now on. A match already open keeps the fee it was
+    /// opened with, so no player ever pays a fee they did not see when they staked.
+    #[payable]
+    pub fn set_fee(&mut self, fee_bps: u16) {
+        assert_one_yocto();
+        require!(env::predecessor_account_id() == self.owner, "only the owner may set the fee");
+        validate_fee(fee_bps);
+        if env::storage_read(FEE_BEFORE_KEY).is_none() {
+            env::storage_write(FEE_BEFORE_KEY, &self.fee_bps.to_le_bytes());
+        }
+        emit("set_fee", json!({ "from": self.fee_bps, "to": fee_bps }));
+        self.fee_bps = fee_bps;
     }
 
     /// Owner only, with exactly 1 yoctoNEAR attached (so a full-access key has to sign): sends the fees collected so
@@ -729,7 +763,7 @@ impl Contract {
     pub fn get_match(&self, id: String) -> Option<Value> {
         self.matches
             .get(&id)
-            .map(|m| json!({ "meta": m.meta_json(&id, &self.house, self.fee_bps), "game": m.game.snapshot(), "log": m.game.log }))
+            .map(|m| json!({ "meta": m.meta_json(&id, &self.house, self.fee_of_match(&id)), "game": m.game.snapshot(), "log": m.game.log }))
     }
 
     /// Unfinished matches (lobby or playing), `limit` defaults to 20 (at most 50).
@@ -741,7 +775,7 @@ impl Contract {
             .skip(from)
             .take(limit)
             .map(|(id, m)| {
-                let mut meta = m.meta_json(id, &self.house, self.fee_bps);
+                let mut meta = m.meta_json(id, &self.house, self.fee_of_match(id));
                 meta["round"] = json!(m.game.round);
                 meta["phase"] = json!(m.game.phase);
                 meta
@@ -907,6 +941,12 @@ impl Contract {
         }
     }
 
+    /// The fee the match `id` was opened with: its own record; for a match opened before records existed, the fee in
+    /// force then (kept by the first `set_fee`, or still in force when nothing has changed it).
+    fn fee_of_match(&self, id: &str) -> u16 {
+        read_bps(&fee_key(id)).or_else(|| read_bps(FEE_BEFORE_KEY)).unwrap_or(self.fee_bps)
+    }
+
     /// Pays out an ended match exactly once. The match is removed from `matches` in the same call and a summary is
     /// written to `results`; both `load` paths refuse an id found in `results`, so nothing can reach this twice.
     fn settle(&mut self, id: String, mut m: Match) {
@@ -918,7 +958,9 @@ impl Contract {
         require!(ranking.len() == m.seats.len(), "the ranking covers every seat");
         let pot = m.stake.as_yoctonear() * m.seats.len() as u128;
         // The fee comes off the whole pot first; the ranks share what is left, so fee + shares == pot to the yocto.
-        let fee = fee_of(pot, self.fee_bps);
+        let fee_bps = self.fee_of_match(&id);
+        env::storage_remove(&fee_key(&id));
+        let fee = fee_of(pot, fee_bps);
         let shares = split_pot(pot - fee, &m.split, ranking.len());
         let backers: Vec<AccountId> = ranking
             .iter()
@@ -1026,7 +1068,7 @@ impl Contract {
                 "reason": result.reason,
                 "pot": json!(U128(pot)),
                 "fee": json!(U128(fee)),
-                "fee_bps": self.fee_bps,
+                "fee_bps": fee_bps,
                 "ranks": ranks_json,
                 "forfeited": json!(U128(forfeited)),
                 "deed": deed,

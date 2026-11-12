@@ -6,6 +6,7 @@ Two crates in one Cargo workspace:
 |---|---|
 | `engine/` (`deedlords-engine`) | The game rules: a pure, deterministic, integer-only Rust port of the TS engine. No NEAR dependency. Contract with the TS engine: `docs/ENGINE-RULES.md`. |
 | `deedlords/` (`deedlords`) | The NEAR contract around the engine: matches, stakes, on-chain dice, turn deadlines, payouts, Deed NFTs (NEP-171), stats. |
+| `chibi/` (`deedlords-chibi`) | Chibi characters as NFTs (NEP-171 + enumeration + metadata): one character per account, every look item a token, free basic items (paid from a free pool the minter draws on), boxes of rarer items bought with NEAR. Its catalogue `src/catalog.rs` is generated from the game's chibi parts (`npm run chibi:catalog`). Testnet: `chibi.deedlords.testnet`. Sandbox and testnet deploy: `sandbox/chibi-run.js`. |
 | `sandbox/` | `run.js`: integration test on a local `near-sandbox` (never leaves this machine). `testnet.js`: testnet deploy + latency check (refuses mainnet). `sponsor.js`: creates the testnet account that pays for free play (refuses mainnet). |
 
 ## Build
@@ -100,15 +101,20 @@ bytes of the permanent records (summary, stats, Deed), so finished matches never
 
 ### Fee
 
-`fee_bps` is given to `new` (or to `migrate`), at most 500 (5%, `MAX_FEE_BPS`), and no method changes it afterwards:
-every match of a deployment pays the same rate, shown in `get_config` and in each match's `meta`. The test and dev
-deployments use 250 (2.5%). The fee is taken only when a match is settled: `leave` and `abandon` return stakes whole.
+`fee_bps` is given to `new` (or to `migrate`), at most 500 (5%, `MAX_FEE_BPS`). The owner changes it with `set_fee`,
+which needs 1 yoctoNEAR attached (so only a full-access key signs it) and applies to matches opened from then on: each
+match writes the fee in force under a storage key of its own (`fee:<id>`, outside `Match`, paid by the creator's
+storage deposit) and is settled at that rate, so a change never reaches a stake already made. A match opened before
+these records existed pays the fee in force before the first `set_fee`, which that call keeps under `fee_before_set`.
+`get_config` shows the fee for new matches, each match's `meta` its own. Since 2026-11-12 the testnet deployment's fee
+is 0 (matches opened there before keep their 2.5%). The fee is taken only when a match is settled: `leave` and
+`abandon` return stakes whole.
 Collected fees add up in a counter (`get_fees`); `withdraw_fees` sends exactly that amount to the owner and resets it.
 It needs 1 yoctoNEAR attached, so only a full-access key of the owner can sign it. Stakes of open matches, storage
 deposits and the house's forfeited shares are not in the counter and cannot be withdrawn.
 
-Whoever holds a full-access key of the contract account can still deploy other code. Keep that in mind when reading
-"no method changes it": it describes this code, not the account.
+Whoever holds a full-access key of the contract account can still deploy other code: the rules above describe this
+code, not the account.
 
 ### Upgrading a deployment made before the fee
 

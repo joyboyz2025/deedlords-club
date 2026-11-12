@@ -76,12 +76,12 @@ export async function openWalletSession(): Promise<WalletAccount | null> {
   return null;
 }
 
-/** Hands the wallet one transaction to the game contract, for its owner to approve; resolves when it has run. */
-export async function sendWithWallet(accountId: string, calls: FunctionCall[]): Promise<void> {
+/** Hands the wallet one transaction (to the game contract unless `receiverId` says), for its owner to approve; resolves when it has run. */
+export async function sendWithWallet(accountId: string, calls: FunctionCall[], receiverId: string = CHAIN.contractId): Promise<void> {
   const { wallet } = await (await connector()).getConnectedWallet();
   const outcome = await wallet.signAndSendTransaction({
     signerId: accountId,
-    receiverId: CHAIN.contractId,
+    receiverId,
     actions: calls.map((call) => ({
       type: "FunctionCall" as const,
       params: { methodName: call.method, args: JSON.parse(utf8.decode(call.args)) as object, gas: call.gas.toString(), deposit: call.deposit.toString() },

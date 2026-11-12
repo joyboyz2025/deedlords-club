@@ -11,6 +11,7 @@ export const Plane = ({ size = 22, className }: Props) => svg(size, className, <
 export const Clock = ({ size = 18, className }: Props) => svg(size, className, <><circle cx="12" cy="12" r="8.500" /><path d="M12 7.500V12l3 2" /></>);
 export const Arrow = ({ size = 20, className }: Props) => svg(size, className, <path d="M4 12h15M13 6l6 6-6 6" />);
 export const Chain = ({ size = 20, className }: Props) => svg(size, className, <path d="M10 14a4 4 0 0 0 5.700 0l3-3a4 4 0 0 0-5.700-5.700l-1 1M14 10a4 4 0 0 0-5.700 0l-3 3a4 4 0 0 0 5.700 5.700l1-1" />);
+export const Play = ({ size = 20, className }: Props) => svg(size, className, <path d="M8 5.200v13.600a1 1 0 0 0 1.500.860l11.300-6.800a1 1 0 0 0 0-1.720L9.500 4.340A1 1 0 0 0 8 5.200Z" />, false);
 export const Out = ({ size = 14, className }: Props) => svg(size, className, <path d="M9 5h10v10M19 5 6 18" />);
 export const Die = ({ size = 30, className }: Props) => (
   <svg className={className} viewBox="0 0 32 32" width={size} height={size} aria-hidden="true">

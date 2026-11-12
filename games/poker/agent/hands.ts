@@ -39,12 +39,12 @@ export function best(cards: number[]): number {
 export const madeHand = (hole: number[], board: number[]): string | null => (board.length < 3 ? null : CATEGORIES[best([...hole, ...board]) >> 20]);
 
 /**
- * The share of the pot `hole` expects against one hand it cannot see, on this `board`: the other hand and the cards
- * still to come are dealt at random `samples` times; a win counts 1, a split a half.
+ * The share of the pot `hole` expects against `opponents` hands it cannot see, on this `board`: the other hands and
+ * the cards still to come are dealt at random `samples` times; a win counts 1, a tie its share of the split.
  */
-export function winChance(hole: number[], board: number[], samples: number, random: () => number = Math.random): number {
+export function winChance(hole: number[], board: number[], samples: number, random: () => number = Math.random, opponents = 1): number {
   const rest = Array.from({ length: 52 }, (_, card) => card).filter((card) => !hole.includes(card) && !board.includes(card));
-  const need = 2 + 5 - board.length;
+  const need = 2 * opponents + 5 - board.length;
   let won = 0;
   for (let sample = 0; sample < samples; sample++) {
     // The first `need` places of a shuffle are enough.
@@ -52,9 +52,14 @@ export function winChance(hole: number[], board: number[], samples: number, rand
       const j = i + Math.floor(random() * (rest.length - i));
       [rest[i], rest[j]] = [rest[j], rest[i]];
     }
-    const table = [...board, ...rest.slice(2, need)];
-    const [mine, theirs] = [best([...hole, ...table]), best([rest[0], rest[1], ...table])];
-    won += mine > theirs ? 1 : mine === theirs ? 0.5 : 0;
+    const table = [...board, ...rest.slice(2 * opponents, need)];
+    const mine = best([...hole, ...table]);
+    let tied = 0;
+    for (let other = 0; other < opponents && tied >= 0; other++) {
+      const theirs = best([rest[2 * other], rest[2 * other + 1], ...table]);
+      tied = theirs > mine ? -1 : tied + Number(theirs === mine);
+    }
+    won += tied < 0 ? 0 : 1 / (tied + 1);
   }
   return won / samples;
 }

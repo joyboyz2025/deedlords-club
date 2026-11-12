@@ -316,7 +316,7 @@ function ArenaMatch({ initial, table, tabs, onAgain }: { initial: Match; table: 
       const piece = me.pieces.find((owned) => owned.id === ref);
       return piece ? [{ unit: piece.unit, rank: piece.rank, cell }] : [];
     });
-    scene.current?.setTeams([mine, match.last?.teams[1 - seat] ?? []]);
+    scene.current?.setTeams([mine, match.last?.teams[1 - seat] ?? []], stage === "plan");
     scene.current?.setMarks(draft.floor.flatMap((ref, cell) => (ref >= WON ? [cell] : [])));
   }, [ready, stage, roster, draft.floor, match, me.pieces, seat]);
 
@@ -418,7 +418,8 @@ function ArenaMatch({ initial, table, tabs, onAgain }: { initial: Match; table: 
   const heldPiece = me.pieces.find((piece) => piece.id === held);
   const shown = inspect === null ? null : UNITS[inspect];
   const hint =
-    held !== null ? `Tap a hex on your side to place ${UNITS[unitOf(held)!].name}.`
+    roster ? "Tap a unit to see its attack, then its ability."
+    : held !== null ? `Tap a hex on your side to place ${UNITS[unitOf(held)!].name}.`
     : problem ? `Not yet: ${problem}.`
     : !owned.length ? "Tap a card in the shop to bid for it. The higher sealed bid takes the unit."
     : "Tap a unit to move it. Press Ready to seal your plan.";

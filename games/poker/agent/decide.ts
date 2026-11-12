@@ -48,6 +48,9 @@ export type Brief = {
   blinds: [number, number];
 };
 
+/** What makes a bet legal: what a call costs, and what a raise may be. */
+export type Bounds = Pick<Brief, "toCall" | "raiseTo">;
+
 const STREETS = ["pre-flop", "flop", "turn", "river"] as const;
 export const cardName = (card: number): string => "23456789TJQKA"[card % 13] + "cdhs"[Math.floor(card / 13)];
 const percent = (share: number): string => `${Math.round(share * 100)}%`;
@@ -103,7 +106,7 @@ export function byTheBook(brief: Brief): Decision & { reason: string } {
  * nothing; a fold that would give up a free check becomes the check; a raise is held inside its bounds, and is a
  * call when no raise is possible.
  */
-export function legal(answer: unknown, brief: Brief): Decision | null {
+export function legal(answer: unknown, brief: Bounds): Decision | null {
   if (typeof answer !== "object" || answer === null) return null;
   const { action, amount } = answer as { action?: unknown; amount?: unknown };
   if (action === "check") return brief.toCall === 0 ? { action: "call" } : null;
@@ -133,7 +136,7 @@ export function messages(brief: Brief, style?: string): { system: string; user: 
 }
 
 /** The first JSON object in a model's answer, as a legal bet with its reason; `null` when there is none. */
-export function parseAnswer(text: string, brief: Brief): (Decision & { reason: string }) | null {
+export function parseAnswer(text: string, brief: Bounds): (Decision & { reason: string }) | null {
   const [start, end] = [text.indexOf("{"), text.lastIndexOf("}")];
   if (start < 0 || end <= start) return null;
   let answer: unknown;
@@ -152,8 +155,12 @@ export function parseAnswer(text: string, brief: Brief): (Decision & { reason: s
 }
 
 /** One request to a service that speaks the OpenAI chat-completions protocol. Throws when it refuses or does not answer with a bet. */
-export async function askModel(config: LlmConfig, brief: Brief, options: { style?: string; signal?: AbortSignal; fetch?: typeof fetch } = {}): Promise<Decision & { reason: string }> {
-  const { system, user } = messages(brief, options.style);
+export function askModel(config: LlmConfig, brief: Brief, options: { style?: string; signal?: AbortSignal; fetch?: typeof fetch } = {}): Promise<Decision & { reason: string }> {
+  return askFor(config, messages(brief, options.style), brief, options);
+}
+
+/** The same request with the two messages given: `bounds` says which answers are a legal bet. */
+export async function askFor(config: LlmConfig, { system, user }: { system: string; user: string }, bounds: Bounds, options: { signal?: AbortSignal; fetch?: typeof fetch } = {}): Promise<Decision & { reason: string }> {
   const response = await (options.fetch ?? fetch)(`${config.baseUrl}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}` },
@@ -171,7 +178,7 @@ export async function askModel(config: LlmConfig, brief: Brief, options: { style
   if (!response.ok) throw new Error(`the model service answered ${response.status}${response.status === 402 || response.status === 429 ? " (out of credit, or asked too often)" : ""}`);
   const body = (await response.json()) as { choices?: { message?: { content?: unknown } }[] };
   const text = body.choices?.[0]?.message?.content;
-  const answer = typeof text === "string" ? parseAnswer(text, brief) : null;
+  const answer = typeof text === "string" ? parseAnswer(text, bounds) : null;
   if (!answer) throw new Error("the model did not answer with a bet");
   return answer;
 }

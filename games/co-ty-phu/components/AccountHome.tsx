@@ -12,7 +12,7 @@ import { AgentStub, Hall, PassengerStub } from "./Desk";
 /** What each game of the hall asks of an account. A Google account's key in the browser is granted for Deedlords only. */
 const GAMES = [
   { href: "/play", name: "Deedlords", line: "Buy the world's priciest cities, collect rent, win the pot.", takes: "Any account. Free tables need no NEAR." },
-  { href: "/poker", name: "Poker", line: "Heads-up Hold'em, dealt as mental poker: nobody holds the deck.", takes: "A guest or EVM-wallet game account, with test NEAR on it." },
+  { href: "/poker/tables", name: "Poker", line: "Hold'em for two to nine, dealt as mental poker: nobody holds the deck.", takes: "A guest or EVM-wallet game account, with test NEAR on it." },
   { href: "/arena", name: "Arena", line: "A sealed-bid market and a hex-grid fight with no dice.", takes: "A guest or EVM-wallet game account, with test NEAR on it." },
 ];
 
@@ -34,8 +34,8 @@ export function AccountHome() {
           <h1 className="fd-line">{player ? "Your account." : "Connect once, play anywhere here."}</h1>
           <p className="fd-lede">
             {player
-              ? `This is who you are at every table of the hall, on NEAR ${CHAIN.network}. NEAR you send to it is yours to stake and to take out again.`
-              : "A guest account, your Google sign-in, an EVM wallet or a NEAR wallet: whichever you pick is your account at every table of the hall."}
+              ? `This is who you are at every table of the club, on NEAR ${CHAIN.network}. NEAR you send to it is yours to stake and to take out again.`
+              : "A guest account, your Google sign-in, an EVM wallet or a NEAR wallet: whichever you pick is your account at every table of the club."}
           </p>
           <section className="fd-board" aria-label="Games">
             <h2 className="fd-board__title">

@@ -16,12 +16,18 @@ export function manifest(): Promise<Manifest> {
   return listed;
 }
 
-/** Loads a GLB and gives every mesh a plain lit material with the model's colour image: no reflections to light, cheap on a phone. */
+/**
+ * Loads a GLB and gives every mesh a plain lit material with the model's colour image: no reflections to light, cheap
+ * on a phone. A model with a skeleton keeps its clips in `animations`.
+ */
 export async function loadModel(url: string): Promise<THREE.Object3D> {
-  const { scene } = await new GLTFLoader().loadAsync(url);
+  const { scene, animations } = await new GLTFLoader().loadAsync(url);
+  scene.animations = animations;
   scene.traverse((node) => {
     const mesh = node as THREE.Mesh;
     if (!mesh.isMesh) return;
+    // A mesh on a skeleton is culled by where it stood when it was bound, not by where its bones have taken it.
+    if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) mesh.frustumCulled = false;
     const old = mesh.material as THREE.MeshStandardMaterial;
     mesh.material = new THREE.MeshLambertMaterial({ map: old.map, color: old.map ? "#ffffff" : old.color });
     for (const extra of [old.normalMap, old.metalnessMap, old.roughnessMap]) extra?.dispose();
@@ -43,8 +49,10 @@ export function disposeModel(root: THREE.Object3D): void {
   });
 }
 
-/** A unit's model standing on the origin, `height` tall, centred on its own axis. */
+/** A unit's model standing on the origin, `height` tall, centred on its own axis. Its clips go with it. */
 export function standing(model: THREE.Object3D, height: number): THREE.Group {
+  // A mesh on a skeleton is measured where its bones hold it, so the bones are placed first.
+  model.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(model);
   const size = box.getSize(new THREE.Vector3());
   const centre = box.getCenter(new THREE.Vector3());
@@ -53,6 +61,7 @@ export function standing(model: THREE.Object3D, height: number): THREE.Group {
   model.position.set(-centre.x * scale, -box.min.y * scale, -centre.z * scale);
   const group = new THREE.Group();
   group.add(model);
+  group.animations = model.animations;
   return group;
 }
 

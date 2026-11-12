@@ -101,6 +101,16 @@ body:has(.pk) {
   margin: 0 auto;
 }
 
+/* The club's second word: smaller, same face, same foil. */
+.pk-mark small {
+  font-size: 0.56em;
+  letter-spacing: 0.04em;
+}
+
+.pk-mark {
+  white-space: nowrap;
+}
+
 .pk-mark {
   font-family: var(--slab);
   font-size: clamp(22px, 2.4vw, 32px);
@@ -2088,5 +2098,557 @@ body:has(.pk) {
   .pk-seat__chips em {
     font-size: 11px;
     letter-spacing: 0.03em;
+  }
+}
+
+/* The wall of tables in the lobby: a board of rows, each row opens its table. */
+
+.pk-hall .pk-wall-board {
+  margin-top: 22px;
+}
+
+.pk-wall-board__count {
+  margin-left: auto;
+  color: var(--soft);
+  font-family: var(--font-be-vietnam), system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pk-tables {
+  margin-top: 8px;
+}
+
+.pk-tables__row {
+  display: grid;
+  grid-template-columns: minmax(118px, 1fr) minmax(150px, 1.5fr) 82px minmax(150px, 1.1fr) minmax(112px, auto);
+  gap: 14px;
+  align-items: center;
+  min-height: 52px;
+  padding: 8px 8px;
+  border-top: 1px solid rgb(255 247 230 / 11%);
+  border-radius: 10px;
+  transition: background 0.2s;
+}
+
+.pk-tables__row--head {
+  min-height: 0;
+  padding-block: 6px;
+  border-top: 0;
+  white-space: nowrap;
+}
+
+a.pk-tables__row:hover {
+  background: rgb(255 247 230 / 6%);
+}
+
+.pk-tables__row[data-mine] {
+  background: rgb(248 201 63 / 8%);
+}
+
+.pk-tables__row[data-blank] {
+  opacity: 0.5;
+}
+
+.pk-tables__row[data-blank] .pk-flap i {
+  border-color: rgb(248 201 63 / 16%);
+  animation: none;
+}
+
+.pk-tables__row > .pk-code {
+  overflow: hidden;
+  color: var(--gold-pale);
+  font-size: 13.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pk-tables__seats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  min-width: 0;
+}
+
+.pk-tables__seats b {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pk-tables__seats b + b::before {
+  content: "vs";
+  margin-right: 10px;
+  color: var(--soft);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.pk-tables__seats b[data-open] {
+  padding: 0 8px;
+  border: 1px dashed rgb(255 247 230 / 38%);
+  border-radius: 999px;
+  color: var(--soft);
+  font-weight: 400;
+}
+
+.pk-tables__row > :nth-child(3) {
+  white-space: nowrap;
+}
+
+.pk-tables__now {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pk-tables__now small {
+  color: var(--soft);
+  font-size: 13px;
+}
+
+.pk-tables__go {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  color: var(--cream);
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pk-tables__go svg {
+  color: var(--gold);
+  transition: transform 0.25s cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+a.pk-tables__row:hover .pk-tables__go svg {
+  transform: translateX(3px);
+}
+
+.pk-open {
+  display: inline-block;
+  padding: 3px 12px;
+  border: 1.5px solid var(--green);
+  border-radius: 999px;
+  background: rgb(47 154 92 / 22%);
+  color: #bfeccb;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* The house at work: its plate breathes in its own colour. */
+
+@media (prefers-reduced-motion: no-preference) {
+  .pk-seat[data-thinking] .pk-seat__chips em {
+    animation: pk-think 1.2s ease-in-out infinite;
+  }
+}
+
+@keyframes pk-think {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* A voice: what the house or an agent said for its last bet. One tight corner, towards its speaker. */
+
+.pk-voice {
+  display: grid;
+  gap: 3px;
+  max-width: 62ch;
+  margin: 8px auto 2px;
+  padding: 10px 14px;
+  border-radius: 4px 14px 14px 14px;
+  background: var(--cream);
+  box-shadow: 0 4px 12px rgb(10 2 1 / 30%);
+  color: #3a1508;
+  font-size: 14px;
+}
+
+.pk-voice figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  font-weight: 600;
+}
+
+.pk-voice figcaption svg {
+  color: var(--red);
+}
+
+.pk-voice figcaption b {
+  color: var(--red);
+}
+
+.pk-voice blockquote {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+
+.pk-voice blockquote::before {
+  content: "\201C";
+}
+
+.pk-voice blockquote::after {
+  content: "\201D";
+}
+
+.pk-voice small {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+}
+
+.pk-voice[data-paper] {
+  margin: 2px 0 0;
+  max-width: none;
+  padding: 8px 12px;
+  background: var(--field);
+  box-shadow: none;
+}
+
+/* On the action stub a voice is held to two lines; the whole sentence is in its title. */
+.pk-voice[data-paper] blockquote {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.pk-voices {
+  display: grid;
+  gap: 6px;
+}
+
+/* The switch that hands the player's seat to their agent: a native checkbox in ink on paper. */
+
+.pk-agent {
+  display: grid;
+  gap: 4px;
+}
+
+.pk-agents {
+  gap: 10px;
+}
+
+/* The ticket under the action stub is not pinned: it scrolls with the page. */
+.pk-desk + .pk-ticket {
+  margin-top: -8px;
+}
+
+.pk-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.pk-switch input {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--red);
+}
+
+.pk-switch span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  min-width: 0;
+}
+
+.pk-switch b {
+  font-size: 15px;
+}
+
+.pk-switch small {
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 13px;
+  text-overflow: ellipsis;
+}
+
+.pk-switch a {
+  color: var(--red);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media (max-width: 1099px) {
+  .pk-tables__row--head,
+  .pk-tables__row[data-blank] {
+    display: none;
+  }
+
+  .pk-tables__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 12px;
+    padding: 10px 6px;
+  }
+
+  .pk-tables__row > .pk-code {
+    grid-area: 1 / 1;
+  }
+
+  .pk-tables__seats {
+    grid-area: 2 / 1;
+  }
+
+  .pk-tables__row > :nth-child(3) {
+    grid-area: 1 / 2;
+    justify-self: end;
+    color: var(--soft);
+    font-size: 13px;
+  }
+
+  .pk-tables__now {
+    grid-area: 2 / 2;
+    justify-self: end;
+  }
+
+  .pk-tables__go {
+    grid-area: 3 / 1 / auto / -1;
+    justify-content: flex-start;
+  }
+
+  .pk-wall-board__count {
+    display: none;
+  }
+
+  .pk-wall > .pk-wall-board {
+    order: 2;
+    margin-top: 0;
+  }
+
+  .pk-wall > .pk-board:not(.pk-wall-board) {
+    order: 3;
+  }
+
+  .pk-wall > .pk-under {
+    order: 4;
+  }
+}
+
+@media (max-width: 719px) {
+  .pk-voice {
+    margin-top: 4px;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .pk-voice blockquote {
+    font-size: 13px;
+  }
+
+  .pk-agent .pk-fine {
+    display: none;
+  }
+}
+
+/* Handed to the agent: the way back sits where Fold was, the bets stay visible and off. */
+.pk-move .pk-pill--quiet {
+  grid-column: 1 / -1;
+  justify-self: start;
+  min-height: 36px;
+  padding-inline: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ---- Characters at the table ---- */
+
+/* A seat's plate carries its character's face in place of its number. */
+.pk-seat__face {
+  overflow: hidden;
+}
+
+.pk-seat__face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* The waiting room: while the table waits for its second seat the two seats stand at its ends, whole, on pads of
+   their own colours, with the deck between them. */
+
+.pk-baize__in[data-lobby] {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-areas: none;
+  gap: 8px clamp(10px, 4cqw, 44px);
+  align-items: start;
+  padding: 10px 9% 22px;
+}
+
+.pk-lounge__deck {
+  align-self: center;
+}
+
+.pk-guest {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  gap: 3px;
+  width: 100%;
+  min-width: 0;
+  text-align: center;
+}
+
+.pk-guest__figure {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(100%, 31vh, 260px);
+  aspect-ratio: 1;
+  margin-bottom: 4px;
+  font-family: var(--slab);
+  font-size: 36px;
+}
+
+/* A light in the seat's colour behind the figure. */
+.pk-guest__figure::before {
+  content: "";
+  position: absolute;
+  inset: 2% 4% 8%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--seat) 50%, transparent) 0%, transparent 74%);
+}
+
+/* The pad it stands on. */
+.pk-guest__figure::after {
+  content: "";
+  position: absolute;
+  right: 17%;
+  bottom: 2.5%;
+  left: 17%;
+  height: 15%;
+  border: 3px solid var(--seat);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--seat) 34%, #201009);
+}
+
+/* The drawing leaves air around a figure for its pet and its ride: shown larger, feet kept on the pad. */
+.pk-guest__figure img {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  scale: 1.16;
+  transform-origin: 50% 86%;
+  filter: drop-shadow(0 6px 5px rgb(0 0 0 / 40%));
+}
+
+.pk-guest__figure b {
+  position: relative;
+  z-index: 1;
+  color: var(--soft);
+  font-weight: 400;
+}
+
+.pk-guest strong {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: clamp(16px, 2.6cqw, 21px);
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pk-guest[data-you] strong {
+  color: #fbe29a;
+}
+
+.pk-guest__chips {
+  color: var(--soft);
+  font-size: 12.5px;
+}
+
+.pk-guest__chips b {
+  color: var(--gold);
+  font-family: var(--slab);
+  font-size: 19px;
+  font-weight: 400;
+}
+
+/* An open seat: the outline of somebody who is not here yet. */
+.pk-guest[data-free] .pk-guest__figure::before {
+  content: none;
+}
+
+.pk-guest[data-free] .pk-guest__figure::after {
+  border-style: dashed;
+  border-color: rgb(255 247 230 / 42%);
+  background: none;
+}
+
+.pk-guest__ghost {
+  position: relative;
+  z-index: 1;
+  align-self: end;
+  width: 36%;
+  margin-bottom: 11%;
+  aspect-ratio: 1 / 1.42;
+}
+
+.pk-guest__ghost::before,
+.pk-guest__ghost::after {
+  content: "";
+  position: absolute;
+  border: 2px dashed rgb(255 247 230 / 42%);
+}
+
+.pk-guest__ghost::before {
+  top: 0;
+  right: 6%;
+  left: 6%;
+  border-radius: 50%;
+  aspect-ratio: 1;
+}
+
+.pk-guest__ghost::after {
+  right: 22%;
+  bottom: 0;
+  left: 22%;
+  height: 34%;
+  border-radius: 38% 38% 30% 30%;
+}
+
+.pk-guest[data-free] strong {
+  color: var(--soft);
+  font-weight: 400;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pk-guest__figure img {
+    animation: pk-arrive 0.55s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+
+  @keyframes pk-arrive {
+    from {
+      opacity: 0;
+      translate: 0 -12px;
+    }
+  }
+}
+
+@container baize (max-width: 560px) {
+  .pk-baize__in[data-lobby] {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    padding-inline: 7%;
+  }
+
+  .pk-lounge__deck {
+    display: none;
   }
 }

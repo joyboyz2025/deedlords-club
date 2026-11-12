@@ -67,7 +67,13 @@ export function Departures() {
                 {taken} / {match.seats.length}
               </span>
               <span role="cell">
-                <b>{formatNear(match.stake)}</b> NEAR
+                {BigInt(match.stake) === 0n ? (
+                  <b>Free</b>
+                ) : (
+                  <>
+                    <b>{formatNear(match.stake)}</b> NEAR
+                  </>
+                )}
               </span>
               <span role="cell">
                 <i className="lp-status" data-live={!boarding || undefined}>

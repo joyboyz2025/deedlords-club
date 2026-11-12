@@ -5,7 +5,13 @@
 // back to the Table that talks to the chain (or to the demo, which talks to nothing).
 
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
-import { Chain, Clock, Copy, Out } from "@/components/landing/icons";
+import { Arrow, Bot, Chain, Clock, Copy, Out } from "@/components/landing/icons";
+import type { Character } from "../../chibi/chain";
+import { useLookPictures } from "../../chibi/useChibi";
+import { lookFromSeat } from "../../ma-soi/look";
+import type { HouseSeat } from "../useHouse";
+import type { SeatAgent } from "../useSeatAgent";
+import type { Tables } from "../useTables";
 import { type MatchView, type Outcome, betOptions, holeAt, streetAt } from "../seat";
 import { CardPlace, type Mark, PlayingCard } from "./Cards";
 
@@ -43,12 +49,22 @@ export type TableProps = {
   stake: string;
   /** The match has not been read yet: the table is drawn empty. */
   reading?: boolean;
+  /** The seats' chibi characters, by seat, when whoever feeds the table has read them: a seat without one gets its stock figure. */
+  characters?: (Character | null | undefined)[];
+  /** The server's house, when it sits at this table. */
+  house?: Pick<HouseSeat, "seat" | "thinking" | "last"> & Partial<Pick<HouseSeat, "holding" | "deal">>;
+  /** The player's own agent, which may bet for the player's seats; `said` is its last bet in the ledger's words. */
+  agent?: Pick<SeatAgent, "on" | "toggle" | "thinking" | "last" | "name" | "model"> & { said: string | null };
   on: TableActions;
 };
 
 const STREETS = ["Pre-flop", "Flop", "Turn", "River"];
 const STOPS = ["Shuffle", "Shuffle", "Deal", ...STREETS, "Showdown"];
 const seatColour = (seat: number) => ({ "--seat": `var(--seat-${seat})` }) as CSSProperties;
+/** A figure in the waiting room is drawn this large (square); a face on a seat's plate this large. */
+const FIGURE_PX = 480;
+const FACE_PX = 128;
+const NOBODY: null[] = [null, null];
 
 /** A word on a board, one flap a character; a character that changes drops in as a new flap. */
 export function Flap({ text }: { text: string }) {
@@ -101,7 +117,11 @@ function stepOf(view: MatchView, resting: boolean): { stop: number; word: string
   if (view.phase === "shuffle") return { stop: view.shuffled, word: `SHUFFLE ${view.shuffled + 1}/2` };
   if (view.phase === "deal") return { stop: 2, word: "DEALING" };
   if (view.phase === "bet") return { stop: 3 + view.street, word: STREETS[view.street].toUpperCase() };
-  if (view.phase === "open") return { stop: 3 + view.street, word: `OPEN ${STREETS[view.street].toUpperCase()}` };
+  if (view.phase === "open")
+    return {
+      stop: 3 + view.street,
+      word: `OPEN ${STREETS[view.street].toUpperCase()}`,
+    };
   return { stop: 7, word: "SHOWDOWN" };
 }
 
@@ -113,7 +133,10 @@ function lastMove(before: MatchView, now: MatchView): { seat: number; word: stri
     const bettors = [0, 1].filter((seat) => now.put[seat] > before.put[seat]);
     if (bettors.length === 1) {
       const seat = bettors[0];
-      return { seat, word: now.put[seat] > now.put[1 - seat] ? (now.chips[seat] === 0 ? "all in" : "raised") : "called" };
+      return {
+        seat,
+        word: now.put[seat] > now.put[1 - seat] ? (now.chips[seat] === 0 ? "all in" : "raised") : "called",
+      };
     }
   }
   if (before.phase === "bet") {
@@ -124,7 +147,10 @@ function lastMove(before: MatchView, now: MatchView): { seat: number; word: stri
       return folded ? { seat, word: "folded" } : null;
     }
     const paid = now.put[seat] - before.put[seat];
-    return { seat, word: paid === 0 ? "checked" : now.put[seat] > now.put[other] ? (now.chips[seat] === 0 ? "all in" : "raised") : "called" };
+    return {
+      seat,
+      word: paid === 0 ? "checked" : now.put[seat] > now.put[other] ? (now.chips[seat] === 0 ? "all in" : "raised") : "called",
+    };
   }
   if (before.phase === "shuffle") return { seat: before.awaited[0], word: "shuffled" };
   const word = before.phase === "showdown" ? "showed" : "shares in";
@@ -133,7 +159,7 @@ function lastMove(before: MatchView, now: MatchView): { seat: number; word: stri
   return done === undefined ? null : { seat: done, word };
 }
 
-export function TableView({ id, view, hole, mine, locked, doing, dealt, now, problems, log, link, explorer, stake, reading = false, on }: TableProps) {
+export function TableView({ id, view, hole, mine, locked, doing, dealt, now, problems, log, link, explorer, stake, reading = false, characters, house, agent, on }: TableProps) {
   // Cards that are on the table when the page first draws it lie still; later ones travel in from the deck.
   const [live, setLive] = useState(false);
   useEffect(() => setLive(true), []);
@@ -154,7 +180,15 @@ export function TableView({ id, view, hole, mine, locked, doing, dealt, now, pro
   const last = view.last;
   const low = mine[0] ?? 0;
   const top = 1 - low;
-  const name = (seat: number): string => (mine.length === 1 && mine[0] === seat ? "You" : `Seat ${seat + 1}`);
+  const houseSeat = house?.seat ?? null;
+  // Who sits is drawn as their own character, or as the seat's stock figure (the house, and an account with none):
+  // a face on the seat's plate while a hand is played, the whole figure while the table waits for its second seat.
+  const looks = [0, 1].map((at) => (view.players[at] ? (at !== houseSeat && characters?.[at]?.look) || lookFromSeat(at) : null));
+  const faces = useLookPictures(looks, FACE_PX);
+  const figures = useLookPictures(inLobby ? looks : NOBODY, FIGURE_PX, "figure");
+  /** The seat's character's name, when it has one. */
+  const called = (at: number): string | null => (at !== houseSeat && characters?.[at]?.name) || null;
+  const name = (seat: number): string => (mine.length === 1 && mine[0] === seat ? "You" : seat === houseSeat ? "The house" : `Seat ${seat + 1}`);
   const is = (seat: number): string => (name(seat) === "You" ? "You are" : `${name(seat)} is`);
   const { stop, word } = reading ? { stop: -1, word: "READING" } : stepOf(view, resting);
   const left = Math.round(Number(view.deadline) / 1e9 - now / 1000);
@@ -177,7 +211,12 @@ export function TableView({ id, view, hole, mine, locked, doing, dealt, now, pro
     return "place";
   });
   const newest = !resting && view.phase !== "open" && view.board.length > 0 ? (view.street === 1 ? [0, 1, 2] : [view.board.length - 1]) : [];
-  const waitingFor = view.awaited.map(name).join(" and ");
+  /** A name inside a sentence: "you" and "the house" in lower case. */
+  const named = (seat: number): string => {
+    const it = name(seat);
+    return it === "You" ? "you" : it === "The house" ? "the house" : it;
+  };
+  const waitingFor = view.awaited.map(named).join(" and ");
 
   let say: ReactNode = "";
   if (reading) say = "Asking the contract for this table…";
@@ -186,15 +225,14 @@ export function TableView({ id, view, hole, mine, locked, doing, dealt, now, pro
     say = (
       <>
         Hand {last.number + 1}: {outcomeText(last.outcome, name)}
-        {last.outcome === "void" ? "" : `, pot ${last.pot}`}. {mine.includes(dealer) ? "Deal the next hand when you are ready." : `${name(dealer)} deals the next hand.`}
+        {last.outcome === "void" ? "" : `, pot ${last.pot}`}.{" "}
+        {mine.includes(dealer) || (house?.holding && dealer === houseSeat) ? "Deal the next hand when you are ready." : `${name(dealer)} deals the next hand.`}
       </>
     );
   else if (view.phase === "shuffle")
     say =
       doing?.what === "shuffle" ? (
-        <>
-          This page is shuffling for {name(doing.seat) === "You" ? "you" : name(doing.seat)} and proving the shuffle: a second or two of work, then one transaction of about 3 s.
-        </>
+        <>This page is shuffling for {name(doing.seat) === "You" ? "you" : name(doing.seat)} and proving the shuffle: a second or two of work, then one transaction of about 3 s.</>
       ) : (
         <>
           {is(dealer)} shuffling the deck (shuffle {view.shuffled + 1} of 2, about 5 s). The contract takes a deck only with a proof that it is an honest shuffle.
@@ -205,14 +243,14 @@ export function TableView({ id, view, hole, mine, locked, doing, dealt, now, pro
     const owed = betOptions(view, view.toAct).owed;
     say = (
       <>
-        {name(view.toAct) === "You" ? "Your turn" : `${name(view.toAct)} to act`} {["before the flop", "on the flop", "on the turn", "on the river"][view.street]}
+        {name(view.toAct) === "You" ? "Your turn" : `${name(view.toAct)} to act`}
         {owed > 0 ? `: ${owed} to call.` : ": no bet to call."}
       </>
     );
   } else if (view.phase === "open")
     say = (
       <>
-        Turning the {STREETS[view.street].toLowerCase()}, about 9 s: a card turns when both seats&apos; shares of it are in. Waiting for {waitingFor}.
+        Turning the next card{view.street === 1 ? "s" : ""}, about 9 s: a card turns when both seats&apos; shares of it are in. Waiting for {waitingFor}.
       </>
     );
   else if (view.phase === "showdown") say = <>Showdown, about 3 s a seat: each seat opens its own two cards. Waiting for {waitingFor}.</>;
@@ -221,12 +259,21 @@ export function TableView({ id, view, hole, mine, locked, doing, dealt, now, pro
     const free = inLobby && !view.players[number];
     const cards = shown(number);
     const won = resting && last && typeof last.outcome === "object" && last.outcome.won === number;
-    const move = moved?.seat === number && !inLobby ? moved.word : null;
+    const isHouse = number === houseSeat;
+    const move = isHouse && house?.thinking ? "thinking…" : moved?.seat === number && !inLobby ? moved.word : null;
     return (
       <div className="pk-spot" data-at={at}>
-        <div className="pk-seat" data-free={free || undefined} data-awaited={(!resting && view.awaited.includes(number)) || undefined} data-won={won || undefined} data-moved={move !== null || undefined} style={seatColour(number)}>
+        <div
+          className="pk-seat"
+          data-free={free || undefined}
+          data-awaited={(!resting && view.awaited.includes(number)) || undefined}
+          data-won={won || undefined}
+          data-moved={move !== null || undefined}
+          data-thinking={(isHouse && house?.thinking) || undefined}
+          style={seatColour(number)}
+        >
           <span className="pk-seat__face" aria-hidden="true">
-            {number + 1}
+            {faces[number] ? <img src={faces[number]!} alt="" /> : number + 1}
           </span>
           {!inLobby && view.button === number && (
             <span className="pk-dealer" title="The button: this seat shuffles first and posts the small blind">
@@ -235,7 +282,7 @@ export function TableView({ id, view, hole, mine, locked, doing, dealt, now, pro
           )}
           <span className="pk-label">
             Seat {number + 1}
-            {mine.includes(number) ? " · you" : ""}
+            {mine.includes(number) ? " · you" : isHouse ? " · the house" : ""}
           </span>
           <span className="pk-seat__chips">
             {free ? (
@@ -243,7 +290,7 @@ export function TableView({ id, view, hole, mine, locked, doing, dealt, now, pro
             ) : (
               <>
                 <b>{view.chips[number]}</b>
-                {move ? <em>{move}</em> : <small title={view.players[number]}>{shortAccount(view.players[number] ?? "")}</small>}
+                {move ? <em>{move}</em> : <small title={view.players[number]}>{isHouse ? "the house" : (called(number) ?? shortAccount(view.players[number] ?? ""))}</small>}
               </>
             )}
           </span>
@@ -255,10 +302,36 @@ export function TableView({ id, view, hole, mine, locked, doing, dealt, now, pro
               card={card}
               dealt={live}
               order={index * 2 + (number === view.button ? 0 : 1)}
-              marks={[0, 1].map((from): Mark => ({ seat: from, given: token(from, holeAt(number)[index]) }))}
+              marks={[0, 1].map((from): Mark => ({
+                seat: from,
+                given: token(from, holeAt(number)[index]),
+              }))}
             />
           ))}
         </div>
+      </div>
+    );
+  };
+
+  // The waiting room: the two seats stand at the ends of the table, whole, with the deck between them.
+  const guest = (number: number) => {
+    const free = !view.players[number];
+    const isHouse = number === houseSeat;
+    return (
+      <div className="pk-guest" data-free={free || undefined} data-you={mine.includes(number) || undefined} style={seatColour(number)}>
+        <span className="pk-guest__figure">
+          {free ? <i className="pk-guest__ghost" aria-hidden="true" /> : figures[number] ? <img src={figures[number]!} alt="" /> : <b>{number + 1}</b>}
+        </span>
+        <span className="pk-label">
+          Seat {number + 1}
+          {mine.includes(number) ? " · you" : isHouse ? " · the house" : ""}
+        </span>
+        <strong title={view.players[number] ?? undefined}>{free ? "Open seat" : isHouse ? "The house" : (called(number) ?? shortAccount(view.players[number] ?? ""))}</strong>
+        {!free && (
+          <span className="pk-guest__chips">
+            <b>{view.chips[number]}</b> chips
+          </span>
+        )}
       </div>
     );
   };
@@ -283,7 +356,6 @@ export function TableView({ id, view, hole, mine, locked, doing, dealt, now, pro
               <span>Blinds 1 and 2</span>
             </p>
             <p className="pk-table__now">
-              <Flap text={word} />
               {!inLobby && !resting && (
                 <span className="pk-clock" data-low={left < 30 || undefined} title="Time left for this step">
                   <Clock size={16} /> {left >= 0 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : "time up"}
@@ -292,21 +364,30 @@ export function TableView({ id, view, hole, mine, locked, doing, dealt, now, pro
             </p>
           </header>
 
-          <ol className="pk-route" aria-label="The steps of a hand">
-            {STOPS.map((label, at) => (
-              <li key={at} data-at={stop < 0 ? undefined : at < stop ? "past" : at === stop ? "now" : undefined} aria-current={at === stop ? "step" : undefined}>
-                {label}
-              </li>
-            ))}
-          </ol>
-
           <div className="pk-baize">
+            {inLobby ? (
+              <div className="pk-baize__in" data-lobby>
+                {guest(low)}
+                <span className="pk-deck pk-lounge__deck" aria-hidden="true">
+                  {[0, 1, 2, 3, 4, 5, 6, 7].map((n) => (
+                    <i key={n} style={{ "--n": n } as CSSProperties} />
+                  ))}
+                </span>
+                {guest(top)}
+              </div>
+            ) : (
             <div className="pk-baize__in">
               {seat("top", top)}
               {bet("top", top)}
 
               <div className="pk-deckcell">
-                <span className="pk-deck" data-pk-deck data-shuffling={(view.phase === "shuffle" && !resting && !inLobby) || undefined} data-out={resting || inLobby || undefined} aria-hidden="true">
+                <span
+                  className="pk-deck"
+                  data-pk-deck
+                  data-shuffling={(view.phase === "shuffle" && !resting && !inLobby) || undefined}
+                  data-out={resting || inLobby || undefined}
+                  aria-hidden="true"
+                >
                   {[0, 1, 2, 3, 4, 5, 6, 7].map((n) => (
                     <i key={n} style={{ "--n": n } as CSSProperties} />
                   ))}
@@ -332,7 +413,10 @@ export function TableView({ id, view, hole, mine, locked, doing, dealt, now, pro
                       dealt={live}
                       order={place < 3 ? place : 0}
                       lit={newest.includes(place)}
-                      marks={[0, 1].map((from): Mark => ({ seat: from, given: token(from, 4 + place) }))}
+                      marks={[0, 1].map((from): Mark => ({
+                        seat: from,
+                        given: token(from, 4 + place),
+                      }))}
                     />
                   ),
                 )}
@@ -358,6 +442,7 @@ export function TableView({ id, view, hole, mine, locked, doing, dealt, now, pro
               {bet("low", low)}
               {seat("low", low)}
             </div>
+            )}
           </div>
 
           <p className="pk-say" role="status">
@@ -377,7 +462,23 @@ export function TableView({ id, view, hole, mine, locked, doing, dealt, now, pro
           )}
         </section>
 
-        <ActionStub key={`${view.hand}:${view.street}:${view.toAct}`} view={view} mine={mine} locked={locked} doing={doing} resting={resting} left={left} problems={problems} link={link} stake={stake} name={name} reading={reading} on={on} />
+        <ActionStub
+          key={`${view.hand}:${view.street}:${view.toAct}`}
+          view={view}
+          mine={mine}
+          locked={locked}
+          doing={doing}
+          resting={resting}
+          left={left}
+          problems={problems}
+          link={link}
+          stake={stake}
+          name={name}
+          reading={reading}
+          agent={agent}
+          house={inLobby ? undefined : house}
+          on={on}
+        />
       </div>
 
       <aside className="pk-side">
@@ -436,9 +537,13 @@ function ActionStub({
   stake,
   name,
   reading,
+  agent,
+  house,
   on,
 }: {
   reading: boolean;
+  agent?: TableProps["agent"];
+  house?: TableProps["house"];
   view: MatchView;
   mine: number[];
   locked: boolean;
@@ -454,6 +559,9 @@ function ActionStub({
   const [raiseTo, setRaiseTo] = useState("");
   const [copied, setCopied] = useState(false);
   const bettor = view.phase === "bet" && mine.includes(view.toAct) ? view.toAct : null;
+  /** The player's agent has the seat to act: the buttons are handed over to it. */
+  const handed = Boolean(agent?.on && bettor !== null);
+  const off = locked || handed;
   const options = bettor === null ? null : betOptions(view, bettor);
   const raise = options?.raise ?? null;
   const amount = raise ? Math.min(raise.max, Math.max(raise.min, Math.round(Number(raiseTo)) || raise.min)) : 0;
@@ -495,7 +603,8 @@ function ActionStub({
       );
     } else {
       title = "An open seat";
-      line = "The stake buys 100 chips, and what you hold when the table closes is paid back by the contract. The seat also pays a record fee of 0.002 NEAR, which is not returned.";
+      line =
+        "The stake buys 100 chips, and what you hold when the table closes is paid back by the contract. The seat also pays a record fee of 0.002 NEAR, which is not returned.";
       body = (
         <button type="button" className="pk-go" disabled={locked} onClick={on.take}>
           Take the seat for {stake}
@@ -504,24 +613,47 @@ function ActionStub({
     }
   } else if (bettor !== null && options) {
     const seat = bettor;
-    title = mine.length === 1 ? "Your move" : `Seat ${seat + 1} to act`;
+    title = handed && agent ? (agent.thinking ? `${agent.name} is thinking` : `${agent.name} has this seat`) : mine.length === 1 ? "Your move" : `Seat ${seat + 1} to act`;
+    const takeBack = handed && agent && (
+      <button type="button" className="pk-pill pk-pill--quiet" onClick={agent.toggle}>
+        Bet myself
+      </button>
+    );
     line = options.owed > 0 ? `${options.owed} to call` : "Nothing to call";
     body = (
       <div className="pk-move">
-        <button type="button" className="pk-pill" disabled={locked} onClick={() => on.act(seat, "fold", null, "folds")}>
+        <button type="button" className="pk-pill" disabled={off} onClick={() => on.act(seat, "fold", null, "folds")}>
           Fold
         </button>
-        <button type="button" className="pk-go" disabled={locked} onClick={() => on.act(seat, "call", null, options.owed ? `calls ${options.owed}` : "checks")}>
+        <button type="button" className="pk-go" disabled={off} onClick={() => on.act(seat, "call", null, options.owed ? `calls ${options.owed}` : "checks")}>
           {options.owed ? `Call ${options.owed}` : "Check"}
         </button>
+        {takeBack}
         {raise && (
           <div className="pk-raise">
-            <input type="range" aria-label="Raise to" min={raise.min} max={raise.max} value={amount} disabled={locked || raise.min === raise.max} onChange={(event) => setRaiseTo(event.target.value)} />
-            <input type="number" aria-label="Raise to, in chips" inputMode="numeric" min={raise.min} max={raise.max} value={raiseTo || raise.min} disabled={locked} onChange={(event) => setRaiseTo(event.target.value)} />
-            <button type="button" className="pk-pill pk-pill--ink" disabled={locked} onClick={() => on.act(seat, "raise", amount, `raises to ${amount}`)}>
+            <input
+              type="range"
+              aria-label="Raise to"
+              min={raise.min}
+              max={raise.max}
+              value={amount}
+              disabled={off || raise.min === raise.max}
+              onChange={(event) => setRaiseTo(event.target.value)}
+            />
+            <input
+              type="number"
+              aria-label="Raise to, in chips"
+              inputMode="numeric"
+              min={raise.min}
+              max={raise.max}
+              value={raiseTo || raise.min}
+              disabled={off}
+              onChange={(event) => setRaiseTo(event.target.value)}
+            />
+            <button type="button" className="pk-pill pk-pill--ink" disabled={off} onClick={() => on.act(seat, "raise", amount, `raises to ${amount}`)}>
               Raise to {amount}
             </button>
-            <button type="button" className="pk-pill" disabled={locked} onClick={() => on.act(seat, "raise", raise.max, `goes all in for ${raise.max}`)}>
+            <button type="button" className="pk-pill" disabled={off} onClick={() => on.act(seat, "raise", raise.max, `goes all in for ${raise.max}`)}>
               All in {raise.max}
             </button>
           </div>
@@ -530,21 +662,36 @@ function ActionStub({
     );
   } else if (betweenHands && mine.length > 0) {
     const dealer = view.awaited[0];
-    const mayDeal = mine.includes(dealer);
+    /** The house holds the next hand, which it is to deal, until the player says to deal it. */
+    const houseHolds = Boolean(house?.holding && house.deal && dealer === house.seat);
+    const mayDeal = mine.includes(dealer) || houseHolds;
+    // The house waits half of the step's time, then leaves the table, which pays both seats what they hold.
+    const houseLeavesIn = houseHolds ? Math.max(0, left - Math.round(view.turnSeconds / 2)) : 0;
     title = resting ? `Hand ${view.hand} is paid` : "Shuffling";
-    line = resting ? (mayDeal ? "Deal again, or leave with the chips you hold." : `${name(dealer)} deals the next hand. You can leave with the chips you hold.`) : "This page plays your seat's part of the step by itself. You are asked for bets only.";
+    line = resting
+      ? mayDeal
+        ? "Deal again, or leave with the chips you hold."
+        : `${name(dealer)} deals the next hand. You can leave with the chips you hold.`
+      : "This page plays your seat's part of the step by itself. You are asked for bets only.";
     body = resting ? (
       <div className="pk-next">
         <button type="button" className="pk-pill pk-pill--quiet" disabled={locked} onClick={on.leave}>
           Leave and cash out
         </button>
         {mayDeal && (
-          <button type="button" className="pk-go" disabled={locked} onClick={on.deal}>
+          <button type="button" className="pk-go" disabled={locked} onClick={houseHolds ? house!.deal : on.deal}>
             Deal hand {view.hand + 1}
           </button>
         )}
       </div>
     ) : null;
+    if (resting && houseHolds)
+      line = (
+        <>
+          The house deals the next hand when you say so. If you do not, it leaves the table in {Math.floor(houseLeavesIn / 60)}:{String(houseLeavesIn % 60).padStart(2, "0")}, and
+          both seats are paid what they hold.
+        </>
+      );
   } else if (mine.length === 0) {
     title = "Watching";
     line = "This browser holds no seat at this table.";
@@ -552,42 +699,221 @@ function ActionStub({
     title = `${name(view.toAct)} to act`;
     line = "The table is waiting for the other seat's bet.";
   } else {
-    title = view.phase === "shuffle" ? "Shuffling" : view.phase === "deal" ? "Dealing" : view.phase === "open" ? `Turning the ${STREETS[view.street].toLowerCase()}` : "Showdown";
+    title = view.phase === "shuffle" ? "Shuffling" : view.phase === "deal" ? "Dealing" : view.phase === "open" ? "Turning cards" : "Showdown";
     line = "This page plays your seat's part of the step by itself. You are asked for bets only.";
   }
 
+  const showAgent = Boolean(agent && mine.length > 0 && view.phase !== "lobby" && !reading);
+  const showVoices = Boolean(house?.last || agent?.last);
   return (
-    <div className="pk-ticket pk-desk">
-      <section className="pk-stub" aria-label="Your move">
-        <div className="pk-desk__head">
-          <h2 className="pk-stub__title">{title}</h2>
-          {line && (
-            <p className="pk-small" data-long={(typeof line === "string" && line.length > 28) || undefined}>
-              {line}
+    <>
+      <div className="pk-ticket pk-desk">
+        <section className="pk-stub" aria-label="Your move">
+          <div className="pk-desk__head">
+            <h2 className="pk-stub__title">{title}</h2>
+            {line && (
+              <p className="pk-small" data-long={typeof line !== "string" || line.length > 28 || undefined}>
+                {line}
+              </p>
+            )}
+          </div>
+          {body}
+          {late && (
+            <div className="pk-acts">
+              <p className="pk-small">The other seat ran out of time.</p>
+              <button type="button" className="pk-pill pk-pill--ink" disabled={locked} onClick={on.claim}>
+                Claim the table
+              </button>
+            </div>
+          )}
+          {sending && (
+            <p className="pk-fine" role="status">
+              {sending}
             </p>
           )}
+          {problems.map((problem) => (
+            <p key={problem} className="pk-problem" role="alert">
+              {problem}
+            </p>
+          ))}
+        </section>
+      </div>
+      {(showAgent || showVoices) && (
+        <div className="pk-ticket">
+          <section className="pk-stub pk-agents" aria-label="Agents at this table">
+            {showAgent && agent && (
+              <div className="pk-agent">
+                <label className="pk-switch">
+                  <input type="checkbox" checked={agent.on} onChange={agent.toggle} />
+                  <span>
+                    <b>Let my agent play</b>
+                    <small>
+                      {agent.name} · {agent.model} · <a href="/agents">your agents</a>
+                    </small>
+                  </span>
+                </label>
+                {agent.on && (
+                  <p className="pk-fine">
+                    {agent.thinking ? `${agent.name} is choosing a bet…` : "It bets for you; the page still shuffles, deals and shows. Untick to bet yourself."}
+                  </p>
+                )}
+              </div>
+            )}
+            {(house?.last || agent?.last) && (
+              <div className="pk-voices">
+                {house?.last && <Voice who="The house" what={done(house.last.what)} reason={house.last.reason} driver={house.last.driver} seat={house.seat ?? 1} paper />}
+                {agent?.last && (
+                  <Voice
+                    who={agent.name}
+                    what={agent.said ?? (agent.last.action === "raise" ? `raises to ${agent.last.amount}` : agent.last.action === "fold" ? "folds" : "calls")}
+                    reason={agent.last.reason}
+                    driver={agent.last.driver}
+                    seat={agent.last.seat}
+                    paper
+                    problem={agent.last.fallback ? (agent.last.problem ?? "the model did not answer") : undefined}
+                  />
+                )}
+              </div>
+            )}
+          </section>
         </div>
-        {body}
-        {late && (
-          <div className="pk-acts">
-            <p className="pk-small">The other seat ran out of time.</p>
-            <button type="button" className="pk-pill pk-pill--ink" disabled={locked} onClick={on.claim}>
-              Claim the table
-            </button>
+      )}
+    </>
+  );
+}
+
+/**
+ * What an agent or the house said for its last bet: a speech note, its tight corner towards its speaker. On paper
+ * (the action stub) it is flat Field Cream; on the table's board it is a cream note with a short shadow.
+ */
+function Voice({
+  who,
+  what,
+  reason,
+  driver,
+  seat,
+  paper = false,
+  problem,
+}: {
+  who: string;
+  what: string;
+  reason?: string;
+  driver?: string;
+  seat: number;
+  paper?: boolean;
+  problem?: string;
+}) {
+  return (
+    <figure className="pk-voice" data-paper={paper || undefined} style={seatColour(seat)}>
+      <figcaption>
+        <Bot size={16} /> <b>{who}</b> {what}
+      </figcaption>
+      {reason && <blockquote title={reason}>{reason}</blockquote>}
+      {(driver || problem) && (
+        <small>
+          {problem ? `The model failed (${problem}); the odds answered.` : driver === "the book" ? "Decided by the odds." : `Decided by ${driver}.`} It saw only its own two cards.
+        </small>
+      )}
+    </figure>
+  );
+}
+
+/** The house reports its bet as a bare verb ("check", "raise to 6"); the note says it in the past. */
+const done = (what: string): string =>
+  what.replace(/^(check|call|fold|raise)\b/, (verb) => ({ check: "checked", call: "called", fold: "folded", raise: "raised" })[verb as "check"]);
+
+/** A wall is never short: the lines with no table stand ruled and blank. */
+const WALL_LINES = 5;
+
+/** The tables the contract holds: open seats to take, hands under way to watch. Every row opens its table. */
+export function Wall({ wall, you, house, onOpen }: { wall: Tables; you: string | null; house: string | null; onOpen: (id: string) => void }) {
+  const { tables, offline } = wall;
+  const who = (account: string | undefined) => (!account ? "" : account === you ? "You" : account === house ? "The house" : shortAccount(account));
+  const rows = tables ?? [];
+  return (
+    <section className="pk-board pk-wall-board" aria-label="Tables on the contract">
+      <h2 className="pk-board__title">
+        <Chain size={22} /> <span>Tables</span>
+        {tables && (
+          <small className="pk-wall-board__count">
+            {rows.filter((table) => table.phase === "lobby").length} with an open seat · {rows.filter((table) => table.phase !== "lobby").length} in play
+          </small>
+        )}
+      </h2>
+      {offline && (
+        <p className="pk-board__note" role="status">
+          Cannot reach the contract right now; what is shown may be old. Trying again…
+        </p>
+      )}
+      {tables === null ? (
+        !offline && <p className="pk-board__note">Reading the contract…</p>
+      ) : (
+        <>
+          {rows.length === 0 && <p className="pk-board__note">No table is open right now. Open one at the desk and send its link, or play the house.</p>}
+          <div className="pk-tables" role="table" aria-label="Tables">
+            <div className="pk-tables__row pk-tables__row--head pk-label" role="row">
+              <span role="columnheader">Table</span>
+              <span role="columnheader">Seats</span>
+              <span role="columnheader">Stake</span>
+              <span role="columnheader">Now</span>
+              <span role="columnheader" />
+            </div>
+            {rows.map((table) => {
+              const open = table.phase === "lobby";
+              const mineHere = you !== null && table.players.includes(you);
+              return (
+                <a
+                  key={table.id}
+                  role="row"
+                  className="pk-tables__row"
+                  data-mine={mineHere || undefined}
+                  href={`/poker?m=${table.id}`}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    onOpen(table.id);
+                  }}
+                >
+                  <span role="cell" className="pk-code">
+                    {table.id}
+                  </span>
+                  <span role="cell" className="pk-tables__seats">
+                    <b>{who(table.players[0])}</b>
+                    {open ? <b data-open>open seat</b> : <b>{who(table.players[1])}</b>}
+                  </span>
+                  <span role="cell">{(Number(BigInt(table.stake) / 10n ** 20n) / 10_000).toFixed(2)} NEAR</span>
+                  <span role="cell" className="pk-tables__now">
+                    {open ? (
+                      <span className="pk-open">Open</span>
+                    ) : (
+                      <>
+                        <Flap text={`HAND ${table.hand + 1}`} />
+                        <small>
+                          {table.chips[0]} : {table.chips[1]}
+                        </small>
+                      </>
+                    )}
+                  </span>
+                  <span role="cell" className="pk-tables__go">
+                    {mineHere ? "Your table" : open ? "Take the seat" : "Watch"} <Arrow />
+                  </span>
+                </a>
+              );
+            })}
+            {Array.from({ length: Math.max(0, WALL_LINES - rows.length) }, (_, at) => (
+              <div key={`blank:${at}`} className="pk-tables__row" data-blank aria-hidden="true">
+                <span />
+                <span />
+                <span />
+                <span className="pk-tables__now">
+                  <Flap text={"\u00a0".repeat(8)} />
+                </span>
+                <span />
+              </div>
+            ))}
           </div>
-        )}
-        {sending && (
-          <p className="pk-fine" role="status">
-            {sending}
-          </p>
-        )}
-        {problems.map((problem) => (
-          <p key={problem} className="pk-problem" role="alert">
-            {problem}
-          </p>
-        ))}
-      </section>
-    </div>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -608,7 +934,17 @@ export function Ledger({ log, explorer }: { log: LogLine[]; explorer: (hash: str
             return (
               <li key={log.length - index}>
                 <span>{log.length - index}</span>
-                <b style={line.seat === undefined ? undefined : ({ "--seat": `var(--seat-${line.seat})` } as CSSProperties)}>{line.text}</b>
+                <b
+                  style={
+                    line.seat === undefined
+                      ? undefined
+                      : ({
+                          "--seat": `var(--seat-${line.seat})`,
+                        } as CSSProperties)
+                  }
+                >
+                  {line.text}
+                </b>
                 {href ? (
                   <a href={href} target="_blank" rel="noreferrer noopener" aria-label={`Transaction ${line.hash}, opens the explorer`}>
                     {line.hash!.slice(0, 8)}… <Out size={12} />

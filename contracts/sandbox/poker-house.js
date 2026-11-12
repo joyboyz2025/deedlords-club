@@ -6,6 +6,8 @@
 //   node poker-house.js run        creates the account (one transaction signed by the parent), or tops it up
 //
 // POKER_PARENT (default deedlords.testnet), POKER_HOUSE_NEAR (default 3), NEAR_RPC (default FastNEAR testnet).
+// POKER_HOUSE_NAME (default pokerhouse) names another house account: tables of several seats can seat pokerhouse2
+// and pokerhouse3 too (games/poker/table/house.ts).
 // Why its own account: its key sits on a web server and stakes at every table it joins. What this account holds is
 // all that key, or a player who beats the house, can take.
 
@@ -16,7 +18,7 @@ const { connect, keyStores, KeyPair, utils } = require("near-api-js");
 const PARENT = process.env.POKER_PARENT ?? "deedlords.testnet";
 const AMOUNT = process.env.POKER_HOUSE_NEAR ?? "3";
 const RPC = process.env.NEAR_RPC ?? "https://test.rpc.fastnear.com";
-const HOUSE = `pokerhouse.${PARENT}`;
+const HOUSE = `${process.env.POKER_HOUSE_NAME ?? "pokerhouse"}.${PARENT}`;
 const near = (yocto) => utils.format.formatNearAmount(String(yocto), 4);
 
 async function main() {

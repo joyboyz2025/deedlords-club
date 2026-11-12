@@ -2,6 +2,7 @@
 // Cloud (https://cloud-api.near.ai/v1), which serves many models behind one key, or a model vendor's own endpoint. The
 // key stays on the server: this module is only ever called from there.
 
+import { NEAR_AI_URL, isNearAi } from "../../../lib/teeProof.ts";
 import type { Brief } from "./brief.ts";
 import { cleanPlan, type Plan } from "./plan.ts";
 import { BAIL_RULES, BUILD_ORDERS, MAX_CAUTION, MAX_CUSHION, MAX_RESERVE, SELL_ORDERS, cleanPlaybook, type Playbook } from "./playbook.ts";
@@ -14,7 +15,6 @@ export type LlmConfig = {
   label: string;
 };
 
-const NEAR_AI_URL = "https://cloud-api.near.ai/v1";
 const OPENAI_URL = "https://api.openai.com/v1";
 export const MAX_REASON = 160;
 /**
@@ -52,13 +52,29 @@ export function llmConfig(env: Record<string, string | undefined>): LlmConfig | 
  */
 export function llmModels(env: Record<string, string | undefined>): string[] {
   const config = llmConfig(env);
-  if (!config) return [];
   const listed = (env.DEEDLORDS_LLM_MODELS ?? "").split(",").map((name) => name.trim()).filter(Boolean);
-  return [...new Set([config.model, ...listed])];
+  return [...new Set([...(config ? [config.model, ...listed] : []), ...nearAiModels(env)])];
+}
+
+/**
+ * NEAR AI models on the server's own NEAR AI key (NEARAI_API_KEY), named `near:<model>`: NEARAI_MODELS, comma-separated.
+ * Their answers come signed from a TEE, and the plans they make go on chain with that proof.
+ */
+export function nearAiModels(env: Record<string, string | undefined>): string[] {
+  if (!env.NEARAI_API_KEY?.trim()) return [];
+  return (env.NEARAI_MODELS ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .map((name) => `near:${name}`);
 }
 
 /** The configuration with `model` in place of the default one; `null` when no model is configured or `model` is not offered. */
 export function llmFor(env: Record<string, string | undefined>, model?: string): LlmConfig | null {
+  if (model?.startsWith("near:")) {
+    const name = model.slice("near:".length);
+    return nearAiModels(env).includes(model) ? { baseUrl: NEAR_AI_URL, apiKey: env.NEARAI_API_KEY!.trim(), model: name, label: name.split("/").pop() || name } : null;
+  }
   const config = llmConfig(env);
   if (!config || !model || model === config.model) return config;
   return llmModels(env).includes(model) ? { ...config, model, label: model.split("/").pop() || model } : null;
@@ -111,33 +127,58 @@ export function parseAnswer(text: string): { plan: Plan; reason: string } | null
   return { plan, reason: reason || "No reason given." };
 }
 
-/** One request. Throws when the service refuses, is too slow for `signal`, or answers something that is not a plan. */
+/**
+ * NEAR AI's open models reason before they answer unless told not to, and a plan needs no essay: the reasoning would
+ * eat the token budget (no plan left) or the time a turn has. GLM-5.3 Flash is kept short with `reasoning_effort: low`
+ * (it ignores `enable_thinking`); the others take `enable_thinking: false` (https://docs.near.ai/cloud/reasoning-models).
+ */
+function quickAnswer(config: LlmConfig): Record<string, unknown> {
+  if (!isNearAi(config.baseUrl)) return {};
+  return /glm-5\.3/i.test(config.model) ? { reasoning_effort: "low" } : { chat_template_kwargs: { enable_thinking: false } };
+}
+
+/** The exact bytes of one completion: what was sent, what came back, and its id. NEAR AI signs a hash of both. */
+export type Exchange = { request: string; response: string; id: string };
+
+/**
+ * One request. Throws when the service refuses, is too slow for `signal`, or answers something that is not a plan.
+ * The request and response bytes are kept exactly as sent and received, for a signature over them (lib/teeProof.ts).
+ */
 export async function askLlm(
   config: LlmConfig,
   brief: Brief,
   options: { style?: string; signal?: AbortSignal; fetch?: typeof fetch } = {},
-): Promise<{ plan: Plan; reason: string }> {
+): Promise<{ plan: Plan; reason: string; exchange: Exchange }> {
   const { system, user } = buildMessages(brief, options.style);
+  const request = JSON.stringify({
+    model: config.model,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+    response_format: { type: "json_object" },
+    max_tokens: isNearAi(config.baseUrl) ? 800 : 400,
+    ...quickAnswer(config),
+  });
   const response = await (options.fetch ?? fetch)(`${config.baseUrl}/chat/completions`, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({
-      model: config.model,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 400,
-    }),
+    // NEAR AI signs the model id the request named: it must not swap in another one for an alias.
+    headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}`, ...(isNearAi(config.baseUrl) ? { "x-no-aliasing": "true" } : {}) },
+    body: request,
     signal: options.signal,
   });
   if (!response.ok) throw new Error(refusal(response.status));
-  const body = (await response.json()) as { choices?: { message?: { content?: unknown } }[] };
+  const raw = await response.text();
+  let body: { id?: unknown; choices?: { message?: { content?: unknown } }[] };
+  try {
+    body = JSON.parse(raw) as typeof body;
+  } catch {
+    throw new Error("the model service did not answer JSON");
+  }
   const text = body.choices?.[0]?.message?.content;
   const answer = typeof text === "string" ? parseAnswer(text) : null;
   if (!answer) throw new Error("the model did not answer with a plan");
-  return answer;
+  return { ...answer, exchange: { request, response: raw, id: typeof body.id === "string" ? body.id : "" } };
 }
 
 const PLAYBOOK_SYSTEM = `You write the playbook of an agent that plays one seat of Deedlords, a property board game settled on the NEAR blockchain: 40 squares in a ring, two dice, buy squares, build houses, collect rent. A game starts with 1500 cash and squares cost 60 to 400.

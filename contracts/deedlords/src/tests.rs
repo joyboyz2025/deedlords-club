@@ -18,7 +18,7 @@ use near_sdk::{env, testing_env, AccountId, Gas, NearToken};
 use crate::autoplay::{apply_logged, liquidation_step, play_turn, resolve_debt, timeout_step, Plan, Step};
 use crate::rng::{below_from_u32, below_limit, die_from_byte, near_sha256, ChainRng};
 use crate::{
-    current_seat, fee_of, split_pot, Contract, ContractV1, Match, RulesArg, Status, ABANDON_AFTER_NS, DEFAULT_TURN_SECONDS, MAX_FEE_BPS,
+    current_seat, fee_key, fee_of, split_pot, Contract, ContractV1, Match, RulesArg, Status, ABANDON_AFTER_NS, DEFAULT_TURN_SECONDS, MAX_FEE_BPS,
     MAX_STAKE, MIN_MOVE_GAS, STORAGE_RESERVE_BYTES,
 };
 
@@ -904,7 +904,7 @@ fn the_fee_is_a_floor_of_the_pot_and_the_shares_take_the_rest() {
 }
 
 #[test]
-fn the_fee_is_fixed_at_deployment_and_capped_at_five_percent() {
+fn the_fee_is_capped_at_five_percent() {
     context(CONTRACT, 0, NOW0, seed(0));
     expect_panic(|| Contract::new(acc(OWNER), acc(HOUSE), U128(CAP), MAX_FEE_BPS + 1), "fee_bps must be at most 500");
     assert_eq!(Contract::new(acc(OWNER), acc(HOUSE), U128(CAP), MAX_FEE_BPS).get_config()["fee_bps"], 500);
@@ -918,6 +918,78 @@ fn the_fee_is_fixed_at_deployment_and_capped_at_five_percent() {
     assert_eq!(t.c.get_fees().0, 0);
     t.call(OWNER, 1);
     expect_panic(|| t.c.withdraw_fees(), "there are no fees to withdraw");
+}
+
+/// Opens, fills and plays out a match in which seat `rich` wins, with `between` run after both seats are taken.
+fn decided_match_with(t: &mut T, id: &str, rich: usize, between: impl FnOnce(&mut T)) {
+    t.create(id, 2, vec![10000], classic(1), None);
+    t.join(id, ALICE, 0);
+    t.join(id, BOB, 1);
+    between(t);
+    t.with_match(id, |m| {
+        let player = &mut m.game.players[rich];
+        player.cash += 100_000;
+        m.game.minted += 100_000;
+    });
+    t.play_out_with_timeouts(id);
+}
+
+#[test]
+fn only_the_owner_sets_the_fee_within_the_cap() {
+    let mut t = T::with_fee(0, 0);
+    t.call(ALICE, 1);
+    expect_panic(|| t.c.set_fee(100), "only the owner may set the fee");
+    t.call(OWNER, 0);
+    expect_panic(|| t.c.set_fee(100), "Requires attached deposit of exactly 1 yoctoNEAR");
+    t.call(OWNER, 1);
+    expect_panic(|| t.c.set_fee(MAX_FEE_BPS + 1), "fee_bps must be at most 500");
+    assert_eq!(t.c.get_config()["fee_bps"], 0);
+    t.call(OWNER, 1);
+    t.c.set_fee(MAX_FEE_BPS);
+    assert_eq!(t.c.get_config()["fee_bps"], 500);
+    assert_eq!(event("set_fee")["data"], near_sdk::serde_json::json!({ "from": 0, "to": 500 }));
+}
+
+#[test]
+fn a_match_keeps_the_fee_it_was_opened_with() {
+    // Opened free; the owner sets 2.5% while it is being played: it still pays no fee.
+    let mut t = T::with_fee(0, 0);
+    decided_match_with(&mut t, "free", 0, |t| {
+        t.call(OWNER, 1);
+        t.c.set_fee(FEE_BPS);
+    });
+    let result = t.c.get_result("free".into()).unwrap();
+    assert_eq!(result["fee"], "0");
+    assert_eq!(result["payouts"][0], (2 * STAKE).to_string());
+    assert_eq!(event("settle")["data"]["fee_bps"], 0);
+    assert_eq!(t.c.get_fees().0, 0);
+    assert!(env::storage_read(&fee_key("free")).is_none(), "the match's fee record goes with the match");
+
+    // Opened at 2.5%; the owner drops the fee to zero mid-game: the 2.5% stands, and the next match is free.
+    decided_match_with(&mut t, "paid", 0, |t| {
+        assert_eq!(t.c.get_match("paid".into()).unwrap()["meta"]["fee_bps"], 250, "the view shows the match's own fee");
+        t.call(OWNER, 1);
+        t.c.set_fee(0);
+    });
+    assert_eq!(t.c.get_result("paid".into()).unwrap()["fee"], fee_of(2 * STAKE, FEE_BPS).to_string());
+    decided_match_with(&mut t, "after", 0, |_| {});
+    assert_eq!(t.c.get_result("after".into()).unwrap()["fee"], "0");
+    assert_eq!(t.c.get_fees().0, fee_of(2 * STAKE, FEE_BPS));
+}
+
+#[test]
+fn a_match_opened_before_fee_records_pays_the_fee_in_force_then() {
+    // A deployment upgraded in place has open matches with no fee record: they pay the fee of the deployment until
+    // the owner changes it, and that same fee after.
+    let mut t = T::with_fee(0, FEE_BPS);
+    decided_match_with(&mut t, "old", 0, |t| {
+        env::storage_remove(&fee_key("old"));
+        t.call(OWNER, 1);
+        t.c.set_fee(0);
+        t.call(OWNER, 1);
+        t.c.set_fee(MAX_FEE_BPS);
+    });
+    assert_eq!(t.c.get_result("old".into()).unwrap()["fee"], fee_of(2 * STAKE, FEE_BPS).to_string());
 }
 
 #[test]

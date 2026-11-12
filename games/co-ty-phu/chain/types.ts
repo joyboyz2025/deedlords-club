@@ -25,7 +25,7 @@ export type ChainMeta = {
   stake: string;
   /** Share per rank of the pot that is left after the fee, in basis points. */
   split: number[];
-  /** The contract's fee on the pot, in basis points (250 is 2.5%). Fixed when the contract was deployed. */
+  /** The fee on this match's pot, in basis points (250 is 2.5%): the contract's fee when the match was opened. */
   fee_bps: number;
   rules: ChainRules;
   solo_player: string | null;

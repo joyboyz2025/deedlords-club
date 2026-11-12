@@ -1,0 +1,780 @@
+/* The chibi characters in the hall (/character, /shop, /bag) and their faces at the tables. Same world as desk.css:
+   the character turns on a dark stage under a gold hairline, choices are chips on the board, what belongs to the
+   visitor lies on the ticket. Classes start with cb- (character board). Rarity colours: Rare blue, Epic gold,
+   Legendary violet, as in the game the art comes from. */
+
+.fd {
+  --rare: #4aa8ff;
+  --epic: #ffcf3a;
+  --legendary: #c27bff;
+}
+
+.cb-wait {
+  max-width: 1440px;
+  margin: 40px auto;
+}
+
+.cb-hall .fd-line {
+  max-width: 20ch;
+}
+
+/* A face in a circle: at the tables, in the top row, on the board */
+
+.cb-face {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--size, 40px);
+  height: var(--size, 40px);
+  overflow: hidden;
+  border: 2px solid rgb(248 201 63 / 70%);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, #7a1712, #2a120a);
+  color: var(--gold);
+  font-family: var(--font-alfa), serif;
+  font-size: calc(var(--size, 40px) * 0.45);
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.cb-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cb-tag {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.cb-tag > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fd-acct .cb-face {
+  margin-left: -10px;
+  border-width: 1.5px;
+}
+
+.fd-acct--ask {
+  border-color: var(--gold);
+  background: var(--gold);
+  color: #2a1208;
+}
+
+.fd-acct--ask:hover {
+  border-color: var(--cream);
+}
+
+.fd-row__seats b .cb-face {
+  margin-right: 6px;
+  border-width: 1.5px;
+}
+
+/* The dresser: a stage and the choices */
+
+.cb-board {
+  padding-bottom: 20px;
+}
+
+.cb-dresser {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.85fr) minmax(0, 1.15fr);
+  gap: 20px;
+  margin-top: 14px;
+}
+
+.cb-dresser__stage {
+  position: relative;
+  align-self: start;
+}
+
+.cb-stage {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  max-height: 460px;
+  border-radius: 16px;
+  background: radial-gradient(70% 55% at 50% 78%, rgb(248 201 63 / 22%), transparent 70%), linear-gradient(180deg, #3a170c, #1a0b06);
+  box-shadow: inset 0 0 0 1px rgb(248 201 63 / 25%);
+  cursor: grab;
+  touch-action: pan-y;
+}
+
+.cb-stage:active {
+  cursor: grabbing;
+}
+
+.cb-stage--none {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--soft);
+  text-align: center;
+  cursor: default;
+}
+
+.cb-shuffle {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1.5px solid rgb(255 247 230 / 45%);
+  border-radius: 999px;
+  background: rgb(26 11 6 / 70%);
+  color: var(--cream);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cb-shuffle:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.cb-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgb(52 10 8 / 78%);
+}
+
+.cb-tabs button {
+  flex: 1 1 auto;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--soft);
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cb-tabs button[aria-selected="true"] {
+  background: var(--gold);
+  color: #2a1208;
+}
+
+.cb-part {
+  margin-top: 16px;
+}
+
+.cb-part h3 {
+  margin: 0 0 8px;
+  color: var(--soft);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.cb-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.cb-chip {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1.5px solid rgb(255 247 230 / 22%);
+  border-radius: 999px;
+  background: rgb(255 247 230 / 4%);
+  color: var(--cream);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.cb-chip:hover {
+  border-color: rgb(248 201 63 / 70%);
+}
+
+.cb-chip[aria-pressed="true"] {
+  border-color: var(--gold);
+  background: rgb(248 201 63 / 18%);
+  color: #fbe29a;
+}
+
+.cb-chip[data-color] {
+  width: 38px;
+  padding: 0;
+  justify-content: center;
+}
+
+.cb-chip small {
+  color: var(--soft);
+  font-size: 11.5px;
+}
+
+.cb-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px rgb(0 0 0 / 25%);
+}
+
+.cb-rarity {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgb(255 247 230 / 35%);
+}
+
+.cb-rarity[data-rarity="1"] {
+  background: var(--rare);
+}
+
+.cb-rarity[data-rarity="2"] {
+  background: var(--epic);
+}
+
+.cb-rarity[data-rarity="3"] {
+  background: var(--legendary);
+  box-shadow: 0 0 6px var(--legendary);
+}
+
+.cb-hint {
+  margin-top: 16px;
+  color: var(--soft);
+  font-size: 13.5px;
+}
+
+/* On the ticket */
+
+.cb-field {
+  display: grid;
+  gap: 6px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.cb-field input {
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1.5px solid rgb(42 18 8 / 30%);
+  border-radius: 12px;
+  background: #fffaf0;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: normal;
+}
+
+.cb-field input:focus {
+  border-color: var(--red);
+  outline: none;
+}
+
+.cb-mint {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+
+.cb-mint li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--perf);
+}
+
+.cb-mint b {
+  color: var(--ink-soft);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.cb-facts {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.cb-facts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.cb-facts dt {
+  color: var(--ink-soft);
+}
+
+.cb-facts dd {
+  margin: 0;
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cb-facts a,
+.cb-reveal a {
+  color: var(--red);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.cb-done {
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgb(31 106 52 / 12%);
+  color: #1f6a34;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+/* The character's own page */
+
+.cb-card {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(0, 1.1fr);
+  gap: 20px;
+  margin-top: 14px;
+}
+
+.cb-worn {
+  display: grid;
+  align-content: start;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cb-worn li {
+  display: grid;
+  gap: 2px;
+  padding: 10px 2px;
+  border-top: 1px solid rgb(255 247 230 / 11%);
+}
+
+.cb-worn small {
+  color: var(--soft);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.cb-worn span {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.cb-worn a,
+.cb-items a {
+  color: #fbe29a;
+  font:
+    400 12.5px ui-monospace,
+    "SF Mono",
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+.cb-worn a:hover,
+.cb-items a:hover {
+  text-decoration: underline;
+}
+
+.cb-worn__none {
+  color: var(--soft);
+}
+
+.cb-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  margin-top: 16px;
+}
+
+.cb-link {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 14px;
+  color: var(--gold);
+  font-weight: 700;
+}
+
+.cb-actions .cb-link {
+  margin-top: 0;
+}
+
+.cb-link:hover {
+  color: #fbe29a;
+}
+
+/* The bag's list of NFTs */
+
+.cb-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cb-items li {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1.5px solid rgb(255 247 230 / 14%);
+  border-radius: 14px;
+  background: rgb(255 247 230 / 3%);
+}
+
+.cb-items li[data-rarity="1"] {
+  border-color: rgb(74 168 255 / 45%);
+}
+
+.cb-items li[data-rarity="2"] {
+  border-color: rgb(255 207 58 / 55%);
+}
+
+.cb-items li[data-rarity="3"] {
+  border-color: rgb(194 123 255 / 70%);
+  box-shadow: 0 0 14px rgb(194 123 255 / 25%);
+}
+
+.cb-items button {
+  display: grid;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--cream);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cb-items button[aria-pressed="true"] .cb-items__name::after {
+  content: "wearing";
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgb(47 154 92 / 22%);
+  color: #bfeccb;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.cb-items__name {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-weight: 700;
+}
+
+.cb-items small {
+  color: var(--soft);
+  font-size: 12px;
+}
+
+/* The shop */
+
+.cb-box {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 22px;
+  align-items: center;
+  margin-top: 14px;
+}
+
+.cb-box__crate {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border: 2px solid var(--gold);
+  border-radius: 22px;
+  background:
+    linear-gradient(90deg, transparent 44%, rgb(248 201 63 / 85%) 44% 56%, transparent 56%), linear-gradient(0deg, transparent 44%, rgb(248 201 63 / 85%) 44% 56%, transparent 56%),
+    linear-gradient(160deg, #a4241b, #4a0c09);
+  box-shadow:
+    0 10px 24px rgb(0 0 0 / 35%),
+    inset 0 2px 0 rgb(255 255 255 / 18%);
+}
+
+.cb-box__crate span {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #2a120a;
+  color: var(--gold);
+  font-family: var(--font-alfa), serif;
+  font-size: 30px;
+}
+
+.cb-box__line {
+  color: var(--cream);
+  font-size: 15.5px;
+}
+
+.cb-odds {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.cb-odds div {
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: #1a0b06;
+}
+
+.cb-odds dt {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cb-odds div[data-rarity="1"] dt {
+  color: var(--rare);
+}
+
+.cb-odds div[data-rarity="2"] dt {
+  color: var(--epic);
+}
+
+.cb-odds div[data-rarity="3"] dt {
+  color: var(--legendary);
+}
+
+.cb-odds dd {
+  margin: 2px 0 0;
+  color: #fbe29a;
+  font:
+    700 20px ui-monospace,
+    "SF Mono",
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+.cb-box__fine {
+  margin-top: 10px;
+  color: var(--soft);
+  font-size: 13px;
+}
+
+.cb-shelf {
+  margin-top: 18px;
+}
+
+.cb-shelf h3 {
+  margin: 0 0 10px;
+  color: var(--soft);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.cb-shelf ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cb-shelf li {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  padding: 8px 8px 10px;
+  border: 1.5px solid rgb(255 247 230 / 12%);
+  border-radius: 14px;
+  background: rgb(255 247 230 / 3%);
+  text-align: center;
+}
+
+.cb-shelf__pic {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  background: radial-gradient(70% 60% at 50% 75%, rgb(248 201 63 / 16%), transparent 70%), #1a0b06;
+}
+
+.cb-shelf__pic img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.cb-shelf strong {
+  font-size: 13.5px;
+}
+
+.cb-take {
+  min-height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #fbd155, #f3b93a);
+  color: #2a1208;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cb-take:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.cb-shelf__has {
+  color: #bfeccb;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.cb-reveal {
+  align-items: center;
+  text-align: center;
+}
+
+.cb-reveal__pic {
+  display: block;
+  width: 200px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 60%, rgb(248 201 63 / 35%), transparent 70%);
+}
+
+.cb-reveal[data-rarity="1"] .cb-reveal__pic {
+  background: radial-gradient(circle at 50% 60%, rgb(74 168 255 / 40%), transparent 70%);
+}
+
+.cb-reveal[data-rarity="3"] .cb-reveal__pic {
+  background: radial-gradient(circle at 50% 60%, rgb(194 123 255 / 50%), transparent 70%);
+}
+
+.cb-reveal__pic img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  animation: cb-rise 0.6s cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+
+.cb-reveal__name {
+  font-family: var(--font-alfa), serif;
+  font-size: 24px;
+}
+
+@keyframes cb-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.92);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cb-reveal__pic img {
+    animation: none;
+  }
+}
+
+@media (max-width: 1099px) {
+  /* Dress first, then the name and the button: the ticket comes after the boards. */
+  .cb-hall .fd-ticket {
+    order: 7;
+  }
+
+  /* The bag's list of pieces comes after the button that wears the look. */
+  .cb-hall .fd-board + .fd-board {
+    order: 8;
+  }
+}
+
+@media (max-width: 900px) {
+  .cb-dresser,
+  .cb-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cb-stage {
+    max-height: 360px;
+    margin: 0 auto;
+  }
+
+  .cb-box {
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 14px;
+  }
+}
+
+/* The passenger stub with a character */
+
+.fd-who > .cb-face {
+  border-color: var(--red);
+}
+
+.fd-who__ask {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--red);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* The top row holds three more links since the character pages: keep each on one line, and make room on laptops. */
+.fd-top nav a {
+  white-space: nowrap;
+}
+
+@media (min-width: 1100px) and (max-width: 1320px) {
+  .fd-top nav {
+    gap: 16px;
+  }
+
+  .fd-net small {
+    display: none;
+  }
+
+  .fd-acct small {
+    display: none;
+  }
+}

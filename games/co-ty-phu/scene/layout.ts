@@ -162,14 +162,16 @@ export function boardEye(aspect: number): { x: number; y: number; z: number } {
  * Ô thường đứng ở nửa trước, phía có chữ, chừa dải màu cho nhà. Ở Tạm giữ, người bị giữ đứng trong góc song sắt, người ghé thăm đứng ở mép ngoài.
  */
 export function standSpot(index: number, slot: number, jailed = false): Point {
-  const column = slot % 3;
-  const row = Math.floor(slot / 3) % 2;
+  // Two abreast, in up to three rows: a token is big enough to read from across the board, so three in a row would
+  // stand on each other. A match on chain has at most four players, two rows; a room of six uses the third.
+  const column = slot % 2;
+  const row = Math.floor(slot / 2) % 3;
   if (isCorner(index)) {
     // Góc phía trong của ô góc là hướng đi tiếp và hướng vào giữa bàn.
-    if (jailed) return inTile(index, 0.3 + column * 0.36, 0.42 + row * 0.48);
-    return inTile(index, (column - 1) * 0.6, -0.55 - row * 0.5);
+    if (jailed) return inTile(index, 0.3 + column * 0.55, 0.38 + row * 0.42);
+    return inTile(index, (column - 0.5) * 1.05, -0.3 - row * 0.45);
   }
-  return inTile(index, (column - 1) * 0.52, -0.35 - row * 0.62 + 0.25);
+  return inTile(index, (column - 0.5) * 0.84, 0.08 - row * 0.5);
 }
 
 /**

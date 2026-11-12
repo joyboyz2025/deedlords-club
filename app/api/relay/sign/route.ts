@@ -1,5 +1,5 @@
 // A signature for an account signed in through NEAR Auth, when its own NEAR is at stake: opening a staked match,
-// taking a staked seat, or sending NEAR out of the account. POST { token, payload }: `payload` is the transaction
+// taking a staked seat, sending NEAR out of the account, or buying a chibi box. POST { token, payload }: `payload` is the transaction
 // (base64 of lib/chain/transaction.ts `encodeTransaction`), `token` the signing token Auth0 issued for exactly that
 // transaction after the person approved it. Answers { signature }: the browser attaches it and sends the
 // transaction itself, so the account pays its own gas and its own stake. The sponsor pays only for asking.
@@ -42,7 +42,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     payload = fromBase64(payloadText);
     tx = readTransaction(payload);
-    signable(tx, CHAIN.contractId);
+    signable(tx, CHAIN.contractId, CHAIN.chibiId);
   } catch (error) {
     return error instanceof Refused ? jsonAnswer(403, { error: error.message }) : jsonAnswer(400, { error: `not a transaction: ${text(error)}` });
   }

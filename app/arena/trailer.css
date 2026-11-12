@@ -1,0 +1,243 @@
+/* The Arena's trailer (`/arena`), on the landing's ground and with its parts (`landing.css`): a screen, the rules as
+   questions, the sixteen units by guild, and the way to the two gates that are open. */
+
+.at-head {
+  display: grid;
+  justify-items: start;
+  gap: 14px;
+  width: min(1120px, 100% - 40px);
+  margin: clamp(22px, 4.4vh, 48px) auto 0;
+}
+
+.at-head__gate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.at-head .lp-poster__gate {
+  position: static;
+}
+
+.at-head .lp-status {
+  padding: 4px 12px;
+  border-width: 1.5px;
+  font-size: 12px;
+}
+
+.at-head h1 {
+  color: var(--gold);
+  font-family: var(--font-alfa), serif;
+  font-size: clamp(40px, 6.4vw, 88px);
+  font-weight: 400;
+  line-height: 0.92;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+
+.at-head .lp-lede {
+  margin-top: 0;
+}
+
+/* The screen: a board on the wall, so a gold hairline and no shadow. */
+.at-screen {
+  position: relative;
+  width: min(1120px, 100% - 40px);
+  margin: clamp(22px, 3.4vh, 36px) auto 0;
+  overflow: hidden;
+  border: 1.5px solid rgb(248 201 63 / 55%);
+  border-radius: 22px;
+  background: #0d0705;
+  aspect-ratio: 16 / 9;
+}
+
+.at-screen video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.at-play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: linear-gradient(180deg, rgb(32 16 9 / 10%) 0%, rgb(32 16 9 / 46%) 100%);
+  color: var(--cream);
+  font: inherit;
+  cursor: pointer;
+}
+
+.at-play span {
+  display: grid;
+  place-items: center;
+  width: 92px;
+  height: 92px;
+  margin-bottom: 8px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #fbd155 0%, #f3b93a 100%);
+  box-shadow:
+    inset 0 -2px 0 rgb(160 96 10 / 35%),
+    0 10px 26px rgb(0 0 0 / 45%);
+  color: var(--ink);
+  transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+.at-play span svg {
+  translate: 3px 0;
+}
+
+.at-play:hover span {
+  transform: scale(1.07);
+}
+
+.at-play b {
+  font-size: 19px;
+  font-weight: 700;
+  text-shadow: 0 1px 6px rgb(0 0 0 / 70%);
+}
+
+.at-play small {
+  color: var(--soft);
+  font-size: 13.5px;
+  text-shadow: 0 1px 6px rgb(0 0 0 / 70%);
+}
+
+.at-play:focus-visible {
+  outline-offset: -8px;
+  border-radius: 22px;
+}
+
+/* The guilds: a row of four portraits each, under the guild's own colour. */
+
+.at-guilds {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+  margin-top: 34px;
+}
+
+.at-guild {
+  padding: 18px 18px 20px;
+  border: 1.5px solid rgb(248 201 63 / 55%);
+  border-radius: 22px;
+  background: linear-gradient(180deg, #2a120a 0%, var(--night) 100%);
+}
+
+.at-guild h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: var(--gold);
+  font-family: var(--font-alfa), serif;
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1.1;
+}
+
+.at-guild h3::before {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid rgb(255 247 230 / 60%);
+  border-radius: 50%;
+  background: var(--guild);
+  content: "";
+}
+
+.at-guild > p {
+  margin-top: 6px;
+  color: var(--soft);
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+
+.at-guild ul {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.at-guild li {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+}
+
+.at-guild img {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-bottom: 6px;
+  border-radius: 14px;
+  background: #3a2a22;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.at-guild li b {
+  color: var(--cream);
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.at-guild li small {
+  color: #fbe29a;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.at-guild li span {
+  margin-top: 2px;
+  color: var(--soft);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.at-close .lp-close__stub--go {
+  justify-items: stretch;
+  min-width: min(320px, 100%);
+}
+
+.at-close .lp-go,
+.at-close .lp-watch {
+  --u: 1px;
+  width: 100%;
+  height: 54px;
+  margin: 0;
+  rotate: none;
+  font-size: 17px;
+}
+
+.at .lp-foot {
+  margin-top: clamp(60px, 8vw, 110px);
+}
+
+@media (max-width: 1099px) {
+  .at-guilds {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 520px) {
+  .at-guild ul {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .at-play span {
+    width: 72px;
+    height: 72px;
+  }
+}

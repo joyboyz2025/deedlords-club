@@ -1,0 +1,16 @@
+[package]
+name = "deedlords-chibi"
+version = "0.1.0"
+edition = "2021"
+description = "Deedlords chibi characters: a character per account and every piece it wears as NEP-171 NFTs, a free basic shop and boxes paid in NEAR."
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = "5.27.0"
+near-contract-standards = "5.27.0"
+
+[dev-dependencies]
+near-sdk = { version = "5.27.0", features = ["unit-testing"] }

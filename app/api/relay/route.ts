@@ -20,8 +20,8 @@ import { type DelegateAction, readSignedDelegate } from "@/lib/chain/transaction
 
 export const dynamic = "force-dynamic";
 
-/** A signed delegate action for one move is about 400 bytes; the longest `play` about 3,000. */
-const MAX_DELEGATE_TEXT = 8_192;
+/** A signed delegate action for one move is about 400 bytes; the longest `play` about 3,000; a `turn` with its TEE proof up to 16 KB (base64 of it: a third more). */
+const MAX_DELEGATE_TEXT = 24_576;
 /** All a game account needs to exist: an account this small pays no storage. */
 const OPENING_YOCTO = 1n;
 

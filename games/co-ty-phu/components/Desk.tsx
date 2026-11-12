@@ -18,6 +18,11 @@ import { QRCodeSVG } from "qrcode.react";
 import type { ChainListed } from "../chain/types";
 import type { AgentDesk } from "../chain/useAgent";
 import { approvesInWindow, withdraw, type Player, type PlayerState } from "../chain/usePlayer";
+import { ChibiFace } from "../../chibi/components/CharacterTag";
+import { CrossChain } from "./CrossChain";
+import { NearAiKeyPanel, useNearAi } from "./NearAiKey";
+import { OWN_PREFIX, isOwnModel, modelLabel } from "@/lib/agentKey";
+import { useCharacter, useCharacters } from "../../chibi/useChibi";
 
 // The front desk of the game, shared by /play and by the gate of one match: the top row, the departures board on the
 // wall, and the stubs of the player's own ticket (who they are, the agent that can fly their seat). The forms are the
@@ -52,7 +57,7 @@ function Network() {
   );
 }
 
-export type HallPage = "play" | "gate" | "agents" | "account";
+export type HallPage = "play" | "gate" | "agents" | "account" | "character" | "shop" | "bag";
 
 /**
  * The page shell: it carries the two plates the stylesheet paints with, ticket paper and gold foil. The top row is
@@ -73,40 +78,66 @@ export function Hall({ children, page = "play", account }: { children: ReactNode
       }
     >
       <header className="fd-top">
-        <Link className="fd-mark" href="/">
-          Deedlords
+        <Link className="fd-mark" href="/" aria-label="Deedlords Club, home">
+          Deedlords <small>Club</small>
         </Link>
         <nav aria-label="Deedlords">
-          <Link href="/play" aria-current={page === "play" ? "page" : undefined}>
-            Departures
+          <Link href="/play" aria-current={page === "play" || page === "gate" ? "page" : undefined}>
+            Deedlords
+          </Link>
+          <Link href="/poker/tables">Poker</Link>
+          <Link href="/arena">Arena</Link>
+          <i aria-hidden="true" />
+          <Link href="/character" aria-current={page === "character" ? "page" : undefined}>
+            Character
+          </Link>
+          <Link href="/shop" aria-current={page === "shop" ? "page" : undefined}>
+            Shop
+          </Link>
+          <Link href="/bag" aria-current={page === "bag" ? "page" : undefined}>
+            Bag
           </Link>
           <Link href="/agents" aria-current={page === "agents" ? "page" : undefined}>
-            My agents
-          </Link>
-          <Link href="/account" aria-current={page === "account" ? "page" : undefined}>
-            Account
+            Agents
           </Link>
         </nav>
         <div className="fd-top__end">
           <Network />
-          {account !== undefined && (
-            <Link className="fd-acct" href="/account" data-in={account ? true : undefined}>
-              {account ? (
-                <>
-                  <b>{shortAccount(account.accountId)}</b>
-                  {typeof account.balance === "bigint" && <small>{formatNear(account.balance.toString(), 2)} NEAR</small>}
-                </>
-              ) : (
-                <>
-                  <User size={16} /> Connect
-                </>
-              )}
-            </Link>
+          {account ? (
+            <AccountChip accountId={account.accountId} balance={account.balance} page={page} />
+          ) : (
+            account === null && (
+              <Link className="fd-acct" href="/account">
+                <User size={16} /> Connect
+              </Link>
+            )
           )}
         </div>
       </header>
       {children}
     </main>
+  );
+}
+
+/**
+ * Who is signed in, as the tables show them: their character's face and name (or their short account id), and what
+ * they hold. An account with no character yet is asked to make one, on every page of the hall but that one.
+ */
+function AccountChip({ accountId, balance, page }: { accountId: string; balance: bigint | null | undefined; page: HallPage }) {
+  const character = useCharacter(accountId);
+  return (
+    <>
+      {character === null && page !== "character" && (
+        <Link className="fd-acct fd-acct--ask" href="/character">
+          <User size={16} /> Make your character
+        </Link>
+      )}
+      <Link className="fd-acct" href="/account" data-in title={accountId}>
+        {character && <ChibiFace character={character} size={26} />}
+        <b>{character?.name ?? shortAccount(accountId)}</b>
+        {typeof balance === "bigint" && <small>{formatNear(balance.toString(), 2)} NEAR</small>}
+      </Link>
+    </>
   );
 }
 
@@ -138,6 +169,8 @@ const BOARD_LINES = 7;
 
 /** The matches the contract holds, as a departures board. Every row opens its match. */
 export function DeparturesBoard({ matches, offline, linkTo, you }: { matches: ChainListed[] | null; offline: boolean; linkTo: (id: string) => string; you: string | null }) {
+  // Read the characters of everyone seated: the rows then show their names and faces (seatNames looks them up).
+  const characters = useCharacters(matches?.flatMap((match) => match.seats.map((seat) => seat.backer)) ?? []);
   return (
     <section className="fd-board" id="departures" aria-label="Matches the contract holds">
       <h2 className="fd-board__title">
@@ -175,6 +208,7 @@ export function DeparturesBoard({ matches, offline, linkTo, you }: { matches: Ch
                   <span className="fd-row__seats" role="cell">
                     {match.seats.map((seat) => (
                       <b key={seat.seat} data-open={seat.backer === null || undefined}>
+                        {seat.backer !== null && characters.get(seat.backer) && <ChibiFace character={characters.get(seat.backer)} size={22} />}
                         {seat.backer === null ? "open seat" : seat.backer === you ? "you" : names[seat.seat]}
                       </b>
                     ))}
@@ -263,7 +297,9 @@ export function PassengerStub({
   const [note, setNote] = useState<string | null>(null);
   const [funding, setFunding] = useState(false);
   // The panel under the account: where NEAR comes in, or the form that sends it out.
-  const [funds, setFunds] = useState<"deposit" | "withdraw" | null>(null);
+  const [funds, setFunds] = useState<"deposit" | "withdraw" | "xchain" | null>(null);
+  // The account's chibi character: its face and name stand for the account once it has one.
+  const character = useCharacter(player?.accountId);
   // Google sign-in rests on the sponsor: it pays for the one signature and for every move after it.
   const google = freePlay && googleSignInOffered();
   useEffect(() => {
@@ -407,15 +443,27 @@ export function PassengerStub({
     <section className="fd-stub" aria-label="Your account">
       <h2 className="fd-stub__title">Passenger</h2>
       <div className="fd-who">
-        <span className="fd-stamp" aria-hidden="true">
-          {player.accountId
-            .replace(/[^a-z0-9]/gi, "")
-            .slice(0, 2)
-            .toUpperCase()}
-        </span>
+        {character ? (
+          <ChibiFace character={character} size={46} />
+        ) : (
+          <span className="fd-stamp" aria-hidden="true">
+            {player.accountId
+              .replace(/[^a-z0-9]/gi, "")
+              .slice(0, 2)
+              .toUpperCase()}
+          </span>
+        )}
         <p>
-          <strong title={player.accountId}>{shortAccount(player.accountId)}</strong>
-          <small>{sourceLine(player)}</small>
+          <strong title={player.accountId}>{character?.name ?? shortAccount(player.accountId)}</strong>
+          <small>
+            {character ? `${shortAccount(player.accountId)} · ` : ""}
+            {sourceLine(player)}
+          </small>
+          {character === null && (
+            <Link className="fd-who__ask" href="/character">
+              Make your character, free
+            </Link>
+          )}
         </p>
         <p className="fd-balance" data-low={(low && !freePlay) || undefined}>
           {balance === undefined ? (
@@ -448,7 +496,7 @@ export function PassengerStub({
         <p className="fd-fine">
           {faucet
             ? "This account cannot play yet. The local faucet sends it enough for the smallest match."
-            : `This account cannot play yet. The smallest match needs ${formatNear(TO_START.toString(), 2)} NEAR on it: send that much or more from any NEAR wallet (test NEAR on ${CHAIN.network}).`}
+            : `This account cannot play yet. The smallest match needs ${formatNear(TO_START.toString(), 2)} NEAR on it: send that much or more from any NEAR wallet${CHAIN.network === "mainnet" ? ", or bring it in from another chain on your account page" : ` (test NEAR on ${CHAIN.network})`}.`}
           {!faucet && CHAIN.network === "testnet" && (
             <>
               {" "}
@@ -463,7 +511,7 @@ export function PassengerStub({
       )}
       {unfunded && freePlay && (
         <p className="fd-fine">
-          Free tables are open to this account as it is. To play for a stake, deposit {formatNear(TO_START.toString(), 2)} NEAR or more (test NEAR on {CHAIN.network})
+          Free tables are open to this account as it is. To play for a stake, deposit {formatNear(TO_START.toString(), 2)} NEAR or more ({CHAIN.network === "mainnet" ? "from a NEAR wallet, or from another chain on your account page" : `test NEAR on ${CHAIN.network}`})
           {approvesInWindow(player) ? "; you approve each stake in the sign-in window." : "."}
         </p>
       )}
@@ -489,6 +537,11 @@ export function PassengerStub({
               Withdraw
             </button>
           )}
+          {player.via === "key" && (
+            <button type="button" className="fd-pill" aria-expanded={funds === "xchain"} onClick={() => setFunds(funds === "xchain" ? null : "xchain")}>
+              Other chains
+            </button>
+          )}
           {player.via === "key" && player.source === "guest" && (
             <button type="button" className="fd-pill fd-pill--quiet" onClick={() => copy(exportGameKey() ?? "", "Key copied. Keep it somewhere safe: it is the account.")}>
               <Copy /> Back up the key
@@ -503,6 +556,7 @@ export function PassengerStub({
       {wallet && player.via === "key" && funds === "withdraw" && balance !== undefined && balance !== null && (
         <Withdraw player={player} balance={balance} onSent={() => void state.refreshBalance()} />
       )}
+      {wallet && player.via === "key" && funds === "xchain" && <CrossChain player={player} balance={balance} onArrived={() => void state.refreshBalance()} />}
       {player.via === "helper" && helper && <TestAccounts players={helper.players} current={player.accountId} onChange={state.playAs} />}
       {(note ?? problem) && (
         <p className="fd-fine" role="status">
@@ -679,7 +733,10 @@ export function AgentStub({ desk, signedIn, roomy = false }: { desk: AgentDesk; 
   const { agents, agent, auto, models, save, pick, add, remove, setAuto, write, writing, problem } = desk;
   const [adjusting, setAdjusting] = useState(false);
   const ids = useId();
-  const hasModel = agent.model !== RULES_MODEL && (models ?? []).includes(agent.model);
+  const nearAi = useNearAi();
+  // A model on the player's own NEAR AI key plays while the key is in this browser; one of the server's while it is offered.
+  const hasModel = agent.model !== RULES_MODEL && (isOwnModel(agent.model) ? nearAi.hasKey : (models ?? []).includes(agent.model));
+  const shown = modelLabel(agent.model);
   const preset = PRESETS.find((entry) => JSON.stringify(entry.book) === JSON.stringify(agent.playbook));
   const set = (change: Partial<Playbook>) => save({ playbook: { ...agent.playbook, ...change }, written: null });
   const told = instructions(agent);
@@ -718,7 +775,7 @@ export function AgentStub({ desk, signedIn, roomy = false }: { desk: AgentDesk; 
           </Link>
         </div>
         <p className="fd-fine">
-          <strong>{agent.name}</strong>: {hasModel ? agent.model : "fallback numbers, no model"}
+          <strong>{agent.name}</strong>: {hasModel ? shown : isOwnModel(agent.model) ? `${shown}, but no NEAR AI key in this browser: fallback numbers` : "fallback numbers, no model"}
           {hasModel &&
             (told
               ? `, told ${told.length.toLocaleString("en-US")} characters${rules > 0 ? ` and ${rules} ${rules === 1 ? "rule" : "rules"}` : ""} of yours`
@@ -760,18 +817,34 @@ export function AgentStub({ desk, signedIn, roomy = false }: { desk: AgentDesk; 
         <span>Name</span>
         <input type="text" value={agent.name} maxLength={MAX_NAME} onChange={(event) => save({ name: event.target.value })} autoComplete="off" />
       </label>
+      <NearAiKeyPanel nearAi={nearAi} />
       <label className="fd-field">
         <span>Model</span>
         <select value={hasModel ? agent.model : RULES_MODEL} onChange={(event) => save({ model: event.target.value })}>
-          {(models ?? []).map((model) => (
-            <option key={model} value={model}>
-              {model}
-            </option>
-          ))}
+          {(models ?? []).length > 0 && (
+            <optgroup label="Offered by this server">
+              {(models ?? []).map((model) => (
+                <option key={model} value={model}>
+                  {model}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {nearAi.hasKey && (nearAi.models ?? []).length > 0 && (
+            <optgroup label="NEAR AI, on your key (USD per million tokens in / out)">
+              {(nearAi.models ?? []).map((model) => (
+                <option key={model.id} value={`${OWN_PREFIX}${model.id}`}>
+                  {model.id} · {model.inPerMillion} / {model.outPerMillion}
+                </option>
+              ))}
+            </optgroup>
+          )}
           <option value={RULES_MODEL}>No model: fallback numbers only</option>
         </select>
       </label>
-      {models !== null && models.length === 0 && <p className="fd-fine">No model is configured on this server: the fallback numbers alone play.</p>}
+      {models !== null && models.length === 0 && !nearAi.hasKey && (
+        <p className="fd-fine">No model is configured on this server: the fallback numbers alone play, unless you add a NEAR AI key above.</p>
+      )}
 
       <div className="fd-prompt">
         <label htmlFor={`${ids}-prompt`}>
@@ -811,7 +884,7 @@ export function AgentStub({ desk, signedIn, roomy = false }: { desk: AgentDesk; 
       </div>
       <p className="fd-fine">
         {hasModel
-          ? `Your prompt and rules stay in this browser and go to ${agent.model} with each of your turns. Nobody else at the table is shown them, or what your agent says. ${told.length.toLocaleString("en-US")} of ${MAX_STYLE.toLocaleString("en-US")} characters.`
+          ? `Your prompt and rules stay in this browser and go to ${shown}${isOwnModel(agent.model) ? " at NEAR AI, straight from this tab," : ""} with each of your turns. Nobody else at the table is shown them, or what your agent says. ${told.length.toLocaleString("en-US")} of ${MAX_STYLE.toLocaleString("en-US")} characters.`
           : "A prompt and rules need a model to read them. Without one, this agent plays by its fallback numbers."}
       </p>
 

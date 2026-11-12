@@ -7,6 +7,7 @@
 // actions made while a transaction is on its way go out together in the next one. A roll is only sent: until it lands
 // nothing else can be played (`busy`). If the contract refuses anything, what was shown ahead of the chain is dropped.
 
+import type { TeeProof } from "../../../lib/teeProof.ts";
 import { currentPlayer, type Game } from "../engine.ts";
 import type { Plan } from "../agent/plan.ts";
 import type { ClientMessage } from "../protocol.ts";
@@ -177,7 +178,7 @@ export class ChainRoom {
    * A whole turn by plan, as an agent plays it: one `turn` transaction that rolls, applies the plan wherever the seat
    * lands and ends the turn. `false`: it cannot be sent now (not the viewer's turn, or moves of theirs are on their way).
    */
-  readonly playTurn = (plan: Plan): boolean => {
+  readonly playTurn = (plan: Plan, proof?: TeeProof | null): boolean => {
     const match = this.chain;
     const caller = this.caller;
     if (!match || !caller || this.result || this.working || this.dicePending || this.queue.length > 0 || match.meta.status !== "playing") return false;
@@ -189,7 +190,7 @@ export class ChainRoom {
     this.occupy(async () => {
       let problem: string | null = null;
       try {
-        await this.transact(caller, "turn", { id: this.id, seat, plan });
+        await this.transact(caller, "turn", { id: this.id, seat, plan, ...(proof ? { proof } : {}) });
       } catch (error) {
         problem = text(error);
       }

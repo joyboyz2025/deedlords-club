@@ -72,6 +72,11 @@ export function Ledger({ id, sent, nameOf, onClose }: { id: string; sent: MoveTx
             );
             return (
               <li key={row.hash}>
+                {row.signedBy && (
+                  <a className="dl-ledger__tee" href={`/verify?tx=${encodeURIComponent(row.hash)}&from=${encodeURIComponent(row.signer)}`} title={`The plan of this turn was signed inside a TEE by ${row.signedBy}: check it`}>
+                    TEE-signed · {row.signedBy.split("/").pop()} · verify
+                  </a>
+                )}
                 {explorer ? (
                   <a className="dl-ledger__row" data-failed={!row.ok || undefined} href={`${explorer}/txns/${row.hash}`} target="_blank" rel="noreferrer" title={row.hash}>
                     {inside}

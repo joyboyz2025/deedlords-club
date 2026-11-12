@@ -54,7 +54,17 @@ export type TycoonEvents = {
 
 const SKY = "#c4e6f7";
 const GROUND = "#d3e9df";
-const CHIBI_SCALE = 0.78;
+/** Tall enough to pick out at once on the whole board, where a square is under 50 pixels across. */
+const CHIBI_SCALE = 1.12;
+/**
+ * The camera looks down on the board from high above (`BOARD_PITCH`), so a token standing straight shows little but
+ * the top of its head. Tokens lean back by this much, from the feet, head away from the camera, so that face and body
+ * turn up to the viewer, like a cut-out propped on a paper board. (Leaning towards the camera would turn the face
+ * down to the board.) The base under the feet stays flat on the square.
+ */
+const LEAN = -0.72;
+/** How far the dark outline around a token stands out from it, in its own units (before `CHIBI_SCALE`). */
+const OUTLINE = 0.022;
 const LABEL_PX = 15;
 /** Đứng yên cả thì 20 hình mỗi giây là đủ, đỡ nóng máy. */
 const IDLE_FRAME_MS = 50;
@@ -98,6 +108,8 @@ type Token = {
   path: Point[];
   speed: number;
   disc: THREE.Mesh;
+  /** What lies flat under the feet, following the token: its shadow, a white rim, the disc in the player's colour. */
+  base: THREE.Group;
 };
 
 /** Nhà trên một ô: mọc từ độ cao `from` (1 là đủ cao) tới `to`, bắt đầu từ `start`. */
@@ -355,7 +367,7 @@ export class TycoonScene {
     const present = new Set(playing.map((p) => p.id));
     for (const [id, token] of this.tokens) {
       if (present.has(id)) continue;
-      this.scene.remove(token.chibi.root);
+      this.scene.remove(token.chibi.root, token.base);
       token.chibi.dispose();
       (token.disc.material as THREE.Material).dispose();
       this.tokens.delete(id);
@@ -391,15 +403,29 @@ export class TycoonScene {
     if (!token) {
       const chibi = new Chibi(this.kit, actor);
       chibi.root.scale.setScalar(CHIBI_SCALE);
+      // Applied after the turn towards where it walks (Euler XYZ), so the lean is always towards the camera.
+      chibi.root.rotation.x = LEAN;
+      this.outline(chibi);
       const spot = standSpot(player.position, slot, jailed);
       chibi.placeAt(spot.x, spot.z);
       chibi.root.rotation.y = VIEW_YAW;
-      // Đĩa màu dưới chân, cùng màu với ô tên người chơi.
-      const disc = new THREE.Mesh(this.discGeometry(), new THREE.MeshBasicMaterial({ color: TOKEN_COLORS[slot], transparent: true, opacity: 0.85, depthWrite: false }));
-      disc.position.y = 0.025;
-      chibi.root.add(disc);
-      this.scene.add(chibi.root);
-      token = { chibi, actor, at: player.position, jailed, slot, path: [], speed: 1, disc };
+      // Dưới chân: một vệt bóng, một vành trắng, rồi đĩa màu cùng màu với ô tên người chơi. Vành trắng tách quân khỏi
+      // hình vẽ của ô bên dưới, dù ô ấy sáng hay tối.
+      // Dưới chân, phẳng trên ô và đi theo quân (không ngả theo quân): một vệt bóng, một vành trắng, rồi đĩa màu.
+      const shadow = new THREE.Mesh(this.discGeometry(), this.shadowMaterial());
+      shadow.scale.setScalar(1.45);
+      shadow.position.y = 0.012;
+      const rim = new THREE.Mesh(this.discGeometry(), this.rimMaterial());
+      rim.scale.setScalar(1.18);
+      rim.position.y = 0.02;
+      const disc = new THREE.Mesh(this.discGeometry(), new THREE.MeshBasicMaterial({ color: TOKEN_COLORS[slot], depthWrite: false }));
+      disc.position.y = 0.028;
+      const base = new THREE.Group();
+      base.add(shadow, rim, disc);
+      base.scale.setScalar(CHIBI_SCALE);
+      base.position.copy(chibi.position);
+      this.scene.add(chibi.root, base);
+      token = { chibi, actor, at: player.position, jailed, slot, path: [], speed: 1, disc, base };
       this.tokens.set(player.id, token);
     }
     token.actor = actor;
@@ -415,6 +441,41 @@ export class TycoonScene {
   }
 
   private discShape: THREE.CircleGeometry | null = null;
+  private shadowFill: THREE.MeshBasicMaterial | null = null;
+  private rimFill: THREE.MeshBasicMaterial | null = null;
+  private outlineFill: THREE.MeshBasicMaterial | null = null;
+
+  private shadowMaterial(): THREE.MeshBasicMaterial {
+    this.shadowFill ??= this.own(new THREE.MeshBasicMaterial({ color: "#1d2a33", transparent: true, opacity: 0.28, depthWrite: false }));
+    return this.shadowFill;
+  }
+
+  private rimMaterial(): THREE.MeshBasicMaterial {
+    this.rimFill ??= this.own(new THREE.MeshBasicMaterial({ color: "#ffffff", depthWrite: false }));
+    return this.rimFill;
+  }
+
+  /**
+   * A dark line around the token, so its colours do not melt into the busy art of the square it stands on: each part
+   * is drawn again, from the inside, pushed out along its normals. Children of the parts, so they follow every move.
+   */
+  private outline(chibi: Chibi): void {
+    this.outlineFill ??= this.own(
+      (() => {
+        const material = new THREE.MeshBasicMaterial({ color: "#2a1d14", side: THREE.BackSide });
+        material.onBeforeCompile = (shader) => {
+          shader.vertexShader = shader.vertexShader.replace("#include <begin_vertex>", `vec3 transformed = position + normal * ${OUTLINE.toFixed(3)};`);
+        };
+        return material;
+      })(),
+    );
+    const parts: THREE.Mesh[] = [];
+    chibi.root.traverse((part) => {
+      // The body's parts; not the eyes (drawn on the head), nor the flat things under the feet.
+      if (part instanceof THREE.Mesh && part.material === this.kit.solid) parts.push(part);
+    });
+    for (const part of parts) part.add(new THREE.Mesh(part.geometry, this.outlineFill));
+  }
 
   private discGeometry(): THREE.CircleGeometry {
     this.discShape ??= this.own(new THREE.CircleGeometry(0.4, 24).rotateX(-Math.PI / 2));
@@ -810,6 +871,7 @@ export class TycoonScene {
         this.steer(token);
       }
       chibi.tick(dt * (walking ? token.speed : 1), time, this.calm, pxToScale, LABEL_PX / CHIBI_SCALE, 0);
+      token.base.position.set(chibi.position.x, 0, chibi.position.z);
       anyMoving ||= chibi.moving || path.length > 0;
     }
     // Mũi tên lơ lửng ngay trên bảng tên người đang tới lượt, nhấp nhô nhẹ.

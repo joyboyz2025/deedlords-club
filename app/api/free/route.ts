@@ -1,15 +1,19 @@
-// Opening a free table. POST { rounds?, opponent?, host?, seats? }: the sponsor creates a two-seat match with nothing staked and
+// Opening a free table. POST { rounds?, opponent?, agents?, host?, seats? }: the sponsor creates a match with nothing staked and
 // answers its id; the visitor then takes the first seat through the relayer (/api/relay). `opponent: "agent"`: the
-// sponsor also sits in the second seat and its agent plays it (/api/free/move); otherwise the seat waits for whoever
-// gets the link. With `host` (and up to four `seats`) that table is a room: it starts when its host says so.
+// sponsor also sits in every other seat and its agents play them (/api/free/move), one to three of them, each with
+// the model named in `agents` (a model this server offers, or "rules"); otherwise the seat waits for whoever gets the
+// link. With `host` (and up to four `seats`) that table is a room: it starts when its host says so.
 //
 // The sponsor pays a table's storage deposit and gets it back when the match is settled, or when a lobby nobody
 // joined is abandoned, which this route does for its own old lobbies before it opens another.
 
 import { clientKey } from "@/games/co-ty-phu/agent/rateLimit";
-import { freeTableCalls, newMatchId, SEAT_COUNTS } from "@/games/co-ty-phu/chain/calls";
-import { MAX_FREE_TABLES, jsonAnswer, limits, rememberSponsored, sponsoredTables } from "@/games/co-ty-phu/chain/freeDesk";
+import { RULES_MODEL, llmModels } from "@/games/co-ty-phu/agent/llm";
+import { freeTableCalls, inTransactions, newMatchId, SEAT_COUNTS } from "@/games/co-ty-phu/chain/calls";
+import { MAX_FREE_TABLES, MAX_HOUSE_AGENTS, idWithHouseSeats, jsonAnswer, limits, rememberHouseSeats, rememberSponsored, sponsoredTables } from "@/games/co-ty-phu/chain/freeDesk";
 import { CHAIN } from "@/lib/chain/config";
+import { chainClient } from "@/lib/chain/shared";
+import type { ChainMatch } from "@/games/co-ty-phu/chain/types";
 import { sponsor } from "@/lib/chain/sponsor";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +25,18 @@ const TURN_SECONDS = 60;
 const ABANDON_AFTER_MS = 16 * 60_000;
 const ABANDON_GAS = 30_000_000_000_000n;
 const text = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/** Whether every call of `batch` shows on the table: it was created, and each seat it joins is the sponsor's. */
+async function landed(id: string, batch: { method: string; args: Uint8Array }[], sponsorId: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    await new Promise((done) => setTimeout(done, 2_000));
+    const match = await chainClient.view<ChainMatch | null>("get_match", { id }).catch(() => null);
+    if (!match) continue;
+    const seats = batch.filter((call) => call.method === "join").map((call) => (JSON.parse(new TextDecoder().decode(call.args)) as { seat: number }).seat);
+    if (seats.every((seat) => match.meta.seats[seat]?.backer === sponsorId)) return true;
+  }
+  return false;
+}
 
 export async function POST(request: Request): Promise<Response> {
   const paying = sponsor();
@@ -36,9 +52,15 @@ export async function POST(request: Request): Promise<Response> {
   if (typeof rounds !== "number" || !ROUNDS.includes(rounds)) return jsonAnswer(400, { error: `rounds: one of ${ROUNDS.join(", ")}` });
   if (body.opponent !== undefined && body.opponent !== "agent" && body.opponent !== "friend") return jsonAnswer(400, { error: "opponent: agent or friend" });
   const withAgent = body.opponent !== "friend";
+  // Against the house: one agent per model asked for (one with the house model when none is), each in its own seat.
+  const offered = new Set([RULES_MODEL, ...llmModels(process.env)]);
+  const houseModel = process.env.DEEDLORDS_HOUSE_MODEL?.trim() || RULES_MODEL;
+  const agents = body.agents === undefined ? [houseModel] : body.agents;
+  if (withAgent && (!Array.isArray(agents) || agents.length < 1 || agents.length > MAX_HOUSE_AGENTS || agents.some((model) => typeof model !== "string" || !offered.has(model))))
+    return jsonAnswer(400, { error: `agents: 1 to ${MAX_HOUSE_AGENTS} of ${[...offered].join(", ")}` });
   // A table for friends is a room: whoever asked for it hosts it, and it may seat up to four.
-  const seats = body.seats === undefined ? 2 : body.seats;
-  if (typeof seats !== "number" || !SEAT_COUNTS.includes(seats) || (withAgent && seats !== 2)) return jsonAnswer(400, { error: "seats: 2, 3 or 4 (2 against the agent)" });
+  const seats = withAgent ? 1 + (agents as string[]).length : body.seats === undefined ? 2 : body.seats;
+  if (typeof seats !== "number" || !SEAT_COUNTS.includes(seats)) return jsonAnswer(400, { error: "seats: 2, 3 or 4" });
   if (body.host !== undefined && (typeof body.host !== "string" || !ACCOUNT_ID.test(body.host))) return jsonAnswer(400, { error: "host: a NEAR account" });
   const room = !withAgent && typeof body.host === "string" ? { host: body.host, seats } : null;
   if (!withAgent && seats !== 2 && !room) return jsonAnswer(400, { error: "a table of more than two seats needs a host" });
@@ -55,11 +77,23 @@ export async function POST(request: Request): Promise<Response> {
     return jsonAnswer(502, { error: `cannot reach ${CHAIN.network}` });
   }
 
-  const id = `f${newMatchId().slice(1)}`;
+  const models = withAgent ? (agents as string[]) : [];
+  const id = idWithHouseSeats(`f${newMatchId().slice(1)}`, models, [...offered]);
   try {
-    const outcome = await paying.session.transact(freeTableCalls(id, rounds, TURN_SECONDS, withAgent, room));
+    // Three agents' seats and the table do not fit the gas of one transaction: they go in turn.
+    let hash = "";
+    for (const batch of inTransactions(freeTableCalls(id, rounds, TURN_SECONDS, withAgent, room, models.length))) {
+      try {
+        const outcome = await paying.session.transact(batch);
+        hash ||= outcome.hash;
+      } catch (error) {
+        // A public node may give up waiting (HTTP 408, a timeout) on a transaction that did land: read the table.
+        if (!(await landed(id, batch, paying.accountId))) throw error;
+      }
+    }
     rememberSponsored(id, paying);
-    return jsonAnswer(200, { id, opponent: withAgent ? "agent" : "friend", sponsor: paying.accountId, hash: outcome.hash });
+    if (withAgent) rememberHouseSeats(id, Object.fromEntries(models.map((model, i) => [1 + i, model])));
+    return jsonAnswer(200, { id, opponent: withAgent ? "agent" : "friend", sponsor: paying.accountId, hash, agents: models });
   } catch (error) {
     return jsonAnswer(502, { error: `the sponsor could not open a table: ${text(error)}` });
   }

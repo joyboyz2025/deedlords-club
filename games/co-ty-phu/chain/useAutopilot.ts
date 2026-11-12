@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isOwnModel, ownLlm } from "@/lib/agentKey";
+import type { TeeProof } from "@/lib/teeProof";
 import { readStored, writeStored } from "@/lib/storage";
 import { advise, type Advice } from "../agent/advise";
 import type { AgentNote } from "../agent/book";
@@ -13,6 +15,8 @@ import { readAgent, type AgentProfile } from "./useAgent";
 // bot) and is signed here with the player's own session key, the same key that signs their clicks. Nothing changes on
 // chain and no key moves: turning it off gives the seat back at once.
 
+/** A model on the player's own key is asked from this tab, and given this long: frontier models can take a few seconds. */
+const OWN_MODEL_MS = 9_000;
 /** A turn that did not go through is planned again after this long. */
 const RETRY_MS = 5_000;
 const NOTES_EVERY_MS = 2_500;
@@ -27,6 +31,16 @@ export type Autopilot = {
   last: Advice | null;
 };
 
+/**
+ * An agent on the player's own NEAR AI key is asked right here: the key and the instructions go from this tab to NEAR
+ * AI and nowhere else. Without the key (removed since), its fallback numbers play the turn and say why.
+ */
+async function askOwn(match: Parameters<typeof advise>[0], seat: number, agent: AgentProfile): Promise<Advice | null> {
+  const llm = ownLlm(agent.model);
+  const advice = await advise(match, seat, { llm, playbook: agent.playbook, style: instructions(agent) || undefined, timeoutMs: OWN_MODEL_MS });
+  return advice && !llm ? { ...advice, fallback: true, problem: "no NEAR AI key in this browser: add one on the Agents page" } : advice;
+}
+
 async function askDesk(id: string, seat: number, agent: AgentProfile): Promise<Advice> {
   // The owner's prompt and rules ride with the question and go no further: the desk keeps none of it.
   const order = { id, seat, model: agent.model, playbook: agent.playbook, style: instructions(agent) || undefined };
@@ -36,7 +50,7 @@ async function askDesk(id: string, seat: number, agent: AgentProfile): Promise<A
 }
 
 /** `accountId`: whose agent flies (its model and playbook, see useAgent). `null` for somebody who has no seat in the match. */
-export function useAutopilot(id: string, state: RoomState, playTurn: (plan: Plan) => boolean, accountId: string | null = null): Autopilot | null {
+export function useAutopilot(id: string, state: RoomState, playTurn: (plan: Plan, proof?: TeeProof | null) => boolean, accountId: string | null = null): Autopilot | null {
   const [on, setOn] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [last, setLast] = useState<Advice | null>(null);
@@ -75,12 +89,13 @@ export function useAutopilot(id: string, state: RoomState, playTurn: (plan: Plan
     setThinking(true);
     // Read at each turn: the owner may have adjusted the playbook in another tab since the last one.
     const agent = readAgent(accountId);
-    void askDesk(id, seat, agent)
+    const asked = isOwnModel(agent.model) ? askOwn(match, seat, agent) : askDesk(id, seat, agent);
+    void asked
       // No desk (a page served without its server): the playbook runs right here.
       .catch(() => advise(match, seat, { llm: null, playbook: agent.playbook }))
       .then((advice) => {
         if (!advice || !wanted.current) return;
-        if (playTurn(advice.plan)) setLast(advice);
+        if (playTurn(advice.plan, advice.proof)) setLast(advice);
       })
       .catch(() => undefined)
       .finally(() => setThinking(false));

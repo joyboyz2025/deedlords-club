@@ -8,13 +8,17 @@ import { useEffect, useState } from "react";
 import { type Result, STAKE } from "../chain";
 import type { MatchView } from "../seat";
 import { Lobby, RECORD_FEE, Settled, inNear } from "./PokerScreen";
-import { type Doing, type Hole, type LogLine, TableView } from "./TableView";
+import { type Doing, type Hole, type LogLine, type TableProps, TableView } from "./TableView";
 
 const A = "a3f09c51d27e4b88f0c1a7d95e6b3c42718d0e9fa5b64c27d1e83f90ab7c5d16";
 const B = "friend.testnet";
 const ID = "p-demo-7k2q";
+const HOUSE = "pokerhouse.deedlords.testnet";
 /** The hand that is dealt: seat 1 holds the ace and king of spades, seat 2 a pair of nines. */
-const HOLE = [[51, 50], [7, 20]];
+const HOLE = [
+  [51, 50],
+  [7, 20],
+];
 const BOARD = [49, 33, 5, 48, 13];
 
 const none = (): string[] => Array.from({ length: 18 }, () => "");
@@ -23,11 +27,40 @@ const given = (...at: [number, number][]): string[] => {
   for (const [seat, position] of at) tokens[seat * 9 + position] = "x";
   return tokens;
 };
-const dealtTokens: [number, number][] = [[1, 0], [1, 1], [0, 2], [0, 3]];
+const dealtTokens: [number, number][] = [
+  [1, 0],
+  [1, 1],
+  [0, 2],
+  [0, 3],
+];
 const upTo = (cards: number): [number, number][] => [...dealtTokens, ...[0, 1].flatMap((seat) => Array.from({ length: cards }, (_, n): [number, number] => [seat, 4 + n]))];
 
 /** `ledger`: the frame whose ledger this one shows, for a view that stands outside the run of the hand. */
-type Frame = { name: string; view: MatchView | null; result?: Result | null; hole?: Hole; doing?: Doing; dealt?: number; late?: boolean; screen?: "lobby"; ledger?: number };
+type Frame = {
+  name: string;
+  view: MatchView | null;
+  result?: Result | null;
+  hole?: Hole;
+  doing?: Doing;
+  dealt?: number;
+  late?: boolean;
+  screen?: "lobby";
+  ledger?: number;
+  /** The tables on the lobby's wall (default: a few). */
+  tables?: MatchView[];
+  house?: TableProps["house"];
+  /** The player's agent: `true` switched on, with `said` and `last` when it has bet. */
+  agent?: {
+    on: boolean;
+    thinking?: boolean;
+    said?: string;
+    reason?: string;
+    driver?: string;
+    fallback?: string;
+  };
+  /** This frame's table is played against the house: this browser holds seat 1 only, and sends only its lines. */
+  vsHouse?: boolean;
+};
 const SETTLED = 23;
 
 const base: MatchView = {
@@ -57,43 +90,462 @@ const base: MatchView = {
 const at = (more: Partial<MatchView>): MatchView => ({ ...base, ...more });
 const mineHole: Hole = { hand: 0, cards: [HOLE[0], HOLE[1]] };
 
+/** The lobby's wall in the demo: two open seats and two tables in play. */
+const WALL: MatchView[] = [
+  {
+    ...base,
+    id: "p-mwd2k1a9-q7rt",
+    phase: "lobby",
+    players: ["friend.testnet"],
+    awaited: [],
+    shuffled: 0,
+  },
+  {
+    ...base,
+    id: "p-mwd1zz04-b3xm",
+    phase: "lobby",
+    players: [A],
+    awaited: [],
+    shuffled: 0,
+  },
+  {
+    ...base,
+    id: "p-mwcz8t1e-k2pa",
+    phase: "bet",
+    players: ["friend.testnet", HOUSE],
+    hand: 3,
+    chips: [112, 84],
+  },
+  {
+    ...base,
+    id: "p-mwcyq0ss-7hne",
+    phase: "open",
+    players: ["alice.testnet", "bob.testnet"],
+    hand: 0,
+    chips: [94, 94],
+  },
+];
+
 const FRAMES: Frame[] = [
   { name: "The lobby", view: null, screen: "lobby" },
-  { name: "A table waiting for its second seat", view: at({ phase: "lobby", players: [A], shuffled: 0, awaited: [], tokens: none() }) },
-  { name: "Shuffle 1 of 2, this page proving it", view: at({ phase: "shuffle", shuffled: 0, awaited: [0] }), doing: { seat: 0, what: "shuffle" } },
-  { name: "Shuffle 2 of 2", view: at({ phase: "shuffle", shuffled: 1, awaited: [1] }) },
-  { name: "Deal: the cards go out face down", view: at({ phase: "deal", awaited: [0, 1] }) },
-  { name: "Deal: seat 2's shares are in, seat 1 reads its cards", view: at({ phase: "deal", awaited: [0], done: [false, true], tokens: given([1, 0], [1, 1]) }), hole: { hand: 0, cards: [HOLE[0], null] } },
-  { name: "Before the flop: seat 1 to act", view: at({ chips: [99, 98], put: [1, 2], bet: [1, 2], toAct: 0, awaited: [0], tokens: given(...dealtTokens) }), hole: mineHole },
-  { name: "Before the flop: seat 1 raised to 6", view: at({ chips: [94, 98], put: [6, 2], bet: [6, 2], toAct: 1, awaited: [1], tokens: given(...dealtTokens) }), hole: mineHole },
-  { name: "Turning the flop: no share yet", view: at({ phase: "open", street: 1, chips: [94, 94], put: [6, 6], awaited: [0, 1], tokens: given(...dealtTokens) }), hole: mineHole },
-  { name: "Turning the flop: seat 1's shares are in", view: at({ phase: "open", street: 1, chips: [94, 94], put: [6, 6], awaited: [1], done: [true, false], tokens: given(...dealtTokens, [0, 4], [0, 5], [0, 6]) }), hole: mineHole },
-  { name: "The flop: seat 2 to act", view: at({ street: 1, chips: [94, 94], put: [6, 6], board: BOARD.slice(0, 3), toAct: 1, awaited: [1], tokens: given(...upTo(3)) }), hole: mineHole },
-  { name: "The flop: seat 2 bet 8", view: at({ street: 1, chips: [94, 86], put: [6, 14], bet: [0, 8], board: BOARD.slice(0, 3), toAct: 0, awaited: [0], tokens: given(...upTo(3)) }), hole: mineHole },
-  { name: "Turning the turn", view: at({ phase: "open", street: 2, chips: [86, 86], put: [14, 14], board: BOARD.slice(0, 3), awaited: [0, 1], tokens: given(...upTo(3)) }), hole: mineHole },
-  { name: "The turn: seat 2 to act", view: at({ street: 2, chips: [86, 86], put: [14, 14], board: BOARD.slice(0, 4), toAct: 1, awaited: [1], tokens: given(...upTo(4)) }), hole: mineHole },
-  { name: "Turning the river", view: at({ phase: "open", street: 3, chips: [86, 86], put: [14, 14], board: BOARD.slice(0, 4), awaited: [1], done: [true, false], tokens: given(...upTo(4), [0, 8]) }), hole: mineHole },
-  { name: "The river: seat 1 faces a bet of 30", view: at({ street: 3, chips: [86, 56], put: [14, 44], bet: [0, 30], board: BOARD, toAct: 0, awaited: [0], tokens: given(...upTo(5)) }), hole: mineHole },
-  { name: "Showdown: both seats to show", view: at({ phase: "showdown", street: 3, chips: [56, 56], put: [44, 44], board: BOARD, awaited: [0, 1], tokens: given(...upTo(5)) }), hole: mineHole },
-  { name: "Showdown: seat 1 has shown", view: at({ phase: "showdown", street: 3, chips: [56, 56], put: [44, 44], board: BOARD, awaited: [1], done: [true, false], hole: [HOLE[0], []], tokens: given(...upTo(5), [0, 0], [0, 1]) }), hole: mineHole },
+  {
+    name: "A table waiting for its second seat",
+    view: at({
+      phase: "lobby",
+      players: [A],
+      shuffled: 0,
+      awaited: [],
+      tokens: none(),
+    }),
+  },
+  {
+    name: "Shuffle 1 of 2, this page proving it",
+    view: at({ phase: "shuffle", shuffled: 0, awaited: [0] }),
+    doing: { seat: 0, what: "shuffle" },
+  },
+  {
+    name: "Shuffle 2 of 2",
+    view: at({ phase: "shuffle", shuffled: 1, awaited: [1] }),
+  },
+  {
+    name: "Deal: the cards go out face down",
+    view: at({ phase: "deal", awaited: [0, 1] }),
+  },
+  {
+    name: "Deal: seat 2's shares are in, seat 1 reads its cards",
+    view: at({
+      phase: "deal",
+      awaited: [0],
+      done: [false, true],
+      tokens: given([1, 0], [1, 1]),
+    }),
+    hole: { hand: 0, cards: [HOLE[0], null] },
+  },
+  {
+    name: "Before the flop: seat 1 to act",
+    view: at({
+      chips: [99, 98],
+      put: [1, 2],
+      bet: [1, 2],
+      toAct: 0,
+      awaited: [0],
+      tokens: given(...dealtTokens),
+    }),
+    hole: mineHole,
+  },
+  {
+    name: "Before the flop: seat 1 raised to 6",
+    view: at({
+      chips: [94, 98],
+      put: [6, 2],
+      bet: [6, 2],
+      toAct: 1,
+      awaited: [1],
+      tokens: given(...dealtTokens),
+    }),
+    hole: mineHole,
+  },
+  {
+    name: "Turning the flop: no share yet",
+    view: at({
+      phase: "open",
+      street: 1,
+      chips: [94, 94],
+      put: [6, 6],
+      awaited: [0, 1],
+      tokens: given(...dealtTokens),
+    }),
+    hole: mineHole,
+  },
+  {
+    name: "Turning the flop: seat 1's shares are in",
+    view: at({
+      phase: "open",
+      street: 1,
+      chips: [94, 94],
+      put: [6, 6],
+      awaited: [1],
+      done: [true, false],
+      tokens: given(...dealtTokens, [0, 4], [0, 5], [0, 6]),
+    }),
+    hole: mineHole,
+  },
+  {
+    name: "The flop: seat 2 to act",
+    view: at({
+      street: 1,
+      chips: [94, 94],
+      put: [6, 6],
+      board: BOARD.slice(0, 3),
+      toAct: 1,
+      awaited: [1],
+      tokens: given(...upTo(3)),
+    }),
+    hole: mineHole,
+  },
+  {
+    name: "The flop: seat 2 bet 8",
+    view: at({
+      street: 1,
+      chips: [94, 86],
+      put: [6, 14],
+      bet: [0, 8],
+      board: BOARD.slice(0, 3),
+      toAct: 0,
+      awaited: [0],
+      tokens: given(...upTo(3)),
+    }),
+    hole: mineHole,
+  },
+  {
+    name: "Turning the turn",
+    view: at({
+      phase: "open",
+      street: 2,
+      chips: [86, 86],
+      put: [14, 14],
+      board: BOARD.slice(0, 3),
+      awaited: [0, 1],
+      tokens: given(...upTo(3)),
+    }),
+    hole: mineHole,
+  },
+  {
+    name: "The turn: seat 2 to act",
+    view: at({
+      street: 2,
+      chips: [86, 86],
+      put: [14, 14],
+      board: BOARD.slice(0, 4),
+      toAct: 1,
+      awaited: [1],
+      tokens: given(...upTo(4)),
+    }),
+    hole: mineHole,
+  },
+  {
+    name: "Turning the river",
+    view: at({
+      phase: "open",
+      street: 3,
+      chips: [86, 86],
+      put: [14, 14],
+      board: BOARD.slice(0, 4),
+      awaited: [1],
+      done: [true, false],
+      tokens: given(...upTo(4), [0, 8]),
+    }),
+    hole: mineHole,
+  },
+  {
+    name: "The river: seat 1 faces a bet of 30",
+    view: at({
+      street: 3,
+      chips: [86, 56],
+      put: [14, 44],
+      bet: [0, 30],
+      board: BOARD,
+      toAct: 0,
+      awaited: [0],
+      tokens: given(...upTo(5)),
+    }),
+    hole: mineHole,
+  },
+  {
+    name: "Showdown: both seats to show",
+    view: at({
+      phase: "showdown",
+      street: 3,
+      chips: [56, 56],
+      put: [44, 44],
+      board: BOARD,
+      awaited: [0, 1],
+      tokens: given(...upTo(5)),
+    }),
+    hole: mineHole,
+  },
+  {
+    name: "Showdown: seat 1 has shown",
+    view: at({
+      phase: "showdown",
+      street: 3,
+      chips: [56, 56],
+      put: [44, 44],
+      board: BOARD,
+      awaited: [1],
+      done: [true, false],
+      hole: [HOLE[0], []],
+      tokens: given(...upTo(5), [0, 0], [0, 1]),
+    }),
+    hole: mineHole,
+  },
   {
     name: "The hand is paid: seat 1 wins 88",
-    view: at({ phase: "shuffle", hand: 1, button: 1, shuffled: 0, awaited: [1], chips: [144, 56], last: { number: 0, board: BOARD, hole: HOLE, outcome: { won: 0 }, pot: 88 } }),
+    view: at({
+      phase: "shuffle",
+      hand: 1,
+      button: 1,
+      shuffled: 0,
+      awaited: [1],
+      chips: [144, 56],
+      last: {
+        number: 0,
+        board: BOARD,
+        hole: HOLE,
+        outcome: { won: 0 },
+        pot: 88,
+      },
+    }),
   },
   {
     name: "A hand that ended on a fold",
-    view: at({ phase: "shuffle", hand: 2, button: 0, shuffled: 0, awaited: [0], chips: [138, 62], last: { number: 1, board: BOARD.slice(0, 3), hole: [[], []], outcome: { won: 1 }, pot: 16 } }),
+    view: at({
+      phase: "shuffle",
+      hand: 2,
+      button: 0,
+      shuffled: 0,
+      awaited: [0],
+      chips: [138, 62],
+      last: {
+        number: 1,
+        board: BOARD.slice(0, 3),
+        hole: [[], []],
+        outcome: { won: 1 },
+        pot: 16,
+      },
+    }),
   },
   {
     name: "The next hand under way, the hand before on its stub",
-    view: at({ hand: 2, chips: [137, 60], put: [1, 2], bet: [1, 2], toAct: 0, awaited: [0], tokens: given(...dealtTokens), last: { number: 1, board: BOARD.slice(0, 3), hole: [[], []], outcome: { won: 1 }, pot: 16 } }),
-    hole: { hand: 2, cards: [[23, 36], [0, 44]] },
+    view: at({
+      hand: 2,
+      chips: [137, 60],
+      put: [1, 2],
+      bet: [1, 2],
+      toAct: 0,
+      awaited: [0],
+      tokens: given(...dealtTokens),
+      last: {
+        number: 1,
+        board: BOARD.slice(0, 3),
+        hole: [[], []],
+        outcome: { won: 1 },
+        pot: 16,
+      },
+    }),
+    hole: {
+      hand: 2,
+      cards: [
+        [23, 36],
+        [0, 44],
+      ],
+    },
     dealt: 2,
   },
-  { name: "The other seat ran out of time", view: at({ street: 1, chips: [94, 94], put: [6, 6], board: BOARD.slice(0, 3), toAct: 1, awaited: [1], tokens: given(...upTo(3)) }), hole: mineHole, late: true, ledger: 10 },
-  { name: "A position that decrypted to no card", view: at({ chips: [99, 98], put: [1, 2], bet: [1, 2], toAct: 0, awaited: [0], tokens: given(...dealtTokens) }), hole: { hand: 0, cards: [[51, null], HOLE[1]] }, ledger: 6 },
-  { name: "The table settled", view: null, result: { id: ID, stake: base.stake, players: [A, B], chips: [138, 62], payouts: [((STAKE / 100n) * 138n).toString(), ((STAKE / 100n) * 62n).toString()], hands: 2, reason: "left" }, ledger: 19 },
+  {
+    name: "The other seat ran out of time",
+    view: at({
+      street: 1,
+      chips: [94, 94],
+      put: [6, 6],
+      board: BOARD.slice(0, 3),
+      toAct: 1,
+      awaited: [1],
+      tokens: given(...upTo(3)),
+    }),
+    hole: mineHole,
+    late: true,
+    ledger: 10,
+  },
+  {
+    name: "A position that decrypted to no card",
+    view: at({
+      chips: [99, 98],
+      put: [1, 2],
+      bet: [1, 2],
+      toAct: 0,
+      awaited: [0],
+      tokens: given(...dealtTokens),
+    }),
+    hole: { hand: 0, cards: [[51, null], HOLE[1]] },
+    ledger: 6,
+  },
+  {
+    name: "The table settled",
+    view: null,
+    result: {
+      id: ID,
+      stake: base.stake,
+      players: [A, B],
+      chips: [138, 62],
+      payouts: [((STAKE / 100n) * 138n).toString(), ((STAKE / 100n) * 62n).toString()],
+      hands: 2,
+      reason: "left",
+    },
+    ledger: 19,
+  },
   { name: "No such table", view: null, result: null, ledger: 0 },
+  {
+    name: "The lobby when no table is open",
+    view: null,
+    screen: "lobby",
+    tables: [],
+  },
+  {
+    name: "Against the house: the house is thinking",
+    view: at({
+      players: [A, HOUSE],
+      chips: [99, 98],
+      put: [1, 2],
+      bet: [1, 2],
+      toAct: 1,
+      awaited: [1],
+      tokens: given(...dealtTokens),
+    }),
+    hole: mineHole,
+    vsHouse: true,
+    house: { seat: 1, thinking: true, last: null },
+    agent: { on: false },
+  },
+  {
+    name: "Against the house: it raised, and said why",
+    view: at({
+      players: [A, HOUSE],
+      chips: [99, 94],
+      put: [1, 6],
+      bet: [1, 6],
+      toAct: 0,
+      awaited: [0],
+      tokens: given(...dealtTokens),
+    }),
+    hole: mineHole,
+    vsHouse: true,
+    house: {
+      seat: 1,
+      thinking: false,
+      last: {
+        what: "raised to 6",
+        reason: "A pair of nines is strong heads-up; raising makes the ace-high hands pay to see the flop.",
+        driver: "gemini-2.5-flash-lite",
+      },
+    },
+    agent: { on: false },
+  },
+  {
+    name: "Against the house: your agent has your seat",
+    view: at({
+      players: [A, HOUSE],
+      chips: [99, 94],
+      put: [1, 6],
+      bet: [1, 6],
+      toAct: 0,
+      awaited: [0],
+      tokens: given(...dealtTokens),
+    }),
+    hole: mineHole,
+    vsHouse: true,
+    house: {
+      seat: 1,
+      thinking: false,
+      last: {
+        what: "raised to 6",
+        reason: "A pair of nines is strong heads-up; raising makes the ace-high hands pay to see the flop.",
+        driver: "gemini-2.5-flash-lite",
+      },
+    },
+    agent: { on: true, thinking: true },
+  },
+  {
+    name: "Against the house: your agent called, and said why",
+    view: at({
+      phase: "open",
+      street: 1,
+      players: [A, HOUSE],
+      chips: [94, 94],
+      put: [6, 6],
+      awaited: [0, 1],
+      tokens: given(...dealtTokens),
+    }),
+    hole: mineHole,
+    vsHouse: true,
+    house: {
+      seat: 1,
+      thinking: false,
+      last: {
+        what: "raised to 6",
+        reason: "A pair of nines is strong heads-up; raising makes the ace-high hands pay to see the flop.",
+        driver: "gemini-2.5-flash-lite",
+      },
+    },
+    agent: {
+      on: true,
+      said: "calls 4",
+      reason: "Ace-king suited plays well against a raise; calling keeps the pot small out of position.",
+      driver: "gemini-2.5-flash-lite",
+    },
+  },
+  {
+    name: "Against the house: the model failed and the odds answered",
+    view: at({
+      phase: "open",
+      street: 1,
+      players: [A, HOUSE],
+      chips: [94, 94],
+      put: [6, 6],
+      awaited: [0, 1],
+      tokens: given(...dealtTokens),
+    }),
+    hole: mineHole,
+    vsHouse: true,
+    house: { seat: 1, thinking: false, last: null },
+    agent: {
+      on: true,
+      said: "calls 4",
+      reason: "Ace-king is ahead of a random hand often enough to call 4 into 8.",
+      driver: "the book",
+      fallback: "the model took too long",
+    },
+  },
 ];
 
 /** A made-up transaction hash for line `n`: it looks like one and opens nothing. */
@@ -146,6 +598,21 @@ const SENT: [number, number, string][] = [
   [20, 1, "sent its shares of the other seat's cards"],
   [20, 0, "sent its shares of the other seat's cards"],
 ];
+/** What this browser sent at a table against the house: its own seat's lines only. Newest first. */
+const HOUSE_LOG: LogLine[] = [
+  { text: "Seat 1's agent calls 4", hash: fakeHash(201), seat: 0 },
+  {
+    text: "Seat 1 sent its shares of the other seat's cards",
+    hash: fakeHash(202),
+    seat: 0,
+  },
+  {
+    text: "Seat 1 shuffled the deck with its proof (1 of 2)",
+    hash: fakeHash(203),
+    seat: 0,
+  },
+];
+
 /** The ledger as it stands at a frame, newest first. */
 const logAt = (frame: number, leaving = false): LogLine[] => {
   const lines: LogLine[] = SENT.map(([from, seat, text], n): [number, LogLine] => [from, { text: `Seat ${seat + 1} ${text}`, hash: fakeHash(n), seat }])
@@ -184,11 +651,18 @@ export function DemoTable({ start }: { start: string }) {
     return () => clearInterval(timer);
   }, [playing]);
 
-  const { name, view, result, hole, doing, dealt, late, screen, ledger } = FRAMES[frame];
-  const log = logAt(ledger ?? frame, frame === SETTLED);
+  const { name, view, result, hole, doing, dealt, late, screen, ledger, tables, house, agent, vsHouse } = FRAMES[frame];
+  const [agentOn, setAgentOn] = useState<boolean | null>(null);
+  useEffect(() => setAgentOn(null), [frame]);
+  const log = vsHouse ? HOUSE_LOG.slice(frame >= 29 ? 0 : 1) : logAt(ledger ?? frame, frame === SETTLED);
   const next = () => step(1);
-  const mine = seats.filter((seat) => view?.players[seat]);
-  const shownHole: Hole = hole ? { hand: hole.hand, cards: hole.cards.map((cards, seat) => (seats.includes(seat) ? cards : null)) } : { hand: -1, cards: [null, null] };
+  const mine = vsHouse ? [0] : seats.filter((seat) => view?.players[seat]);
+  const shownHole: Hole = hole
+    ? {
+        hand: hole.hand,
+        cards: hole.cards.map((cards, seat) => (seats.includes(seat) ? cards : null)),
+      }
+    : { hand: -1, cards: [null, null] };
 
   return (
     <>
@@ -208,13 +682,17 @@ export function DemoTable({ start }: { start: string }) {
         </button>
       </p>
       {screen === "lobby" ? (
-        <Lobby session={null} invited={null} onSignIn={next} onSeated={next} />
+        <Lobby session={null} invited={null} onSignIn={next} onSeated={next} wall={{ tables: tables ?? WALL, offline: false }} house={HOUSE} />
       ) : view === null ? (
         <Settled id={ID} result={result ?? null} log={log} explorer={() => null} onBack={next} />
       ) : (
         <TableView
           id={ID}
-          view={{ ...view, seq: frame, deadline: String(BigInt(late ? opened - 20_000 : opened + 287_000) * 1_000_000n) }}
+          view={{
+            ...view,
+            seq: frame,
+            deadline: String(BigInt(late ? opened - 20_000 : opened + 287_000) * 1_000_000n),
+          }}
           hole={shownHole}
           mine={mine}
           locked={false}
@@ -226,7 +704,35 @@ export function DemoTable({ start }: { start: string }) {
           link={`https://deedlords.example/poker?m=${ID}`}
           explorer={() => null}
           stake={inNear(STAKE + RECORD_FEE)}
-          on={{ act: next, deal: next, leave: next, claim: next, close: next, take: next }}
+          house={house}
+          agent={
+            agent && {
+              on: agentOn ?? agent.on,
+              toggle: () => setAgentOn(!(agentOn ?? agent.on)),
+              thinking: Boolean(agent.thinking),
+              name: "Velvet",
+              model: "gemini-2.5-flash-lite",
+              said: agent.said ?? null,
+              last: agent.reason
+                ? {
+                    action: "call",
+                    reason: agent.reason,
+                    driver: agent.driver ?? "the book",
+                    fallback: Boolean(agent.fallback),
+                    problem: agent.fallback,
+                    seat: 0,
+                  }
+                : null,
+            }
+          }
+          on={{
+            act: next,
+            deal: next,
+            leave: next,
+            claim: next,
+            close: next,
+            take: next,
+          }}
         />
       )}
     </>

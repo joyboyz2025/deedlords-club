@@ -37,6 +37,44 @@ export const MAX_FREE_TABLES = intEnv(env.DEEDLORDS_FREE_TABLES, 12);
 
 export const jsonAnswer = (status: number, body: unknown) => Response.json(body, { status, headers: { "cache-control": "no-store" } });
 
+/**
+ * The model each house agent of a free table plays with, by seat, as whoever opened it chose. Kept in this process:
+ * after a restart a house seat plays with the server's house model (DEEDLORDS_HOUSE_MODEL).
+ */
+const houseSeats = new Map<string, Record<number, string>>();
+
+export function rememberHouseSeats(id: string, models: Record<number, string>): void {
+  if (houseSeats.size > 2_000) houseSeats.delete(houseSeats.keys().next().value!);
+  houseSeats.set(id, models);
+}
+
+/**
+ * A free table's id with its house agents' models written into it, one base-36 letter each (seat 1, 2, 3): the place
+ * of the model in `offered`. A server that keeps nothing between requests (one serverless call opens the table, another
+ * plays its turns) reads them back from the id. Left as it is when a model is not in the first 36 offered.
+ */
+export function idWithHouseSeats(base: string, models: string[], offered: string[]): string {
+  const places = models.map((model) => offered.indexOf(model));
+  if (!places.length || places.some((place) => place < 0 || place >= 36)) return base;
+  return `${base}-${places.map((place) => place.toString(36)).join("")}`;
+}
+
+const HOUSE_SEATS_IN_ID = /^f-[0-9a-z]+-[a-z]{4}-([0-9a-z]{1,3})$/;
+
+/**
+ * The model chosen for a house seat, or `null` when none was (the server's house model plays): the one remembered by
+ * this process, else the one the id names among `offered` (the same list, in the same order, the table was opened with).
+ */
+export function houseSeatModel(id: string, seat: number, offered: string[] = []): string | null {
+  const kept = houseSeats.get(id)?.[seat];
+  if (kept) return kept;
+  const letter = HOUSE_SEATS_IN_ID.exec(id)?.[1]?.[seat - 1];
+  return letter === undefined ? null : (offered[parseInt(letter, 36)] ?? null);
+}
+
+/** The most house agents a free table seats: the board takes four seats, one is the visitor's. */
+export const MAX_HOUSE_AGENTS = 3;
+
 /** A table the sponsor opened and nobody staked on: the only kind it pays moves for. */
 export const isFreeTable = (meta: ChainMeta, sponsor: Sponsor) => meta.stake === "0" && meta.creator === sponsor.accountId;
 

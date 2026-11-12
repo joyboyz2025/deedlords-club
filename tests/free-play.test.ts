@@ -218,3 +218,32 @@ test("a signing token is believed only if the sign-in service signed it, for thi
   await refused(await mint({ ...claims, fatxn: undefined }), /something else/);
   await refused("a.b.c", /cannot be read/);
 });
+
+test("a free table with three house agents goes in transactions that fit the gas", async () => {
+  const { freeTableCalls, inTransactions } = await import("../games/co-ty-phu/chain/calls.ts");
+  const calls = freeTableCalls("f-test", 3, 60, true, null, 3);
+  assert.deepEqual(
+    calls.map((call) => call.method),
+    ["create_match", "join", "join", "join"],
+  );
+  const batches = inTransactions(calls);
+  assert.equal(batches.flat().length, 4, "every call is sent");
+  for (const batch of batches) assert.ok(batch.reduce((sum, call) => sum + call.gas, 0n) <= 300n * 10n ** 12n, "no transaction carries more than 300 Tgas");
+  const seats = calls.slice(1).map((call) => JSON.parse(new TextDecoder().decode(call.args)).seat);
+  assert.deepEqual(seats, [1, 2, 3], "the agents take every seat but the visitor's");
+});
+
+test("a free table's id carries its house agents' models, for a server that remembers nothing between requests", async () => {
+  const { houseSeatModel, idWithHouseSeats } = await import("../games/co-ty-phu/chain/freeDesk.ts");
+  const { newMatchId } = await import("../games/co-ty-phu/chain/calls.ts");
+  const offered = ["rules", "gpt-4.1-mini", "near:Qwen/Qwen3.6-35B-A3B-FP8", "near:z-ai/glm-5.3-flash"];
+  const id = idWithHouseSeats(`f${newMatchId(1_794_466_922_224, () => 0.5).slice(1)}`, ["near:z-ai/glm-5.3-flash", "rules", "gpt-4.1-mini"], offered);
+  assert.match(id, /^[A-Za-z0-9_-]{1,32}$/, "still a match id the contract takes");
+  assert.equal(houseSeatModel(id, 1, offered), "near:z-ai/glm-5.3-flash");
+  assert.equal(houseSeatModel(id, 2, offered), "rules");
+  assert.equal(houseSeatModel(id, 3, offered), "gpt-4.1-mini");
+  assert.equal(houseSeatModel(id, 0, offered), null, "the visitor's seat has no house model");
+  // A model the server does not offer leaves the id as it was: that seat plays with the house model.
+  assert.equal(idWithHouseSeats("f-abc-wxyz", ["unknown"], offered), "f-abc-wxyz");
+  assert.equal(houseSeatModel("f-abc-wxyz", 1, offered), null);
+});

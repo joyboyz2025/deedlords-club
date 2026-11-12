@@ -106,6 +106,16 @@ body:has(.fd) {
   margin: 0 auto;
 }
 
+/* The club's second word: smaller, same face, same foil. */
+.fd-mark small {
+  font-size: 0.56em;
+  letter-spacing: 0.04em;
+}
+
+.fd-mark {
+  white-space: nowrap;
+}
+
 .fd-mark {
   font-family: var(--font-alfa), serif;
   font-size: clamp(24px, 2.4vw, 32px);
@@ -122,9 +132,18 @@ body:has(.fd) {
 
 .fd-top nav {
   display: flex;
+  align-items: center;
   gap: clamp(14px, 2vw, 28px);
   font-weight: 600;
   color: var(--soft);
+}
+
+/* The games on one side of the rule, the visitor's own pages on the other. */
+.fd-top nav i {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  background: rgb(255 247 230 / 24%);
 }
 
 .fd-top nav a {
@@ -1378,47 +1397,86 @@ a.fd-row:hover .fd-row__go {
   font-family: var(--font-be-vietnam), system-ui, sans-serif;
 }
 
-.fd-seats {
+/* The lounge: whoever sits stands in the room whole, on a pad of the seat's colour, large enough to see who it is. */
+
+.fd-lounge {
   display: grid;
-  gap: 0;
+  grid-template-columns: repeat(var(--seats, 2), minmax(0, 1fr));
+  gap: clamp(8px, 1.2vw, 18px);
   margin-top: 12px;
+  padding: 10px 6px 20px;
+  border-top: 1px solid rgb(255 247 230 / 11%);
   list-style: none;
 }
 
-.fd-seat {
+.fd-guest {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 16px;
-  align-items: center;
-  padding: 14px 6px;
-  border-top: 1px solid rgb(255 247 230 / 11%);
+  align-content: end;
+  justify-items: center;
+  gap: 8px;
+  min-width: 0;
+  text-align: center;
 }
 
-.fd-seat__face {
+.fd-guest__figure {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 64px;
-  height: 64px;
-  overflow: hidden;
+  width: min(100%, 36vh, 320px);
+  aspect-ratio: 1;
+  font-family: var(--font-alfa), serif;
+  font-size: 40px;
+}
+
+/* A light in the seat's colour behind the figure. */
+.fd-guest__figure::before {
+  position: absolute;
+  inset: 2% 4% 8%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--seat) 46%, transparent) 0%, transparent 74%);
+  content: "";
+}
+
+/* The pad it stands on. */
+.fd-guest__figure::after {
+  position: absolute;
+  right: 17%;
+  bottom: 2.5%;
+  left: 17%;
+  height: 15%;
   border: 3px solid var(--seat);
   border-radius: 50%;
-  background: color-mix(in srgb, var(--seat) 26%, #201009);
-  font-family: var(--font-alfa), serif;
-  font-size: 24px;
+  background: color-mix(in srgb, var(--seat) 34%, #201009);
+  content: "";
 }
 
-.fd-seat__face img {
+.fd-guest__figure img {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  /* The drawing leaves air around a figure for its pet and its ride: shown larger, feet kept on the pad. */
+  scale: 1.16;
+  transform-origin: 50% 86%;
+  filter: drop-shadow(0 6px 5px rgb(0 0 0 / 35%));
 }
 
-.fd-seat small,
-.fd-seat strong {
-  display: block;
+.fd-guest__figure b {
+  position: relative;
+  z-index: 1;
+  color: var(--soft);
+  font-weight: 400;
 }
 
-.fd-seat small {
+.fd-guest p {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.fd-guest small {
   color: var(--soft);
   font-size: 12px;
   font-weight: 600;
@@ -1426,23 +1484,77 @@ a.fd-row:hover .fd-row__go {
   text-transform: uppercase;
 }
 
-.fd-seat strong {
+.fd-guest strong {
   overflow: hidden;
-  font-size: 19px;
+  font-size: clamp(17px, 1.6vw, 22px);
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.fd-seat[data-free] .fd-seat__face {
-  border-style: dashed;
-  border-color: rgb(255 247 230 / 38%);
-  background: transparent;
-  color: var(--soft);
+.fd-guest[data-you] strong {
+  color: #fbe29a;
 }
 
-.fd-seat[data-free] strong {
+/* An open seat: the outline of somebody who is not here yet. */
+.fd-guest[data-free] .fd-guest__figure::before {
+  content: none;
+}
+
+.fd-guest[data-free] .fd-guest__figure::after {
+  border-style: dashed;
+  border-color: rgb(255 247 230 / 38%);
+  background: none;
+}
+
+.fd-guest__ghost {
+  position: relative;
+  z-index: 1;
+  align-self: end;
+  width: 36%;
+  margin-bottom: 11%;
+  aspect-ratio: 1 / 1.42;
+}
+
+.fd-guest__ghost::before,
+.fd-guest__ghost::after {
+  position: absolute;
+  border: 2px dashed rgb(255 247 230 / 38%);
+  content: "";
+}
+
+.fd-guest__ghost::before {
+  top: 0;
+  right: 6%;
+  left: 6%;
+  border-radius: 50%;
+  aspect-ratio: 1;
+}
+
+.fd-guest__ghost::after {
+  right: 22%;
+  bottom: 0;
+  left: 22%;
+  height: 34%;
+  border-radius: 38% 38% 30% 30%;
+}
+
+.fd-guest[data-free] strong {
   color: var(--soft);
   font-weight: 400;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .fd-guest__figure img {
+    animation: fd-arrive 0.55s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+
+  @keyframes fd-arrive {
+    from {
+      opacity: 0;
+      translate: 0 -12px;
+    }
+  }
 }
 
 .fd-terms {
@@ -1532,8 +1644,195 @@ a.fd-row:hover .fd-row__go {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .fd-seat__face {
-    width: 52px;
-    height: 52px;
+  .fd-guest__figure {
+    width: min(100%, 300px);
   }
+}
+
+@media (max-width: 520px) {
+  .fd-lounge {
+    grid-template-columns: repeat(min(var(--seats, 2), 2), minmax(0, 1fr));
+  }
+}
+
+/* ---- Other chains: 1Click in and out, inside the funds panel of the passenger stub ---- */
+
+.fd-xchain {
+  display: grid;
+  gap: 10px;
+}
+
+.fd-xchain__form {
+  display: grid;
+  gap: 8px;
+}
+
+.fd-xchain select {
+  width: 100%;
+}
+
+.fd-xchain__quote,
+.fd-xchain__track {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgb(42 18 8 / 6%);
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+
+.fd-xchain__quote b,
+.fd-xchain__track b {
+  font-variant-numeric: tabular-nums;
+}
+
+.fd-xchain__status {
+  font-variant-numeric: tabular-nums;
+}
+
+.fd-xchain__status[data-settled] {
+  color: var(--gain, #1f6a34);
+}
+
+/* ---- The player's own NEAR AI key, on the Agents page ---- */
+
+.fd-nearai {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgb(42 18 8 / 6%);
+}
+
+.fd-nearai a {
+  color: var(--red, #7a1712);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.fd-nearai__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.fd-nearai .fd-chip {
+  border-color: #4fae6c;
+  background: rgb(47 154 92 / 14%);
+  color: #1f6a34;
+}
+
+@media (max-width: 420px) {
+  .fd-nearai__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+
+/* ---- /verify: one AI turn's TEE proof, checked in the browser ---- */
+
+.fd-verify {
+  display: grid;
+  gap: 0;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fd-verify li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px 6px;
+  border-top: 1px solid rgb(255 247 230 / 11%);
+}
+
+.fd-verify b {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgb(160 42 26 / 30%);
+  color: #ffd2c8;
+  font-size: 14px;
+}
+
+.fd-verify li[data-ok] b {
+  background: rgb(47 154 92 / 30%);
+  color: #bfeccb;
+}
+
+.fd-verify small {
+  display: block;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+  color: var(--soft);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.fd-verify__more a,
+.fd-proof a {
+  color: var(--gold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.fd-proof {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.fd-proof div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.fd-proof dt {
+  color: var(--ink-soft, #5a3524);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.fd-proof dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.fd-proof a {
+  color: var(--red, #7a1712);
+}
+
+.fd-proof__title {
+  margin: 14px 0 4px;
+  color: var(--red, #7a1712);
+  font-family: var(--font-alfa), serif;
+  font-size: 19px;
+  font-weight: 400;
+}
+
+.fd-proof__plan {
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border-radius: 10px;
+  background: rgb(42 18 8 / 6%);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+}
+
+/* A problem said on the ground rather than on paper: the same note, on a paper chip so it reads. */
+.fd-wall > .fd-problem {
+  justify-self: start;
+  background: var(--paper, #f8f0d4);
 }

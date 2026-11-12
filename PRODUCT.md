@@ -33,7 +33,7 @@ There is no game server: the contract is the referee. Every move is a transactio
 ## Capabilities and Constraints
 
 - Live on NEAR **testnet** at `game.deedlords.testnet`; stakes there are test NEAR. Mainnet and staking from other chains through NEAR Intents are being built: the owner allows saying "coming", never that they exist (confirmed 2026-11-11).
-- The contract keeps 2.5% of each pot; the winner of a duel takes 70% of the rest, second place 30%.
+- No fee for now (owner's choice, 2026-11-12): the contract's owner may set one later with `set_fee`, at most 5%, and a match keeps the fee it was opened with. The winner of a duel takes 70% of the pot, second place 30%.
 - A move takes about 2 to 3 seconds from click to result on testnet.
 - The game is an original property game. No Monopoly names, art, or wording, anywhere.
 - All product text is in English.
@@ -41,7 +41,7 @@ There is no game server: the contract is the referee. Every move is a transactio
 
 ## Brand Commitments
 
-- Name: Deedlords.
+- Name: **Deedlords Club** for the whole product (the owner's choice, 2026-11-12): one account and one character across its games. Its games keep their names: Deedlords (the board game), Poker, Arena.
 - An existing visual world in code (the lobby at `/play` and the table): deep red ground, cream paper, gold; a slab display face with a geometric sans; boarding-pass and departures-board forms; a 3D board of a small city; chibi characters for seats.
 
 ## Evidence on Hand

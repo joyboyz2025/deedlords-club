@@ -2,28 +2,33 @@ import type { Metadata, Viewport } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import checkinArt from "@/assets/plates/checkin-art.png";
+import arenaArt from "@/assets/plates/game-arena.webp";
+import boardArt from "@/assets/plates/game-board.webp";
+import pokerArt from "@/assets/plates/game-poker.webp";
 import goldFoil from "@/assets/plates/gold-foil.webp";
-import heroBoardFull from "@/assets/plates/hero-board-full.png";
-import heroBoard from "@/assets/plates/hero-board.png";
 import paper from "@/assets/plates/strip-paper.png";
 import faceArt from "@/assets/plates/stub-ai-face.png";
 import openArt from "@/assets/plates/stub-open-art.png";
 import paidArt from "@/assets/plates/stub-paid-art.png";
-import powerArt from "@/assets/plates/stub-power-art.png";
 import suezArt from "@/assets/plates/stub-suez-art.png";
+import { Cast } from "@/components/landing/Cast";
 import { Departures } from "@/components/landing/Departures";
 import { FareTable } from "@/components/landing/FareTable";
-import { Arrow, Chain, Clock, Out, Plane } from "@/components/landing/icons";
+import { Arrow, Chain, Out, Plane, Play } from "@/components/landing/icons";
+import { COIN, NET_NAME, ON_MAINNET, OTHER_NET } from "@/components/landing/net";
+import { TopBar } from "@/components/landing/TopBar";
+import { CHAIN } from "@/lib/chain/config";
 import { alfaSlab, beVietnam } from "@/lib/fonts";
 import "./landing.css";
 
 export const metadata: Metadata = {
-  title: "Deedlords: the contract is the referee",
-  description: "A property board game whose rules, dice and stakes live in a NEAR contract. Every move is a transaction anyone can open.",
+  title: "Deedlords Club: the contract is the referee",
+  description: "A club of games on NEAR: Deedlords, a property board game, and poker, with one account and one character at every table. Rules, dice, deck and stakes live in smart contracts, and every move is a transaction anyone can open.",
 };
 
 export const viewport: Viewport = { themeColor: "#5d100a", viewportFit: "cover" };
 
+// The match below was played on testnet, whichever network this deployment plays on.
 const EXPLORER = "https://testnet.nearblocks.io/txns/";
 const CONTRACT = "game.deedlords.testnet";
 
@@ -44,123 +49,176 @@ const short = (hash: string) => `${hash.slice(0, 6)}…${hash.slice(-4)}`;
 export default function LandingPage() {
   return (
     <div className={`lp ${alfaSlab.variable} ${beVietnam.variable}`} style={{ "--lp-paper": `url(${paper.src})`, "--lp-foil": `url(${goldFoil.src})` } as React.CSSProperties}>
-      <header className="lp-nav">
-        <Link className="lp-wordmark" href="/" aria-label="Deedlords, home">
-          Deedlords
-        </Link>
-        <nav aria-label="Sections">
-          <Link href="/play">Play</Link>
-          <a href="#how">How it works</a>
-          <a href="#chain">On chain</a>
-          <a href="#agents">Agents</a>
-        </nav>
-        <p className="lp-chip">
-          <Chain size={20} /> NEAR testnet · mainnet coming
-        </p>
-      </header>
+      <TopBar />
 
       <main>
-        <section className="lp-first" aria-labelledby="lp-title">
-          <h1 id="lp-title" className="lp-title">
-            Deedlords
-          </h1>
-          <p className="lp-line">No game server. The contract is the referee.</p>
-          <p className="lp-copy">Buy the world&rsquo;s priciest cities, collect rent, take the pot. The rules, the dice and the stakes live in a smart contract, so there is no game server and every move is a transaction anyone can open.</p>
-          <Image className="lp-board" src={heroBoard} alt="The Deedlords board: a ring of forty squares around a small city" priority sizes="33vw" />
-          <Image className="lp-board-small" src={heroBoardFull} alt="" sizes="(min-width: 1100px) 1px, 90vw" loading="eager" />
+        <section className="lp-hall" aria-labelledby="lp-title">
+          <div className="lp-hall__head">
+            <h1 id="lp-title" className="lp-title">
+              Deedlords Club
+            </h1>
+            <div>
+              <p className="lp-line">No game server. The contract is the referee.</p>
+              <p className="lp-copy">
+                One account and one character at every table. The rules, the dice, the deck and the stakes live in NEAR contracts: every move is a transaction anyone can open. Pick a gate.
+              </p>
+            </div>
+          </div>
 
-          <ol className="lp-strip" aria-label="One real match on NEAR testnet, as its transactions">
-            <li className="lp-stub lp-stub--you">
-              <p className="lp-stub__flight">
-                <Plane size={22} /> <b>Your flight</b> · NEAR testnet
-              </p>
-              <Link className="lp-go" href="/play">
-                Play on testnet <Arrow size={22} />
-              </Link>
-            </li>
-            <li className="lp-stub lp-stub--open">
-              <a href={`${EXPLORER}7H8HeV3EM6rrrGeTQuVLsnMxLKc5Jd5mVzTUPVTWUK34`} target="_blank" rel="noreferrer">
-                <p className="lp-stub__text">
-                  <span className="lp-time">
-                    <Clock /> 20:29
-                  </span>
-                  <b>Open the match</b>
-                  <span>stake 0.05 NEAR</span>
-                  <span>seat 1 of 2</span>
-                </p>
-                <Image className="lp-art" src={openArt} alt="" sizes="140px" />
-                <code className="lp-code">tx 7H8HeV…</code>
-              </a>
-            </li>
-            <li className="lp-stub lp-stub--ai">
-              <a href={`${EXPLORER}FSFqGbjj51j6n1L3DgZ5BES32kmG6aGXsckfSbcum3GX`} target="_blank" rel="noreferrer">
-                <p className="lp-stub__text">
-                  <span className="lp-time">
-                    <Clock /> 20:29
-                  </span>
-                  <b>Seat 2 taken by an AI</b>
-                </p>
-                <Image className="lp-art" src={faceArt} alt="" sizes="120px" />
-                <code className="lp-code">tx FSFqGb…</code>
-              </a>
-            </li>
-            <li className="lp-stub lp-stub--suez">
-              <a href={`${EXPLORER}CRKDK8PULen52MJUKxYH3fDbTDwzzTVVrXmdq9erYhmA`} target="_blank" rel="noreferrer">
-                <p className="lp-stub__text">
-                  <span className="lp-time">
-                    <Clock /> 20:30
-                  </span>
-                  <b>Roll 3+3</b>
-                  <span>Buy Suez Canal</span>
-                  <span>Roll 1+5</span>
-                  <span>Buy Vienna</span>
-                </p>
-                <Image className="lp-art" src={suezArt} alt="" sizes="240px" />
-                <code className="lp-code">tx CRKDK8…YhmA</code>
-              </a>
-            </li>
-            <li className="lp-stub lp-stub--power">
-              <a href={`${EXPLORER}CnWof8sGwdKmAd7fMHL7zTaBEYGEPi2ZoeDZESXs5H59`} target="_blank" rel="noreferrer">
-                <p className="lp-stub__text">
-                  <span className="lp-time">
-                    <Clock /> 20:30
-                  </span>
-                  <b>Roll 6+2</b>
-                  <span>Buy Power Grid</span>
-                </p>
-                <Image className="lp-art" src={powerArt} alt="" sizes="150px" />
-                <code className="lp-code">tx CnWof8…5H59</code>
-              </a>
-            </li>
-            <li className="lp-stub lp-stub--paid">
-              <a href={`${EXPLORER}CNXBuLKLFq1PMusu6Wv48GKtSoMpabvLmqtKqoCUwnHd`} target="_blank" rel="noreferrer">
-              <p className="lp-stub__text">
-                <span className="lp-time">
-                  <Clock /> 20:30
+          <ul className="lp-gates" aria-label="The games of the club">
+            <li className="lp-gate lp-gate--main">
+              <Link className="lp-poster" href="/play" aria-label={`Deedlords, the board game: play on ${NET_NAME}`}>
+                <Image src={boardArt} alt="A city board game: three pieces on bright squares, two dice in the air over a small modern city, a jet taking off" priority sizes="(min-width: 1100px) 42vw, 92vw" />
+                <span className="lp-poster__gate">
+                  Gate <b>A</b>
                 </span>
-                <b>Paid out</b>
-                <strong>0.06825 NEAR</strong>
-                <span>by the contract</span>
-              </p>
-              <Image className="lp-art" src={paidArt} alt="" sizes="140px" />
-              </a>
+                <i className="lp-status">Boarding</i>
+                <h2>Deedlords</h2>
+              </Link>
+              <div className="lp-gate__stub">
+                <p>The board game. Buy the world&rsquo;s priciest cities, collect rent, take the pot. The contract rolls the dice and pays the winner.</p>
+                <dl>
+                  <div>
+                    <dt>Seats</dt>
+                    <dd>2 to 4</dd>
+                  </div>
+                  <div>
+                    <dt>Rounds</dt>
+                    <dd>3, 6 or 12</dd>
+                  </div>
+                  <div>
+                    <dt>A seat</dt>
+                    <dd>free, or from 0.05</dd>
+                  </div>
+                </dl>
+                <Link className="lp-go" href="/play">
+                  Play Deedlords <Arrow size={22} />
+                </Link>
+              </div>
             </li>
-          </ol>
-          <p className="lp-strip-note">
-            Match {MATCH}, played on NEAR testnet on 10 November 2026 (times in UTC). Every stub opens its transaction.
+
+            <li className="lp-gate">
+              <Link className="lp-poster" href="/poker/tables" aria-label={`Poker: sit at a table on ${NET_NAME}`}>
+                <Image src={pokerArt} alt="A heads-up poker table in an airport lounge at night: every card lies face down under a small padlock" priority sizes="(min-width: 1100px) 28vw, 92vw" />
+                <span className="lp-poster__gate">
+                  Gate <b>B</b>
+                </span>
+                <i className="lp-status">Boarding</i>
+                <h2>Poker</h2>
+              </Link>
+              <div className="lp-gate__stub">
+                <p>Texas Hold&rsquo;em for two to nine with no dealer. Every seat shuffles the deck under its own key and proves it to the contract.</p>
+                <dl>
+                  <div>
+                    <dt>Seats</dt>
+                    <dd>2 to 9</dd>
+                  </div>
+                  <div>
+                    <dt>Shuffle</dt>
+                    <dd>proved in ZK</dd>
+                  </div>
+                  <div>
+                    <dt>A seat</dt>
+                    <dd>from 0.1</dd>
+                  </div>
+                </dl>
+                <Link className="lp-go" href="/poker/tables">
+                  Sit at a table <Arrow size={22} />
+                </Link>
+              </div>
+            </li>
+
+            <li className="lp-gate">
+              <Link className="lp-poster" href="/arena" aria-label="Arena: watch the trailer">
+                <Image src={arenaArt} alt="The Arena's crews lined up in a stone yard at dusk, a boilerman in a horned helmet in front" priority sizes="(min-width: 1100px) 28vw, 92vw" />
+                <span className="lp-poster__gate">
+                  Gate <b>C</b>
+                </span>
+                <i className="lp-status" data-soon>
+                  Trailer
+                </i>
+                <span className="lp-poster__play" aria-hidden="true">
+                  <Play size={30} />
+                </span>
+                <h2>Arena</h2>
+              </Link>
+              <div className="lp-gate__stub">
+                <p>An auto-battler of sealed bids: hire a crew from four guilds, place it, and watch a fight with no dice in it.</p>
+                <dl>
+                  <div>
+                    <dt>Units</dt>
+                    <dd>16</dd>
+                  </div>
+                  <div>
+                    <dt>Guilds</dt>
+                    <dd>4</dd>
+                  </div>
+                  <div>
+                    <dt>Gate</dt>
+                    <dd>not open yet</dd>
+                  </div>
+                </dl>
+                <Link className="lp-watch" href="/arena">
+                  <Play size={18} /> Watch the trailer
+                </Link>
+              </div>
+            </li>
+          </ul>
+          <p className="lp-hall__note">
+            {ON_MAINNET
+              ? "Both open gates run on NEAR mainnet: stakes are real NEAR, brought in from any chain if you like."
+              : "Both open gates run on NEAR testnet: every stake here is test NEAR and worth nothing."}{" "}
+            {OTHER_NET.url && (
+              <a href={OTHER_NET.url}>
+                The same club on {OTHER_NET.name} <Arrow size={14} />
+              </a>
+            )}
           </p>
         </section>
 
         <section className="lp-departures" id="play" aria-labelledby="lp-departures">
           <h2 id="lp-departures">
-            <Plane size={34} /> Departures
+            <Plane size={34} /> Departures <small>Deedlords · read live from the contract</small>
           </h2>
           <Departures />
         </section>
 
+        <section className="lp-sec lp-cast" id="character" aria-labelledby="lp-cast">
+          <h2 id="lp-cast">One traveller, every table</h2>
+          <p className="lp-lede">
+            Make a character once: a name and a look. It is your membership: its face sits at every table of the club. The character and each piece it wears are NFTs you hold, and the first mint is free.
+          </p>
+          <div className="lp-cast__stage">
+            <Cast />
+          </div>
+          <ul className="lp-cast__ways">
+            <li>
+              <b>Character</b>
+              <span>Pick a name, a face, a haircut, an outfit. Minted to your account for free.</span>
+              <Link href="/character">
+                Make yours <Arrow size={18} />
+              </Link>
+            </li>
+            <li>
+              <b>Shop and bag</b>
+              <span>Basic pieces are free to mint. Rare, Epic and Legendary ones only come out of boxes, paid in NEAR and rolled by the contract.</span>
+              <Link href="/shop">
+                Open the shop <Arrow size={18} />
+              </Link>
+            </li>
+            <li>
+              <b>Agents</b>
+              <span>Name an AI agent, pick its model, and tell it how to play in your own words. What you tell it stays yours.</span>
+              <Link href="/agents">
+                Brief an agent <Arrow size={18} />
+              </Link>
+            </li>
+          </ul>
+        </section>
+
         <section className="lp-sec lp-how" id="how" aria-labelledby="lp-how">
           <h2 id="lp-how">One confirmation to stake. None to move.</h2>
-          <p className="lp-lede">A match is short: two seats, three to twelve rounds, a minute a turn. This is all of it.</p>
+          <p className="lp-lede">A match of Deedlords is short: two to four seats, three to twelve rounds, a minute a turn. This is all of it.</p>
           <ol className="lp-pass">
             <li>
               <Image src={checkinArt} alt="" sizes="96px" />
@@ -170,7 +228,7 @@ export default function LandingPage() {
             <li>
               <Image src={openArt} alt="" sizes="110px" />
               <h3>Board</h3>
-              <p>Stake your seat, from 0.05 test NEAR. The game starts by itself when the last seat is taken.</p>
+              <p>Stake your seat, from 0.05 {COIN}, or take one at a free table. The room fills, then its host starts the game.</p>
             </li>
             <li>
               <Image src={suezArt} alt="" sizes="190px" />
@@ -194,12 +252,16 @@ export default function LandingPage() {
               <dd>The contract, from the block&rsquo;s own random seed, inside the transaction that asked for the roll.</dd>
             </div>
             <div>
+              <dt>Who shuffles the deck?</dt>
+              <dd>At the poker table, every seat, one after the other, each under a key nobody else sees. Each shuffle comes with a zero-knowledge proof the contract checks before a card is dealt.</dd>
+            </div>
+            <div>
               <dt>Who holds the stakes?</dt>
               <dd>The contract. While a match is in play, only its rules move them.</dd>
             </div>
             <div>
               <dt>Who names the winner?</dt>
-              <dd>The contract: net worth after the last round, paid out 70 and 30 after a 2.5% fee.</dd>
+              <dd>The contract. On the board: net worth after the last round, a duel paid out 70 and 30. There is no fee for now: the owner may set one, at most 5%, and a match keeps the fee it was opened with. At poker: the best hand shown, or the last player who has not folded.</dd>
             </div>
             <div>
               <dt>What if a player walks away?</dt>
@@ -207,13 +269,13 @@ export default function LandingPage() {
             </div>
             <div>
               <dt>What can the developer still do?</dt>
-              <dd>Replace the contract&rsquo;s code: this is a testnet build and its account key still exists. We say so here rather than hide it.</dd>
+              <dd>Replace a contract&rsquo;s code: the contract accounts&rsquo; keys still exist, so a bug can be fixed, and so could anything else. The poker proofs have had no outside review yet. We say so here rather than hide it.</dd>
             </div>
           </dl>
 
           <div className="lp-ledger">
             <h3>
-              <Chain size={22} /> The whole of match {MATCH}
+              <Chain size={22} /> One whole match of Deedlords: {MATCH}
             </h3>
             <ol>
               {LEDGER.map((row) => (
@@ -305,8 +367,15 @@ turn(match, seat, {
 
         <section className="lp-sec lp-gates" aria-labelledby="lp-gates">
           <h2 id="lp-gates">Board from the wallet you already have</h2>
-          <p className="lp-lede">Deedlords runs on NEAR. You do not have to start there.</p>
+          <p className="lp-lede">The club runs on NEAR. You do not have to start there.</p>
           <ul className="lp-gate-list">
+            <li>
+              <b>Google account</b>
+              <span>Through NEAR Auth: no wallet and no seed phrase. A testnet preview that answers on the development address only, for now.</span>
+              <i className="lp-status" data-live>
+                Preview
+              </i>
+            </li>
             <li>
               <b>EVM wallet</b>
               <span>MetaMask, Rabby, Coinbase Wallet. One signature gives you the same game account on every device.</span>
@@ -316,7 +385,7 @@ turn(match, seat, {
             </li>
             <li>
               <b>Guest</b>
-              <span>A game account whose key stays in your browser. The quickest way to try a match.</span>
+              <span>A game account whose key stays in your browser. At a free table it needs no NEAR at all: the house pays the gas.</span>
               <i className="lp-status">Open</i>
             </li>
             <li>
@@ -328,17 +397,31 @@ turn(match, seat, {
             </li>
             <li>
               <b>Stake from another chain</b>
-              <span>Pay your stake in the token you hold on another chain and be paid back there, through NEAR Intents.</span>
-              <i className="lp-status" data-soon>
-                Coming
+              <span>
+                Bring NEAR in from USDC, ETH, SOL or BTC on their own chains, and take it back out the same way, through NEAR Intents&rsquo; 1Click. Mainnet only: on testnet it
+                shows the price.
+              </span>
+              <i className="lp-status" data-live>
+                {ON_MAINNET ? "Live" : "Mainnet"}
               </i>
             </li>
             <li>
-              <b>Mainnet</b>
-              <span>Real NEAR in the pot. Until then every stake on this page is test NEAR and worth nothing.</span>
-              <i className="lp-status" data-soon>
-                Coming
-              </i>
+              <b>{ON_MAINNET ? "Testnet" : "Mainnet"}</b>
+              <span>
+                {ON_MAINNET
+                  ? "The same club with test NEAR: free tables, Google sign-in, nothing to lose."
+                  : "Real NEAR in the pot, the same contracts, no fee for now."}{" "}
+                {OTHER_NET.url && <a href={OTHER_NET.url}>Open it</a>}
+              </span>
+              {OTHER_NET.url ? (
+                <i className="lp-status" data-live>
+                  Live
+                </i>
+              ) : (
+                <i className="lp-status" data-soon>
+                  Coming
+                </i>
+              )}
             </li>
           </ul>
         </section>
@@ -346,14 +429,14 @@ turn(match, seat, {
         <section className="lp-close" aria-labelledby="lp-close">
           <div className="lp-close__stub">
             <h2 id="lp-close">Your seat is open</h2>
-            <p>A guest account and a little test NEAR are all it takes.</p>
+            <p>{ON_MAINNET ? "A guest account and a little NEAR, from any chain, are all it takes." : "A guest account and a little test NEAR are all it takes."}</p>
           </div>
           <div className="lp-close__stub lp-close__stub--go">
             <p className="lp-stub__flight">
-              <Plane size={22} /> <b>Your flight</b> · NEAR testnet
+              <Plane size={22} /> <b>Your flight</b> · {NET_NAME}
             </p>
             <Link className="lp-go" href="/play">
-              Play on testnet <Arrow size={22} />
+              Play on {CHAIN.network} <Arrow size={22} />
             </Link>
           </div>
         </section>
@@ -361,14 +444,14 @@ turn(match, seat, {
 
       <footer className="lp-foot">
         <p>
-          <span className="lp-wordmark">Deedlords</span> An original property game, built for NEAR HACKATHON 2026, games track.
+          <span className="lp-wordmark">Deedlords Club</span> Original games refereed by NEAR contracts, built for NEAR HACKATHON 2026, games track.
         </p>
         <p>
           Contract{" "}
-          <a href={`https://testnet.nearblocks.io/address/${CONTRACT}`} target="_blank" rel="noreferrer">
-            {CONTRACT}
+          <a href={`${CHAIN.explorerUrl ?? "https://testnet.nearblocks.io"}/address/${CHAIN.contractId}`} target="_blank" rel="noreferrer">
+            {CHAIN.contractId}
           </a>{" "}
-          · NEAR testnet · stakes are test NEAR
+          · {NET_NAME} · stakes are {COIN}
         </p>
       </footer>
     </div>

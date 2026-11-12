@@ -4,11 +4,11 @@
 // many ask. That makes an opponent for a visitor who came alone, on a server that keeps no process running.
 
 import { advise, type Advice } from "@/games/co-ty-phu/agent/advise";
-import { llmFor, RULES_MODEL } from "@/games/co-ty-phu/agent/llm";
+import { llmFor, llmModels, RULES_MODEL } from "@/games/co-ty-phu/agent/llm";
 import { DEFAULT_PLAYBOOK } from "@/games/co-ty-phu/agent/playbook";
 import { clientKey, intEnv, rateLimiter } from "@/games/co-ty-phu/agent/rateLimit";
 import { book } from "@/games/co-ty-phu/agent/shelf";
-import { isFreeTable, jsonAnswer, limits } from "@/games/co-ty-phu/chain/freeDesk";
+import { houseSeatModel, isFreeTable, jsonAnswer, limits } from "@/games/co-ty-phu/chain/freeDesk";
 import { MATCH_ID } from "@/games/co-ty-phu/chain/relayRules";
 import type { ChainMatch } from "@/games/co-ty-phu/chain/types";
 import { isContractFailure } from "@/lib/chain/client";
@@ -18,7 +18,7 @@ import { sponsor } from "@/lib/chain/sponsor";
 
 export const dynamic = "force-dynamic";
 
-type Played = { played: true; hash: string; driver: string; reason: string } | { played: false; why: string };
+type Played = { played: true; hash: string; driver: string; reason: string; proven: boolean } | { played: false; why: string };
 
 // A turn on its way, and the turns just played: a node may answer from the block before for a moment, and the same
 // turn must not be planned (or paid for) twice.
@@ -29,9 +29,26 @@ const DONE_FOR_MS = 20_000;
 const modelBudget = rateLimiter(intEnv(process.env.DEEDLORDS_LLM_GLOBAL_LIMIT, 300), 60 * 60_000);
 const text = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-function houseModel() {
-  const name = process.env.DEEDLORDS_HOUSE_MODEL?.trim();
-  return !name || name === RULES_MODEL ? null : llmFor(process.env, name);
+/** The model a house seat plays with: the one its table was opened with, else the server's house model. */
+function modelName(id: string, seat: number): string {
+  return houseSeatModel(id, seat, [RULES_MODEL, ...llmModels(process.env)]) ?? (process.env.DEEDLORDS_HOUSE_MODEL?.trim() || RULES_MODEL);
+}
+
+function houseModel(id: string, seat: number) {
+  const name = modelName(id, seat);
+  return name === RULES_MODEL ? null : llmFor(process.env, name);
+}
+
+/** GET ?id=&seats=1,2,3: the model each of those house seats plays with, for the table to show. */
+export function GET(request: Request): Response {
+  const url = new URL(request.url);
+  const id = url.searchParams.get("id") ?? "";
+  if (!MATCH_ID.test(id)) return jsonAnswer(400, { error: "ask with ?id=<match>&seats=<seat,…>" });
+  const seats = (url.searchParams.get("seats") ?? "")
+    .split(",")
+    .map(Number)
+    .filter((seat) => Number.isInteger(seat) && seat >= 0 && seat < 4);
+  return jsonAnswer(200, { models: Object.fromEntries(seats.map((seat) => [seat, modelName(id, seat)])) });
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -65,15 +82,16 @@ export async function POST(request: Request): Promise<Response> {
   if (!pending) {
     const live = match;
     pending = (async (): Promise<Played> => {
-      const model = houseModel();
+      const model = houseModel(id, seat);
       const advice: Advice | null = await advise(live, seat, { llm: model && modelBudget.allow("*") ? model : null, playbook: DEFAULT_PLAYBOOK });
       if (!advice) return { played: false, why: "the house agent is out of the game" };
       try {
-        const outcome = await paying.session.call("turn", { id, seat, plan: advice.plan });
+        // A plan a NEAR AI model signed goes on chain with its proof: one more argument, kept with the move (lib/teeProof.ts).
+        const outcome = await paying.session.call("turn", { id, seat, plan: advice.plan, ...(advice.proof ? { proof: advice.proof } : {}) });
         book.remember(id, seat, turnKey, live.game.round, advice, Date.now(), { open: true });
         if (done.size > 500) for (const [key, until] of done) if (until <= Date.now()) done.delete(key);
         done.set(ticket, Date.now() + DONE_FOR_MS);
-        return { played: true, hash: outcome.hash, driver: advice.driver, reason: advice.reason };
+        return { played: true, hash: outcome.hash, driver: advice.driver, reason: advice.reason, proven: Boolean(advice.proof) };
       } catch (error) {
         // Refused by the contract (somebody forced the turn first, say): nothing changed, and the next request reads the match again.
         return { played: false, why: isContractFailure(error) ? `the contract refused the turn: ${error.message}` : `the turn could not be sent: ${text(error)}` };
