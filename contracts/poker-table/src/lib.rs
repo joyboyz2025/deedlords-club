@@ -16,6 +16,10 @@
 //! * The owner of the contract may take a fee: a part of what a seat wins, taken when the seat is paid. It starts at
 //!   what `new` is given (nothing, for now), the owner changes it with `set_fee` (5% at most), and a table keeps the
 //!   fee in force when it was opened, so a change never reaches money already at a table.
+//! * A free table: one of the owner's own accounts (the owner, or an account named under it) may open a table with a
+//!   stake of nothing. Its seats cost nothing and are paid nothing: the chips are only chips. The host attaches
+//!   [`FREE_TABLE_DEPOSIT`] instead, which covers the table's storage while it is open and the record of every seat
+//!   taken there; what is left of it comes back to the host when the table closes. Everything else is the same game.
 //! * Each step has a deadline; after it anyone may call `timeout`. If the hand can go on without the late seat it is
 //!   folded. If it cannot, because its shares are missing, the hand is cancelled: the others take back what they put
 //!   in and share everything the late seat had at the table. See [`Contract::timeout`].
@@ -51,6 +55,13 @@ pub const MIN_STAKE: u128 = 10u128.pow(23);
 /// that was ever taken leaves a line in the table's summary, which is stored for good (about 100 bytes, 0.001 NEAR of
 /// storage), and nothing else pays for it.
 pub const RECORD_FEE: u128 = 2 * 10u128.pow(21);
+/// What the host of a free table (a stake of nothing) attaches to open it: 0.25 NEAR. It stands where the stakes of a
+/// paid table stand: it covers the table's storage while it is open (up to 16 KB, 0.16 NEAR) and pays [`RECORD_FEE`]
+/// for every seat ever taken there. The rest comes back to the host when the table closes.
+pub const FREE_TABLE_DEPOSIT: u128 = 25 * 10u128.pow(22);
+/// The most seats ever taken at one free table, the host's included: each leaves a line in the table's summary that
+/// the host's deposit pays for, and 30 of them leave 0.19 NEAR of it for the storage.
+pub const MAX_FREE_SITTINGS: usize = 30;
 /// The most a deployment may take of a seat's winnings: 500 basis points, 5%.
 pub const MAX_FEE_BPS: u16 = 500;
 pub const DEFAULT_TURN_SECONDS: u32 = 120;
@@ -414,6 +425,20 @@ impl Match {
         }
     }
 
+    /// A table with a stake of nothing: its seats cost nothing and are paid nothing.
+    fn free(&self) -> bool {
+        self.stake.as_yoctonear() == 0
+    }
+
+    /// What taking a seat costs: the stake and the record fee, or nothing at a free table.
+    fn seat_price(&self) -> u128 {
+        if self.free() {
+            0
+        } else {
+            self.stake.as_yoctonear() + RECORD_FEE
+        }
+    }
+
     /// Pays the seat its chips (a chip is a hundredth of the stake), less the table's fee on what it won, and empties
     /// it. Returns the fee, which the caller adds to the contract's.
     #[must_use]
@@ -436,7 +461,7 @@ impl Match {
             "id": id,
             "phase": self.phase,
             "stake": U128(self.stake.as_yoctonear()),
-            "deposit": U128(self.stake.as_yoctonear() + RECORD_FEE),
+            "deposit": U128(self.seat_price()),
             "host": self.host,
             "feeBps": self.fee_bps,
             "players": self.players,
@@ -519,7 +544,8 @@ impl Contract {
     }
 
     /// Opens a table of `seats` seats (2 to 9; 2 when not given) and takes seat 0. The attached deposit is the stake
-    /// (at least [`MIN_STAKE`]), worth 100 chips, plus [`RECORD_FEE`].
+    /// (at least [`MIN_STAKE`]), worth 100 chips, plus [`RECORD_FEE`]. A stake of 0 opens a free table: only the
+    /// owner's own accounts may, and they attach [`FREE_TABLE_DEPOSIT`] instead.
     #[payable]
     pub fn create_match(&mut self, id: String, stake: U128, key: Base64VecU8, seats: Option<u8>, turn_seconds: Option<u32>) {
         require!(!id.is_empty() && id.len() <= MAX_ID_LEN, "table id must be 1..=32 characters");
@@ -529,10 +555,15 @@ impl Contract {
         require!((2..=MAX_SEATS).contains(&seats), "a table has 2 to 9 seats");
         let turn_seconds = turn_seconds.unwrap_or(DEFAULT_TURN_SECONDS);
         require!((5..=MAX_TURN_SECONDS).contains(&turn_seconds), "turn_seconds must be 5..=86400");
-        require!(stake.0 >= MIN_STAKE && stake.0.is_multiple_of(u128::from(CHIPS)), "the stake must be at least 0.1 NEAR and a multiple of 100 yoctoNEAR");
-        let stake = NearToken::from_yoctonear(stake.0);
-        require!(env::attached_deposit().as_yoctonear() == stake.as_yoctonear() + RECORD_FEE, "attach exactly the stake and the record fee of 0.002 NEAR");
         let host = env::predecessor_account_id();
+        let stake = NearToken::from_yoctonear(stake.0);
+        if stake.as_yoctonear() == 0 {
+            require!(self.is_own(&host), "only the owner's own accounts open a free table: a stake is at least 0.1 NEAR");
+            require!(env::attached_deposit().as_yoctonear() == FREE_TABLE_DEPOSIT, "attach exactly the free table's deposit of 0.25 NEAR");
+        } else {
+            require!(stake.as_yoctonear() >= MIN_STAKE && stake.as_yoctonear().is_multiple_of(u128::from(CHIPS)), "the stake must be at least 0.1 NEAR and a multiple of 100 yoctoNEAR");
+            require!(env::attached_deposit().as_yoctonear() == stake.as_yoctonear() + RECORD_FEE, "attach exactly the stake and the record fee of 0.002 NEAR");
+        }
         let mut m = Match {
             stake,
             host: host.clone(),
@@ -572,12 +603,18 @@ impl Contract {
     }
 
     /// Takes the first empty seat with the same stake and fee. In the lobby the table starts when the last seat is
-    /// taken. At a table under way the seat is dealt in from the next hand.
+    /// taken. At a table under way the seat is dealt in from the next hand. A seat at a free table costs nothing,
+    /// and nothing may be attached; a free table seats [`MAX_FREE_SITTINGS`] in all.
     #[payable]
     pub fn join(&mut self, id: String, key: Base64VecU8) {
         let mut m = self.matches.get(&id).cloned().unwrap_or_else(|| env::panic_str("no such table"));
         let account = env::predecessor_account_id();
-        require!(env::attached_deposit().as_yoctonear() == m.stake.as_yoctonear() + RECORD_FEE, "attach exactly the stake and the record fee of 0.002 NEAR");
+        if m.free() {
+            require!(env::attached_deposit().as_yoctonear() == 0, "a seat at a free table costs nothing: attach nothing");
+            require!(m.cashed.len() + m.seated().len() < MAX_FREE_SITTINGS, "this free table has seated all the players it can");
+        } else {
+            require!(env::attached_deposit().as_yoctonear() == m.seat_price(), "attach exactly the stake and the record fee of 0.002 NEAR");
+        }
         require!(m.seat_of(&account).is_none(), "this account already has a seat at the table");
         let seat = m.players.iter().position(Option::is_none).unwrap_or_else(|| env::panic_str("the table is full"));
         m.players[seat] = Some(account);
@@ -610,10 +647,16 @@ impl Contract {
         let account = env::predecessor_account_id();
         let seat = m.seat_of(&account).unwrap_or_else(|| env::panic_str("only an account in a seat may leave"));
         if m.phase == Phase::Lobby {
-            let refund = NearToken::from_yoctonear(m.stake.as_yoctonear() + RECORD_FEE);
+            // Nothing was paid for a seat at a free table: nothing comes back for it.
+            let refund = NearToken::from_yoctonear(m.seat_price());
             if account == m.host {
-                for player in m.players.iter().flatten() {
-                    Promise::new(player.clone()).transfer(refund).detach();
+                if !m.free() {
+                    for player in m.players.iter().flatten() {
+                        Promise::new(player.clone()).transfer(refund).detach();
+                    }
+                } else {
+                    // No summary is kept of a table that never started: the whole deposit comes back.
+                    Promise::new(m.host.clone()).transfer(NearToken::from_yoctonear(FREE_TABLE_DEPOSIT)).detach();
                 }
                 self.matches.remove(&id);
                 return;
@@ -621,7 +664,9 @@ impl Contract {
             m.players[seat] = None;
             m.keys[seat] = vec![];
             m.chips[seat] = 0;
-            Promise::new(account).transfer(refund).detach();
+            if !m.free() {
+                Promise::new(account).transfer(refund).detach();
+            }
             self.save(id, m);
         } else if m.dealt.contains(&(seat as u8)) {
             m.leaving[seat] = true;
@@ -836,6 +881,11 @@ impl Contract {
         (m, seat)
     }
 
+    /// The owner, or an account named under it (`house.<owner>`): only the owner's key can have made those.
+    fn is_own(&self, account: &AccountId) -> bool {
+        *account == self.owner || account.as_str().strip_suffix(self.owner.as_str()).is_some_and(|rest| rest.ends_with('.'))
+    }
+
     fn take_fee(&mut self, fee: u128) {
         self.fees = self.fees.saturating_add(NearToken::from_yoctonear(fee));
     }
@@ -960,6 +1010,14 @@ impl Contract {
                 self.take_fee(m.stand_up(seat));
             }
             self.matches.remove(&id);
+            if m.free() {
+                // The host's deposit paid for the table's storage, now given up, and pays for the lines of its summary.
+                let kept = RECORD_FEE * m.cashed.len() as u128;
+                let back = FREE_TABLE_DEPOSIT.saturating_sub(kept);
+                if back > 0 {
+                    Promise::new(m.host.clone()).transfer(NearToken::from_yoctonear(back)).detach();
+                }
+            }
             self.results.insert(id, MatchResult { stake: m.stake, fee_bps: m.fee_bps, cashed: m.cashed, hands: m.hand });
             return;
         }

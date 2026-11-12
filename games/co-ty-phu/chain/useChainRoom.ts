@@ -17,7 +17,7 @@ import { ChainRoom, type RoomState } from "./room";
 export function useChainRoom(
   id: string,
   session: Session | null,
-): RoomState & { send: Send; playTurn: (plan: Plan, proof?: TeeProof | null) => boolean; retry: () => void; refresh: () => Promise<void> } {
+): RoomState & { send: Send; playTurn: (plan: Plan, proof?: TeeProof | null) => boolean; retry: () => void; refresh: () => Promise<void>; hold: (on: boolean) => void } {
   const room = useMemo(
     () =>
       new ChainRoom({
@@ -25,7 +25,7 @@ export function useChainRoom(
         reader: chainClient,
         caller: session && seatCaller(session),
         pollMs: CHAIN.pollMs,
-        autoEnd: true,
+        autoPlay: true,
         isVisible: () => document.visibilityState !== "hidden",
       }),
     [id, session],
@@ -45,5 +45,5 @@ export function useChainRoom(
   }, [room]);
 
   const state = useSyncExternalStore(room.subscribe, room.getState, room.getState);
-  return { ...state, send: room.send, playTurn: room.playTurn, retry: room.retry, refresh: room.refresh };
+  return { ...state, send: room.send, playTurn: room.playTurn, retry: room.retry, refresh: room.refresh, hold: room.hold };
 }

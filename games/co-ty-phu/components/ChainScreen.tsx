@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { Arrow, Bot, Copy, Seat } from "@/components/landing/icons";
 import { CHAIN } from "@/lib/chain/config";
 import { TOKEN_COLORS } from "../board";
@@ -54,6 +54,10 @@ function Table({ id, state, helper }: { id: string; state: PlayerState; helper: 
   useCharacters(match?.meta.seats.map((s) => (s.house ? null : s.backer)) ?? []);
   const accountId = player?.accountId ?? null;
   const autopilot = useAutopilot(id, room, playTurn, accountId);
+  // While the player's agent has the seat it plays whole turns: the room does not throw the dice or end a turn itself.
+  const { hold } = room;
+  const handed = Boolean(autopilot?.on);
+  useEffect(() => hold(handed), [hold, handed]);
   const notes = useAgentNotes(id, match?.meta.status === "playing");
   const sponsor = useFreeSponsor();
   // At a free table the house agent moves when somebody with the match open asks the server for its turn.

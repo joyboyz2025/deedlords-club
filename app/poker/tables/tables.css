@@ -789,7 +789,7 @@
 }
 
 .pt-picker--stake {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(58px, 1fr));
 }
 
 .pt-picker--stake .pt-picker__seat {
@@ -819,4 +819,23 @@
 
 .pt-stake__own input[aria-invalid="true"] {
   border-color: #b3261e;
+}
+
+/* At a free table: the model its host bets by. */
+.pt-stake__model {
+  grid-template-columns: auto minmax(0, 1fr);
+  margin-top: 10px;
+}
+
+.pt-stake__model select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1.5px solid rgb(42 18 8 / 30%);
+  border-radius: 10px;
+  background-color: #fffaf0;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
 }

@@ -13,12 +13,13 @@ import { CHAIN } from "./config.ts";
 import { parseSecretKey } from "./keys.ts";
 import { chainClient } from "./shared.ts";
 
-export type Sponsor = { accountId: string; session: Session };
+/** `secret`: the key itself, for what has to be made from it (its card key at a free poker table). Never logged or sent. */
+export type Sponsor = { accountId: string; session: Session; secret: string };
 
 const ACCOUNT_ID = /^(?=.{2,64}$)[a-z0-9]+(?:[-_.][a-z0-9]+)*$/;
 // One session for the process: it owns the key's nonce. Kept across the reloads of a dev server.
 // The name carries a version: a dev server that reloads this file must not keep a session made by older code.
-const shelf = globalThis as { deedlordsSponsorV2?: { at: string; sponsor: Sponsor | null } };
+const shelf = globalThis as { deedlordsSponsorV3?: { at: string; sponsor: Sponsor | null } };
 
 function secretKey(accountId: string): string | null {
   const fromEnv = process.env.DEEDLORDS_SPONSOR_KEY?.trim();
@@ -35,16 +36,16 @@ function secretKey(accountId: string): string | null {
 export function sponsor(): Sponsor | null {
   const accountId = process.env.DEEDLORDS_SPONSOR_ACCOUNT?.trim() ?? "";
   const at = `${CHAIN.network}:${accountId}`;
-  if (shelf.deedlordsSponsorV2?.at === at) return shelf.deedlordsSponsorV2.sponsor;
+  if (shelf.deedlordsSponsorV3?.at === at) return shelf.deedlordsSponsorV3.sponsor;
   let made: Sponsor | null = null;
   if (ACCOUNT_ID.test(accountId)) {
     const key = secretKey(accountId);
     try {
-      if (key) made = { accountId, session: chainClient.session(accountId, parseSecretKey(key), { pipelined: true }) };
+      if (key) made = { accountId, session: chainClient.session(accountId, parseSecretKey(key), { pipelined: true }), secret: key };
     } catch {
       made = null; // not a key: sponsor nothing rather than fail every request
     }
   }
-  shelf.deedlordsSponsorV2 = { at, sponsor: made };
+  shelf.deedlordsSponsorV3 = { at, sponsor: made };
   return made;
 }

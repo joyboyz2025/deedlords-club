@@ -514,7 +514,9 @@ function HousePlanner({ house, free, busy, onAdd }: { house: HouseAtTable; free:
           <Bot size={16} /> {house.seating ? `Seating house seat ${house.seating}…` : count === 1 ? "Seat a house seat" : `Seat ${count} house seats`}
         </button>
       )}
-      <p className="pk-fine">A house seat is one of this server&apos;s accounts: it stakes its own NEAR, its model bets for it, and it sees only its own two cards.</p>
+      <p className="pk-fine">
+        A house seat is one of this server&apos;s accounts: it stakes its own NEAR (nothing at a free table), its model bets for it, and it sees only its own two cards.
+      </p>
     </div>
   );
 }
@@ -568,6 +570,9 @@ function ActionStub({
   const amount = raise ? Math.min(raise.max, Math.max(raise.min, Math.round(Number(raiseTo)) || raise.min)) : 0;
   const late = !inLobby && left < 0 && view.awaited.some((seat) => seat !== mySeat);
   const isHost = you !== null && view.host === you;
+  // A table with a stake of nothing: its host is the server, which starts it when a seated player asks.
+  const noStake = BigInt(view.stake) === 0n;
+  const canStart = isHost || (noStake && Boolean(house?.accounts.includes(view.host)));
   const filled = seated(view).length;
   const inHand = mine && view.dealt.includes(mySeat) && !inLobby;
 
@@ -580,7 +585,9 @@ function ActionStub({
   } else if (!mine) {
     title = free ? "A free seat" : "Watching";
     line = free
-      ? `A seat costs ${asNear(view.deposit)}: ${asNear(view.stake)} for 100 chips, which come back when you leave, and a record fee that does not. ${inLobby ? "" : "At a table under way you are dealt in from the next hand."}`
+      ? noStake
+        ? `A seat here is free: 100 chips that are only chips, and the house pays the gas of your moves. ${inLobby ? "" : "At a table under way you are dealt in from the next hand."}`
+        : `A seat costs ${asNear(view.deposit)}: ${asNear(view.stake)} for 100 chips, which come back when you leave, and a record fee that does not. ${inLobby ? "" : "At a table under way you are dealt in from the next hand."}`
       : "Every seat is taken. You can watch the hands being played.";
     body = free ? (
       <button
@@ -593,12 +600,12 @@ function ActionStub({
           on.sit();
         }}
       >
-        Sit down for {asNear(view.deposit)}
+        {noStake ? "Sit down for free" : `Sit down for ${asNear(view.deposit)}`}
       </button>
     ) : null;
   } else if (inLobby) {
-    title = isHost ? "Your table" : "Waiting for the host";
-    line = isHost
+    title = isHost ? "Your table" : canStart ? "A free table" : "Waiting for the host";
+    line = canStart
       ? filled >= 2
         ? "Start now with the seats taken, or wait for more."
         : "Send the link, or add a house seat to have an opponent."
@@ -617,7 +624,7 @@ function ActionStub({
             <Copy size={16} /> {copied ? "Copied" : "Copy"}
           </button>
         </div>
-        {isHost && (
+        {canStart && (
           <button
             type="button"
             className="pk-go"

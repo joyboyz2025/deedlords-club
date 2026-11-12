@@ -26,6 +26,8 @@ export async function askHouse(id: string, add = false, model?: string): Promise
 export type HouseSeats = {
   /** The accounts that play the house here; empty: this server has none; `undefined`: not known yet. */
   accounts: string[] | undefined;
+  /** The account that opens free tables here and holds a seat at each, `null` when nobody does. It never stakes. */
+  free: string | null;
   /** The seats the house holds at this table. */
   seats: number[];
   /** Whether one more house seat can be asked for: a seat is free and a house account is not at the table yet. */
@@ -45,6 +47,9 @@ export type HouseSeats = {
 
 export function useHouse(id: string | null, view: TableView | null | undefined): HouseSeats {
   const [accounts, setAccounts] = useState<string[] | undefined>(undefined);
+  // The accounts that sit at tables with a stake: all of them but the free tables' host.
+  const [staking, setStaking] = useState<string[]>([]);
+  const [free, setFree] = useState<string | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [defaultModel, setDefaultModel] = useState<string | null>(null);
   const [byAccount, setByAccount] = useState<Record<string, string>>({});
@@ -55,12 +60,14 @@ export function useHouse(id: string | null, view: TableView | null | undefined):
 
   useEffect(() => {
     let stopped = false;
-    type Answer = { houses: string[]; models?: string[]; model?: string | null; seats?: Record<string, string> };
+    type Answer = { houses: string[]; staking?: string[]; free?: string | null; models?: string[]; model?: string | null; seats?: Record<string, string> };
     fetch(`/api/poker/table/house${id ? `?id=${encodeURIComponent(id)}` : ""}`)
       .then((response) => (response.ok ? (response.json() as Promise<Answer>) : { houses: [] as string[] }))
       .then((answer: Answer) => {
         if (stopped) return;
         setAccounts(answer.houses);
+        setStaking(answer.staking ?? answer.houses);
+        setFree(answer.free ?? null);
         setModels(answer.models ?? []);
         setDefaultModel(answer.model ?? null);
         setByAccount(answer.seats ?? {});
@@ -73,12 +80,16 @@ export function useHouse(id: string | null, view: TableView | null | undefined):
   }, [id, view?.players.filter(Boolean).length]);
 
   const seats = view && accounts ? view.players.flatMap((player, seat) => (player && accounts.includes(player) ? [seat] : [])) : [];
-  const canAdd = Boolean(view && accounts && view.players.includes(null) && seats.length < accounts.length);
+  // At a free table any of the server's accounts may sit; at one with a stake, only those that stake.
+  const pool = view && accounts ? (BigInt(view.stake) === 0n ? accounts : staking) : [];
+  const canAdd = Boolean(view && view.players.includes(null) && pool.some((account) => !view.players.includes(account)));
   // The house is asked when the table waits for one of its seats, and when another seat is out of time (it then calls time).
   const waited = Boolean(view && seats.length && view.phase !== "lobby" && (view.awaited.some((seat) => seats.includes(seat)) || Date.now() * 1_000_000 > Number(view.deadline)));
   const key = view ? `${view.seq}` : "";
   const add = useCallback((model?: string) => (id ? askHouse(id, true, model) : Promise.resolve<Played>({ played: false, why: "no table" })), [id]);
-  const seatModels: Record<number, string> = Object.fromEntries(seats.flatMap((seat) => (view?.players[seat] && byAccount[view.players[seat]!] ? [[seat, byAccount[view.players[seat]!]]] : [])));
+  const seatModels: Record<number, string> = Object.fromEntries(
+    seats.flatMap((seat) => (view?.players[seat] && byAccount[view.players[seat]!] ? [[seat, byAccount[view.players[seat]!]]] : [])),
+  );
 
   useEffect(() => {
     if (!waited) return;
@@ -98,5 +109,5 @@ export function useHouse(id: string | null, view: TableView | null | undefined):
       .finally(() => setThinking(false));
   }, [id, waited, thinking, key, tick]);
 
-  return { accounts, seats, canAdd, add, models, defaultModel, seatModels, thinking, last };
+  return { accounts, free, seats, canAdd, add, models, defaultModel, seatModels, thinking, last };
 }

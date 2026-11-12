@@ -359,78 +359,102 @@ test("a match opened after its payout shows the result; an unknown one says so",
   assert.equal(room.getState().view, null);
 });
 
-test("with autoEnd, a turn with nothing left to decide is ended for the viewer, a moment after the chain shows it", async () => {
+const auto = (chain: FakeChain, clock: { now: number }): ChainRoom =>
+  new ChainRoom({ id: "m1", reader: chain.reader, caller: chain.caller("alice.test"), pollMs: 1_000, now: () => clock.now, sleep: async () => {}, autoPlay: true });
+/** Time passes, the room reads the match and does what it does. */
+async function after(room: ChainRoom, clock: { now: number }, ms: number): Promise<void> {
+  clock.now += ms;
+  await room.refresh();
+  await room.idle();
+}
+const sentBy = (chain: FakeChain) => chain.calls.flatMap((call) => call.actions ?? [call.method]);
+
+test("with autoPlay, the dice are thrown after 5 seconds, and a turn with nothing left to decide ends after a moment", async () => {
   const chain = new FakeChain();
-  let now = 0;
-  const room = new ChainRoom({ id: "m1", reader: chain.reader, caller: chain.caller("alice.test"), pollMs: 1_000, now: () => now, sleep: async () => {}, autoEnd: true });
-  await room.refresh();
-  await room.idle();
-  assert.equal(chain.calls.length, 0, "the dice are the player's to throw");
-
-  // 1 + 2: Cape Town, nobody's. To buy or not is the player's to say, however long they take.
-  room.send({ t: "roll" });
-  await room.idle();
-  now += 60_000;
-  await room.refresh();
-  await room.idle();
-  assert.deepEqual(
-    chain.calls.map((call) => call.actions),
-    [["Roll"]],
-  );
-  assert.equal(room.getState().view!.stage, "buy");
-
-  // Passed over: nothing is left but to end the turn. Not at once, so the landing is seen first.
-  room.send({ t: "skip" });
-  await room.idle();
-  now += 500;
-  await room.refresh();
-  await room.idle();
-  assert.equal(chain.calls.length, 2, "too soon");
-  now += 2_000;
-  await room.refresh();
-  await room.idle();
-  assert.deepEqual(
-    chain.calls.map((call) => call.actions),
-    [["Roll"], ["Skip"], ["End"]],
-  );
+  chain.dice = [[1, 3]]; // Airport Tax: paid, and nothing to buy
+  const clock = { now: 0 };
+  const room = auto(chain, clock);
+  await after(room, clock, 0);
+  assert.equal(room.getState().view!.autoInMs, 5_000, "the countdown shown is the room's own wait");
+  await after(room, clock, 4_000);
+  assert.deepEqual(sentBy(chain), [], "the dice are the player's to throw for 5 seconds");
+  await after(room, clock, 1_100);
+  assert.deepEqual(sentBy(chain), ["Roll"]);
+  assert.equal(room.getState().view!.stage, "end");
+  // Not at once, so the landing is seen first.
+  await after(room, clock, 500);
+  assert.deepEqual(sentBy(chain), ["Roll"], "too soon");
+  await after(room, clock, 2_000);
+  assert.deepEqual(sentBy(chain), ["Roll", "End"]);
   assert.equal(room.getState().view!.current, "s1");
-
-  // Somebody else's turn is never ended from here.
-  now += 60_000;
-  await room.refresh();
-  await room.idle();
-  assert.equal(chain.calls.length, 3);
+  // Somebody else's turn is never played from here (the contract's own clock is another matter).
+  await after(room, clock, 60_000);
+  assert.deepEqual(sentBy(chain), ["Roll", "End"]);
 });
 
-test("with autoEnd, a double is thrown again by the player, and a room without it ends nothing", async () => {
+test("with autoPlay, a square to buy waits 15 seconds, then it is passed over and the turn ended", async () => {
   const chain = new FakeChain();
-  chain.dice = [[2, 2]];
-  let now = 0;
-  const room = new ChainRoom({ id: "m1", reader: chain.reader, caller: chain.caller("alice.test"), pollMs: 1_000, now: () => now, sleep: async () => {}, autoEnd: true });
+  const clock = { now: 0 };
+  const room = auto(chain, clock);
+  await room.refresh();
+  room.send({ t: "roll" }); // 1 + 2: Cape Town, nobody's
+  await room.idle();
+  assert.equal(room.getState().view!.stage, "buy");
+  assert.equal(room.getState().view!.autoInMs, 15_000);
+  await after(room, clock, 14_000);
+  assert.deepEqual(sentBy(chain), ["Roll"], "theirs to decide for 15 seconds");
+  await after(room, clock, 1_100);
+  assert.deepEqual(sentBy(chain), ["Roll", "Skip", "End"]);
+  assert.equal(room.getState().view!.current, "s1");
+  assert.equal(room.getState().view!.props[3], undefined, "nothing was bought");
+});
+
+test("with autoPlay, a player who buys in time keeps the square, and a double is thrown again after 5 seconds", async () => {
+  const chain = new FakeChain();
+  chain.dice = [
+    [2, 2],
+    [1, 3],
+  ]; // a double onto the tax square: the same seat throws again, onto Melbourne
+  const clock = { now: 0 };
+  const room = auto(chain, clock);
   await room.refresh();
   room.send({ t: "roll" });
   await room.idle();
   assert.equal(room.getState().view!.stage, "end");
-  now += 60_000;
-  await room.refresh();
+  await after(room, clock, 3_000);
+  assert.deepEqual(sentBy(chain), ["Roll"], "the second throw is theirs for 5 seconds; the turn is not ended");
+  await after(room, clock, 2_100);
+  assert.deepEqual(sentBy(chain), ["Roll", "Roll"]);
+  // Melbourne, nobody's. Bought in time: only the end of the turn is left.
+  assert.equal(room.getState().view!.stage, "buy");
+  room.send({ t: "buy" });
   await room.idle();
-  assert.deepEqual(
-    chain.calls.map((call) => call.actions),
-    [["Roll"]],
-    "a double: the next throw is theirs",
-  );
+  await after(room, clock, 2_000);
+  assert.deepEqual(sentBy(chain), ["Roll", "Roll", "Buy", "End"]);
+  assert.equal(room.getState().view!.props[8].owner, "s0");
+});
+
+test("while an agent holds the seat the room moves nothing itself, and a room without autoPlay never does", async () => {
+  const chain = new FakeChain();
+  const clock = { now: 0 };
+  const room = auto(chain, clock);
+  room.hold(true);
+  await after(room, clock, 0);
+  await after(room, clock, 60_000);
+  assert.deepEqual(sentBy(chain), [], "the agent plays whole turns");
+  assert.equal(room.getState().view!.autoInMs, null, "no countdown of the room's: the fake chain set no deadline");
+  // Given back: the wait starts then.
+  room.hold(false);
+  await after(room, clock, 4_000);
+  assert.deepEqual(sentBy(chain), []);
+  await after(room, clock, 1_100);
+  assert.deepEqual(sentBy(chain), ["Roll"]);
 
   const plain = new FakeChain();
-  plain.dice = [[1, 3]];
-  const manual = roomFor(plain, "alice.test", () => now);
+  const manual = roomFor(plain, "alice.test", () => clock.now);
   await manual.refresh();
-  manual.send({ t: "roll" });
-  await manual.idle();
-  now += 60_000;
+  clock.now += 60_000;
   await manual.refresh();
   await manual.idle();
-  assert.deepEqual(
-    plain.calls.map((call) => call.actions),
-    [["Roll"]],
-  );
+  assert.deepEqual(sentBy(plain), []);
 });

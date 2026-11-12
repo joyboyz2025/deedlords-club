@@ -15,6 +15,16 @@ export const TABLE_CHAIN = { ...CHAIN, contractId: TABLE_CONTRACT };
 export const STAKE = 10n ** 23n;
 /** What a seat pays on top of its stake for the table's permanent record (the contract's RECORD_FEE). */
 export const RECORD_FEE = 2n * 10n ** 21n;
+/**
+ * What the host of a free table (a stake of nothing) attaches to open it (the contract's FREE_TABLE_DEPOSIT): it
+ * covers the table's storage and the record of the seats taken there, and what is left comes back when the table closes.
+ */
+export const FREE_TABLE_DEPOSIT = 25n * 10n ** 22n;
+/**
+ * How many hands the host of a free table plays before it asks to leave: every hand costs the sponsor the gas of all
+ * the seats' calls (about 0.07 NEAR for two seats, nearly all of it for checking the two shuffles).
+ */
+export const FREE_TABLE_HANDS = 10;
 export const MAX_SEATS = 9;
 const TGAS = 1_000_000_000_000n;
 /** A decryption share with its proof, in bytes. */

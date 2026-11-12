@@ -267,3 +267,40 @@ test("a stake of one's own is taken from 0.05 NEAR to the contract's largest, in
     assert.ok("problem" in answer && answer.problem.includes(words), `${text}: ${JSON.stringify(answer)}`);
   }
 });
+
+test("at a free poker table the sponsor sends a seat's calls, the shuffle and its proof included, and nothing else", async () => {
+  const { POKER_RULES } = await import("../games/co-ty-phu/chain/relayRules.ts");
+  const TABLE = "poker.deedlords.near";
+  const call = (method: string, args: Record<string, unknown> = {}, over: Partial<FunctionCall> = {}): DelegateAction =>
+    delegate({ receiverId: TABLE, actions: [{ method, args: jsonArgs({ id: "f-mwd-abcd-0", ...args }), gas: 40_000_000_000_000n, deposit: 0n, ...over }] });
+  for (const method of ["join", "start", "leave", "deal", "act", "open", "show", "timeout"]) {
+    assert.deepEqual(relayable(call(method), TABLE, POKER_RULES), { matchId: "f-mwd-abcd-0", method, ownKey: true });
+  }
+  // A shuffle: a deck of 52 cards (6,656 bytes) and its proof (10,144), in base64, with the gas checking it takes.
+  const [deck, proof] = [Buffer.alloc(6_656, 7).toString("base64"), Buffer.alloc(10_144, 9).toString("base64")];
+  assert.equal(relayable(call("shuffle", { seat: 1, deck, proof, key: Buffer.alloc(64).toString("base64") }, { gas: 260_000_000_000_000n }), TABLE, POKER_RULES).method, "shuffle");
+  // A seat of nine deals sixteen shares of 224 bytes at once.
+  assert.equal(relayable(call("deal", { seat: 8, tokens: Buffer.alloc(16 * 224).toString("base64") }, { gas: 142_000_000_000_000n }), TABLE, POKER_RULES).method, "deal");
+
+  const refusals: [DelegateAction, string][] = [
+    [call("create_match", { stake: "0" }), "not a seat's call"], // a free table is the house's to open
+    [call("withdraw_fees"), "not a seat's call"],
+    [call("set_fee", { fee_bps: 500 }), "not a seat's call"],
+    [call("join", {}, { deposit: 1n }), "no deposit"],
+    [call("shuffle", { deck, proof }, { gas: 300_000_000_000_000n }), "too much gas"],
+    [call("shuffle", { deck: deck + deck, proof }, { gas: 260_000_000_000_000n }), "too long"],
+    [call("act", { tokens: Buffer.alloc(9_000).toString("base64") }), "too long"],
+    [delegate({ receiverId: "poker.someone-else.near", actions: call("join").actions }), `only calls to ${TABLE}`],
+    [delegate({ receiverId: TABLE, senderId: "alice.near", actions: call("join").actions }), "only a game account"],
+  ];
+  for (const [action, words] of refusals) {
+    assert.throws(
+      () => relayable(action, TABLE, POKER_RULES),
+      (error: unknown) => error instanceof Refused && error.message.includes(words),
+      words,
+    );
+  }
+  // The board game's rules know nothing of a shuffle, and the poker rules nothing of the board's moves.
+  assert.throws(() => relayable(delegate({ actions: [call("shuffle").actions[0]] }), CONTRACT), Refused);
+  assert.throws(() => relayable(delegate({ receiverId: TABLE }), TABLE, POKER_RULES), Refused);
+});

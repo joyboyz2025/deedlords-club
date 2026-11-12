@@ -56,8 +56,8 @@ export type RoomOptions = {
   sleep?: (ms: number) => Promise<void>;
   /** Polling rests while this says no (a hidden tab). */
   isVisible?: () => boolean;
-  /** Ends the viewer's turn for them once nothing is left to decide in it (see `endIdleTurn`). */
-  autoEnd?: boolean;
+  /** Moves for the viewer when they do not: the dice after a few seconds, the end of a turn (see `autoMove`). */
+  autoPlay?: boolean;
 };
 
 /** `play` takes at most this many actions. */
@@ -69,8 +69,12 @@ const RESYNC_WAIT_MS = 200;
 const TIMEOUT_GRACE_MS = 1_500;
 const TIMEOUT_RETRY_MS = 1_200;
 const OFFLINE_AFTER = 2;
-/** With `autoEnd`: a turn with nothing left to decide is ended this long after the chain shows it, so the landing is seen first. */
-const AUTO_END_AFTER_MS = 1_800;
+/** With `autoPlay`: a turn with nothing left to decide is ended this long after the chain shows it, so the landing is seen first. */
+export const AUTO_END_AFTER_MS = 1_800;
+/** With `autoPlay`: the dice are thrown for a viewer who has not thrown them after this long. */
+export const AUTO_ROLL_AFTER_MS = 5_000;
+/** With `autoPlay`: a square to buy or a house to build is passed over, and the turn ended, after this long. */
+export const AUTO_DECIDE_AFTER_MS = 15_000;
 
 /**
  * Whether `playerId`'s turn has nothing left for them to decide: the dice are thrown, there is nothing to buy or owe,
@@ -79,6 +83,19 @@ const AUTO_END_AFTER_MS = 1_800;
 export function nothingToDecide(game: Game, playerId: string): boolean {
   if (game.phase !== "playing" || currentPlayer(game)?.id !== playerId || game.stage !== "end" || game.again) return false;
   return !Object.keys(game.props).some((square) => canBuild(game, playerId, Number(square)));
+}
+
+/**
+ * What the room does for `playerId` when their turn has waited `after` ms for them: throws the dice (5 s), ends a
+ * turn with nothing left to decide (a moment), or passes over what could be bought or built and ends the turn (15 s).
+ * `null`: nothing, as in debt, which is theirs to settle until the contract's own clock runs out.
+ */
+export function autoMove(game: Game, playerId: string): { after: number; send: ClientMessage[] } | null {
+  if (game.phase !== "playing" || currentPlayer(game)?.id !== playerId) return null;
+  if (game.stage === "roll" || (game.stage === "end" && game.again)) return { after: AUTO_ROLL_AFTER_MS, send: [{ t: "roll" }] };
+  if (game.stage === "buy") return { after: AUTO_DECIDE_AFTER_MS, send: [{ t: "skip" }, { t: "end" }] };
+  if (game.stage === "end") return { after: nothingToDecide(game, playerId) ? AUTO_END_AFTER_MS : AUTO_DECIDE_AFTER_MS, send: [{ t: "end" }] };
+  return null;
 }
 
 const text = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -92,7 +109,7 @@ export class ChainRoom {
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly isVisible: () => boolean;
-  private readonly autoEnd: boolean;
+  private readonly autoPlay: boolean;
 
   private chain: ChainMatch | null = null;
   private chainJson = "";
@@ -109,8 +126,10 @@ export class ChainRoom {
   private notice: string | null = null;
   private failures = 0;
   private nextTimeoutAt = 0;
-  /** The viewer's turn seen with nothing left to decide, and when it was first seen so. */
-  private idleTurn: { key: string; since: number } | null = null;
+  /** The step of the viewer's turn the room is waiting on, when the chain first showed it, and how long it waits. */
+  private idleTurn: { key: string; since: number; after: number } | null = null;
+  /** Somebody else moves for the viewer (their agent): the room makes no move of its own. */
+  private held = false;
   private stopped = false;
   private sent: MoveTx[] = [];
   /** The transaction (and the re-read after it) in progress. One at a time. */
@@ -129,7 +148,7 @@ export class ChainRoom {
     this.now = options.now ?? Date.now;
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.isVisible = options.isVisible ?? (() => true);
-    this.autoEnd = options.autoEnd ?? false;
+    this.autoPlay = options.autoPlay ?? false;
     this.state = { match: null, view: null, result: null, seat: null, link: "connecting", error: null, busy: false, notice: null, sent: [], at: this.now() };
   }
 
@@ -401,29 +420,43 @@ export class ChainRoom {
   }
 
   /**
-   * With `autoEnd`: the viewer's turn has nothing left to decide, so it is ended for them, a moment after the chain
-   * first showed it. A turn with something to choose (a square to buy, a house to build, a debt) waits for them.
+   * With `autoPlay`: the viewer's turn has waited long enough for them (`autoMove`), so the room moves: the dice
+   * after 5 seconds, a turn with nothing left to decide after a moment, a turn with something to buy or build after
+   * 15. Counted from when the chain first showed that step of the turn. Not while `hold` is on.
    */
   private endIdleTurn(): void {
     const match = this.chain;
-    if (!this.autoEnd || this.stopped || !match || !this.caller || this.working || this.queue.length > 0 || this.dicePending || this.result || match.meta.status !== "playing")
+    if (!this.autoPlay || this.stopped || !match || !this.caller || this.working || this.queue.length > 0 || this.dicePending || this.result || match.meta.status !== "playing")
       return;
     const seat = seatOf(match.meta, this.accountId);
-    if (seat === null || match.meta.current_seat !== seat || !nothingToDecide(toGame(match), match.meta.seats[seat].player)) {
-      this.idleTurn = null;
+    const game = seat !== null && match.meta.current_seat === seat && !this.held ? toGame(match) : null;
+    const move = game && seat !== null ? autoMove(game, match.meta.seats[seat].player) : null;
+    if (!game || !move) {
+      if (this.idleTurn) {
+        this.idleTurn = null;
+        this.emit();
+      }
       return;
     }
-    const key = `${match.game.round}:${match.game.rolls}`;
+    const key = `${match.game.round}:${match.game.rolls}:${game.stage}:${game.again}:${game.buildAt ?? ""}:${move.after}`;
     const now = this.now();
     if (this.idleTurn?.key !== key) {
-      this.idleTurn = { key, since: now };
-      void this.sleep(AUTO_END_AFTER_MS).then(() => this.endIdleTurn());
+      this.idleTurn = { key, since: now, after: move.after };
+      this.emit(); // the countdown shown is this wait's
+      void this.sleep(move.after + 20).then(() => this.endIdleTurn());
       return;
     }
-    if (now - this.idleTurn.since < AUTO_END_AFTER_MS) return;
+    if (now - this.idleTurn.since < move.after) return;
     this.idleTurn = null;
-    this.send({ t: "end" });
+    for (const message of move.send) this.send(message);
   }
+
+  /** An agent takes the viewer's seat (`true`) or gives it back: while it holds it the room makes no move of its own. */
+  readonly hold = (on: boolean): void => {
+    if (this.held === on) return;
+    this.held = on;
+    this.endIdleTurn();
+  };
 
   private emit(): void {
     const now = this.now();
@@ -434,7 +467,9 @@ export class ChainRoom {
       const game = this.final ?? this.local ?? base;
       // Once the viewer's own moves have passed the turn on, the deadline the chain reported belongs to the turn before.
       const sameTurn = !this.final && currentPlayer(game)?.id === currentPlayer(base)?.id;
-      view = chainView(game, match.meta, this.accountId, now, sameTurn ? deadlineMs(match.meta) : null);
+      // The countdown shown is the chain's clock, or the room's own wait for the viewer when that ends sooner.
+      const [deadline, own] = [deadlineMs(match.meta), this.idleTurn ? this.idleTurn.since + this.idleTurn.after : null];
+      view = chainView(game, match.meta, this.accountId, now, sameTurn ? (deadline !== null && own !== null ? Math.min(deadline, own) : (own ?? deadline)) : null);
     }
     this.state = {
       match,

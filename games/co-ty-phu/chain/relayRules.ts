@@ -20,6 +20,19 @@ export const RELAY_MAX_ARGS = 4_096;
 export const RELAY_MAX_TURN_ARGS = 16_384;
 export const MATCH_ID = /^[A-Za-z0-9_-]{1,32}$/;
 
+/** What one contract's seat calls may look like to be sent for a player. */
+export type RelayRules = { methods: readonly string[]; maxGas: bigint; maxArgs: (method: string) => number };
+/** The board game's (contracts/deedlords). */
+export const SEAT_RULES: RelayRules = { methods: RELAY_METHODS, maxGas: RELAY_MAX_GAS, maxArgs: (method) => (method === "turn" ? RELAY_MAX_TURN_ARGS : RELAY_MAX_ARGS) };
+/**
+ * A seat's calls at a free poker table (contracts/poker-table). A shuffle carries a deck (52 cards of two 64-byte
+ * points: 6,656 bytes) and the proof that it is one (10,144), in base64: about 22.5 KB of arguments, and checking the
+ * proof burns about 215 Tgas, for which the page attaches 260. No other call comes near either figure. Opening a
+ * table is not among them: a free table is the house's to open.
+ */
+export const POKER_RELAY_METHODS = ["join", "start", "leave", "shuffle", "deal", "act", "open", "show", "timeout"] as const;
+export const POKER_RULES: RelayRules = { methods: POKER_RELAY_METHODS, maxGas: 260_000_000_000_000n, maxArgs: (method) => (method === "shuffle" ? 24_576 : 8_192) };
+
 /** The relayer says no, and why. Nothing was sent. */
 export class Refused extends Error {
   constructor(message: string) {
@@ -34,16 +47,16 @@ export class Refused extends Error {
  * check that the key is one the account granted for this contract (`ChainClient.functionCallKey`): the signature
  * only proves who holds the key, not that the account knows it.
  */
-export function relayable(action: DelegateAction, contractId: string): { matchId: string; method: string; ownKey: boolean } {
+export function relayable(action: DelegateAction, contractId: string, rules: RelayRules = SEAT_RULES): { matchId: string; method: string; ownKey: boolean } {
   if (!/^[0-9a-f]{64}$/.test(action.senderId)) throw new Refused("only a game account plays for free");
   const ownKey = action.senderId === implicitAccountId(action.publicKey);
   if (action.receiverId !== contractId) throw new Refused(`only calls to ${contractId} are sent`);
   if (action.actions.length !== 1) throw new Refused("one call at a time");
   const call = action.actions[0];
-  if (!(RELAY_METHODS as readonly string[]).includes(call.method)) throw new Refused(`${call.method} is not a seat's call`);
+  if (!rules.methods.includes(call.method)) throw new Refused(`${call.method} is not a seat's call`);
   if (call.deposit !== 0n) throw new Refused("a free table takes no deposit");
-  if (call.gas > RELAY_MAX_GAS) throw new Refused("too much gas attached");
-  if (call.args.length > (call.method === "turn" ? RELAY_MAX_TURN_ARGS : RELAY_MAX_ARGS)) throw new Refused("the call is too long");
+  if (call.gas > rules.maxGas) throw new Refused("too much gas attached");
+  if (call.args.length > rules.maxArgs(call.method)) throw new Refused("the call is too long");
   let id: unknown;
   try {
     id = (JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(call.args)) as { id?: unknown } | null)?.id;

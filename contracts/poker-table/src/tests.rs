@@ -17,7 +17,7 @@ use crate::curve::{add, challenge, generator, mul, sum, POINT, SCALAR};
 use crate::fr::{self, Fr};
 use crate::shuffle::{GENERATORS, PROOF_BYTES};
 use crate::cards::rank7;
-use crate::{card_points, open_deck, pots, Contract, CARD_BYTES, DECK, RECORD_FEE};
+use crate::{card_points, open_deck, pots, Contract, CARD_BYTES, DECK, FREE_TABLE_DEPOSIT, MAX_FREE_SITTINGS, RECORD_FEE};
 
 thread_local! {
     static TRUSTING: Cell<bool> = const { Cell::new(false) };
@@ -70,9 +70,14 @@ fn key_of(who: usize) -> Vec<u8> {
 
 /// What `who` sends to sit down: its key and the proof that it knows the secret.
 fn key_proof(who: usize) -> Base64VecU8 {
+    key_proof_as(&name(who), who)
+}
+
+/// The same for an account of any name, with the key of `who`.
+fn key_proof_as(account: &str, who: usize) -> Base64VecU8 {
     let (key, nonce) = (key_of(who), 1_000 + who as u64);
     let r = mul(&generator(), &scalar(nonce));
-    let c = challenge(&[b"deedlords-poker/key", name(who).as_bytes(), &key, &r]);
+    let c = challenge(&[b"deedlords-poker/key", account.as_bytes(), &key, &r]);
     Base64VecU8([key, r, response(&c, secret(who), nonce)].concat())
 }
 
@@ -1370,3 +1375,142 @@ fn whatever_the_stacks_the_hand_always_has_a_seat_to_wait_for() {
         assert!(t.settled() || t.number("hand") > 0, "round {round}: no hand was ever finished");
     }
 }
+
+// ----- Free tables ---------------------------------------------------------------------------------------------------
+
+/// What the contract's last call sent, and to whom, in yoctoNEAR.
+fn transfers() -> Vec<(String, u128)> {
+    near_sdk::test_utils::get_created_receipts()
+        .iter()
+        .flat_map(|receipt| {
+            receipt.actions.iter().filter_map(move |action| match action {
+                near_sdk::mock::MockAction::Transfer { deposit, .. } => Some((receipt.receiver_id.to_string(), deposit.as_yoctonear())),
+                _ => None,
+            })
+        })
+        .collect()
+}
+
+impl T {
+    /// A free table of `seats` seats, opened by account 0, which owns the contract.
+    fn free(id: &str, seats: u8) -> T {
+        TRUSTING.with(|trusting| trusting.set(true));
+        let now = 1_000 * SECOND;
+        context("poker.test", 0, now);
+        let mut t = T { c: Contract::new(name(0).parse().unwrap(), 0), now, id: id.into(), bought: 1 };
+        t.as_who(0, FREE_TABLE_DEPOSIT);
+        t.c.create_match(id.into(), U128(0), key_proof(0), Some(seats), None);
+        t
+    }
+
+    /// Account `who` takes a seat of a free table: nothing is attached.
+    fn sit(&mut self, who: usize) {
+        self.as_who(who, 0);
+        self.c.join(self.id.clone(), key_proof(who));
+        self.bought += 1;
+    }
+}
+
+#[test]
+fn only_the_owner_s_own_accounts_open_a_free_table_and_they_leave_a_deposit() {
+    let mut t = T::free("free", 2);
+    assert_eq!(t.game()["stake"], "0");
+    assert_eq!(t.game()["deposit"], "0", "a seat costs nothing");
+    // Anybody else is refused a stake of nothing, whatever they attach; a stake is still 0.1 NEAR at least.
+    for deposit in [0, RECORD_FEE, FREE_TABLE_DEPOSIT] {
+        t.as_who(1, deposit);
+        assert!(refused(|| t.c.create_match("mine".into(), U128(0), key_proof(1), Some(2), None)));
+    }
+    t.as_who(1, 1 + RECORD_FEE);
+    assert!(refused(|| t.c.create_match("mine".into(), U128(1), key_proof(1), Some(2), None)));
+    // The owner leaves the deposit: no less, no more.
+    for deposit in [0, RECORD_FEE, FREE_TABLE_DEPOSIT - 1, FREE_TABLE_DEPOSIT + 1] {
+        t.as_who(0, deposit);
+        assert!(refused(|| t.c.create_match("again".into(), U128(0), key_proof(0), Some(2), None)));
+    }
+    // An account named under the owner is the owner's too. One whose name only ends like the owner's is not.
+    context("house.p0.test", FREE_TABLE_DEPOSIT, t.now + SECOND);
+    t.c.create_match("house".into(), U128(0), key_proof_as("house.p0.test", 5), Some(3), None);
+    assert_eq!(t.c.get_match("house".into()).unwrap()["host"], "house.p0.test");
+    context("xp0.test", FREE_TABLE_DEPOSIT, t.now + 2 * SECOND);
+    assert!(refused(|| t.c.create_match("fake".into(), U128(0), key_proof_as("xp0.test", 6), Some(2), None)));
+    // The owner's paid tables are tables like any other.
+    t.as_who(0, SEAT);
+    t.c.create_match("paid".into(), U128(STAKE), key_proof(0), Some(2), None);
+    assert_eq!(t.c.get_match("paid".into()).unwrap()["deposit"], SEAT.to_string());
+}
+
+#[test]
+fn a_free_table_costs_its_seats_nothing_and_pays_them_nothing() {
+    let mut t = T::free("free", 2);
+    // A seat attaches nothing: a yocto, or the price of a paid seat, is refused.
+    for deposit in [1, RECORD_FEE, SEAT] {
+        t.as_who(1, deposit);
+        assert!(refused(|| t.c.join(t.id.clone(), key_proof(1))));
+    }
+    t.sit(1);
+    assert_eq!(t.phase(), "shuffle", "the last seat taken starts the table");
+    assert!(transfers().is_empty());
+    // The hand of `two_seats_play_as_heads_up`: the kings lose every chip to the aces.
+    t.hand(&[card(12, 0), card(12, 1), card(11, 0), card(11, 1), card(0, 2), card(5, 3), card(7, 2), card(2, 3), card(3, 0)]);
+    t.act(0, "raise", Some(10));
+    t.act(1, "call", None);
+    t.duties();
+    t.act(1, "call", None);
+    t.act(0, "raise", Some(90));
+    t.act(1, "call", None);
+    t.duties();
+    assert!(t.settled());
+    // Chips were only chips: nobody is paid for them. The host's deposit comes back, less the two lines of the summary.
+    assert_eq!(transfers(), [(name(0), FREE_TABLE_DEPOSIT - 2 * RECORD_FEE)]);
+    assert_eq!(t.cashed(), [(1, 0), (0, 200)]);
+    let result = t.c.get_result(t.id.clone()).unwrap();
+    assert_eq!(result["stake"], "0");
+    assert!(result["cashed"].as_array().unwrap().iter().all(|line| line["payout"] == "0" && line["fee"] == "0"));
+    assert_eq!(t.c.get_config()["fees"], "0");
+    t.check();
+}
+
+#[test]
+fn a_free_table_that_never_starts_gives_the_host_all_of_its_deposit_back() {
+    let mut t = T::free("lobby", 3);
+    t.sit(1);
+    // A guest that leaves the lobby paid nothing and gets nothing.
+    t.leave(1);
+    t.bought -= 1;
+    assert!(transfers().is_empty());
+    assert_eq!(t.players(), [Some(0), None, None]);
+    t.sit(2);
+    // The host closes the table: nothing is kept of it, and nobody else is sent anything.
+    t.leave(0);
+    assert_eq!(transfers(), [(name(0), FREE_TABLE_DEPOSIT)]);
+    assert!(t.settled());
+    assert!(t.c.get_result(t.id.clone()).is_none());
+}
+
+#[test]
+fn a_free_table_seats_only_as_many_as_its_deposit_can_record() {
+    let mut t = T::free("busy", 3);
+    t.sit(1);
+    t.as_who(0, 0);
+    t.c.start(t.id.clone());
+    // Accounts come and go between hands: each leaves a line in the summary, which the host's deposit pays for.
+    // The same few accounts, again and again: a sitting counts, whoever it is.
+    for sitting in 2..MAX_FREE_SITTINGS {
+        let who = 2 + sitting % 5;
+        t.sit(who);
+        t.leave(who);
+        assert!(transfers().is_empty(), "100 chips of a free table are worth nothing");
+    }
+    assert_eq!(t.cashed().len(), MAX_FREE_SITTINGS - 2);
+    t.as_who(2, 0);
+    assert!(refused(|| t.c.join(t.id.clone(), key_proof(2))), "the table has seated all it can");
+    // The table ends: every line is paid for, and what is left still covers what the table stored while it was open.
+    t.leave(1);
+    assert!(t.settled());
+    let back = FREE_TABLE_DEPOSIT - MAX_FREE_SITTINGS as u128 * RECORD_FEE;
+    assert_eq!(transfers(), [(name(0), back)]);
+    assert!(back >= 16_000 * 10u128.pow(19), "16 KB of storage at 1 NEAR per 100 KB");
+    t.check();
+}
+

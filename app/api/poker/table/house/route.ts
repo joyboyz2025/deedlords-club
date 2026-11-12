@@ -7,7 +7,7 @@
 
 import { clientKey, rateLimiter } from "@/games/co-ty-phu/agent/rateLimit";
 import { STAKE } from "@/games/poker/table/contract";
-import { houseModels, houseStep, houses, modelsAt, watch } from "@/games/poker/table/house";
+import { freeHost, houseModels, houseStep, houses, modelsAt, seats as houseSeats, watch } from "@/games/poker/table/house";
 
 export const dynamic = "force-dynamic";
 /** Room for a house seat's shuffle and its proof, on a host that limits how long a request may run. */
@@ -21,14 +21,27 @@ const fresh = { "cache-control": "no-store" };
 
 export function GET(request: Request): Response {
   watch();
-  const accounts = houses().map((one) => one.accountId);
+  // `houses`: every account the server plays seats with. `staking`: those that sit at tables with a stake (the free
+  // tables' host does not). `free`: the account that opens free tables here, `null` when nobody does.
+  const accounts = houseSeats().map((one) => one.accountId);
   const id = new URL(request.url).searchParams.get("id");
   const seats = id && TABLE_ID.test(id) ? modelsAt(id, accounts) : undefined;
-  return Response.json({ houses: accounts, stake: STAKE.toString(), model: process.env.DEEDLORDS_HOUSE_MODEL?.trim() || null, models: houseModels(), seats }, { headers: fresh });
+  return Response.json(
+    {
+      houses: accounts,
+      staking: houses().map((one) => one.accountId),
+      free: freeHost()?.accountId ?? null,
+      stake: STAKE.toString(),
+      model: process.env.DEEDLORDS_HOUSE_MODEL?.trim() || null,
+      models: houseModels(),
+      seats,
+    },
+    { headers: fresh },
+  );
 }
 
 export async function POST(request: Request): Promise<Response> {
-  if (!houses().length) return Response.json({ error: "no house plays on this server" }, { status: 503, headers: fresh });
+  if (!houseSeats().length) return Response.json({ error: "no house plays on this server" }, { status: 503, headers: fresh });
   let body: { id?: unknown; add?: unknown; model?: unknown } = {};
   try {
     body = (await request.json()) as typeof body;

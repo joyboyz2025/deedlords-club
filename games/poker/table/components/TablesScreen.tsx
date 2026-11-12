@@ -23,19 +23,22 @@ import {
   TURN_SECONDS,
   callTime,
   explorerLink,
+  isFreeStake,
   leaveTable,
+  openFreeTable,
   openTable,
   readTable,
   seatKeys,
   seatStore,
   send,
+  startFreeTable,
   startTable,
   tableClient,
   tableSession,
   takeSeat,
   viewResult,
 } from "../chain";
-import { RECORD_FEE } from "../contract";
+import { FREE_TABLE_HANDS, RECORD_FEE } from "../contract";
 import { type TableResult, type TableView, betCall, duty, holeCards, movedOn, seated } from "../seat";
 import { useHouse } from "../useHouse";
 import { useSeatAgent } from "../useSeatAgent";
@@ -136,19 +139,39 @@ type LobbyProps = { session: Session | null; onSignIn: () => void; onOpen: (id: 
 
 function LiveLobby(props: LobbyProps) {
   const wall = useTables();
-  const houses = useHouse(null, null).accounts;
-  return <TablesLobby {...props} wall={wall} houses={houses ?? []} />;
+  const house = useHouse(null, null);
+  return <TablesLobby {...props} wall={wall} houses={house.accounts ?? []} free={house.free} models={house.models} />;
 }
 
-export function TablesLobby({ session, onSignIn, onOpen, wall, houses }: LobbyProps & { wall: Tables; houses: string[] }) {
+export function TablesLobby({
+  session,
+  onSignIn,
+  onOpen,
+  wall,
+  houses,
+  free = null,
+  models = [],
+}: LobbyProps & {
+  wall: Tables;
+  houses: string[];
+  /** The account that hosts free tables here, `null` when nobody does. */ free?: string | null;
+  /** The models its seat may bet by. */ models?: string[];
+}) {
   const [balance, setBalance] = useState<bigint | null | undefined>(undefined);
-  const [seats, setSeats] = useState(6);
-  // The stake of each seat at the table opened here: a chip, or an amount typed in NEAR (which stands while filled in).
-  const [chip, setChip] = useState(STAKE_CHIPS[0]);
+  // The stake of each seat at the table opened here: a chip (0 is a free table, where the server hosts them), or an
+  // amount typed in NEAR (which stands while filled in). Until one is picked, a free table where there is one.
+  const [picked, setPicked] = useState<number | null>(null);
+  const chips = [...(free ? [0] : []), ...STAKE_CHIPS];
+  const chip = picked !== null && chips.includes(picked) ? picked : chips[0];
   const [typed, setTyped] = useState("");
+  const gratis = chip === 0 && !typed.trim();
+  // A free table is the house's seat and yours unless more are asked for.
+  const [seatsPicked, setSeats] = useState<number | null>(null);
+  const seats = seatsPicked ?? (gratis ? 2 : 6);
+  const [model, setModel] = useState("");
   const own = ownStake(typed, LARGEST_STAKE, STAKE_CHIPS[0]);
   const typedProblem = typed.trim() && "problem" in own ? own.problem : null;
-  const stake = near(typed.trim() && "amount" in own ? own.amount : chip);
+  const stake = near(typed.trim() && "amount" in own ? own.amount : chip || STAKE_CHIPS[0]);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [copied, setCopied] = useState(false);
@@ -167,7 +190,7 @@ export function TablesLobby({ session, onSignIn, onOpen, wall, houses }: LobbyPr
     setNote("");
     try {
       // The table has changed once when it is created.
-      onOpen(await openTable(session, seats, stake), 1);
+      onOpen(gratis ? await openFreeTable(session, seats, model || undefined) : await openTable(session, seats, stake), 1);
     } catch (error) {
       setNote(text(error));
       setBusy(false);
@@ -239,7 +262,10 @@ export function TablesLobby({ session, onSignIn, onOpen, wall, houses }: LobbyPr
               {short && (
                 <>
                   <p className="pk-fine">
-                    This account holds too little to play. Keep about 0.6 NEAR on it for a seat. Send it test NEAR on {CHAIN.network} and this page shows the balance.{" "}
+                    {free
+                      ? "A free table needs no NEAR. For a table with a stake, keep about 0.6 NEAR on this account for a seat."
+                      : "This account holds too little to play. Keep about 0.6 NEAR on it for a seat."}{" "}
+                    Send it {CHAIN.network === "mainnet" ? "NEAR" : `test NEAR on ${CHAIN.network}`} and this page shows the balance.{" "}
                     {CHAIN.network === "testnet" && (
                       <a href="https://docs.near.org/getting-started/faucet" target="_blank" rel="noreferrer noopener">
                         Ask a testnet faucet
@@ -278,18 +304,18 @@ export function TablesLobby({ session, onSignIn, onOpen, wall, houses }: LobbyPr
           <div className="pt-stake">
             <span id="pt-stake">Stake a seat</span>
             <div className="pt-picker pt-picker--stake" role="group" aria-labelledby="pt-stake">
-              {STAKE_CHIPS.map((amount) => (
+              {chips.map((amount) => (
                 <button
                   key={amount}
                   type="button"
                   aria-pressed={!typed.trim() && amount === chip}
                   className="pt-picker__seat"
                   onClick={() => {
-                    setChip(amount);
+                    setPicked(amount);
                     setTyped("");
                   }}
                 >
-                  {amount}
+                  {amount === 0 ? "Free" : amount}
                 </button>
               ))}
             </div>
@@ -312,11 +338,32 @@ export function TablesLobby({ session, onSignIn, onOpen, wall, houses }: LobbyPr
               </p>
             )}
           </div>
+          {gratis && models.length > 1 && (
+            <label className="pt-stake__own pt-stake__model">
+              <span>The house bets by</span>
+              <select value={model} onChange={(event) => setModel(event.target.value)}>
+                <option value="">its usual model</option>
+                {models.map((name) => (
+                  <option key={name} value={name}>
+                    {name === "rules" ? "the odds alone" : name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <dl className="pk-terms">
             <div>
               <dt>A seat</dt>
               <dd>
-                <b>{asNear(stake).replace(" NEAR", "")}</b> NEAR for 100 chips, and a record fee of {asNear(RECORD_FEE)}
+                {gratis ? (
+                  <>
+                    <b>Free</b>: 100 chips that are only chips. No NEAR is needed, and none is won
+                  </>
+                ) : (
+                  <>
+                    <b>{asNear(stake).replace(" NEAR", "")}</b> NEAR for 100 chips, and a record fee of {asNear(RECORD_FEE)}
+                  </>
+                )}
               </dd>
             </div>
             <div>
@@ -327,7 +374,7 @@ export function TablesLobby({ session, onSignIn, onOpen, wall, houses }: LobbyPr
             </div>
             <div>
               <dt>Clock</dt>
-              <dd>{TURN_SECONDS / 60} minutes a step</dd>
+              <dd>{gratis ? 2 : TURN_SECONDS / 60} minutes a step</dd>
             </div>
             <div>
               <dt>Starts</dt>
@@ -335,18 +382,25 @@ export function TablesLobby({ session, onSignIn, onOpen, wall, houses }: LobbyPr
             </div>
           </dl>
           <button type="button" className="pk-go" disabled={!session || busy || Boolean(typedProblem)} onClick={open}>
-            {busy ? "Opening the table…" : `Open a table of ${seats}`}
+            {busy ? "Opening the table…" : gratis ? `Open a free table of ${seats}` : `Open a table of ${seats}`}
           </button>
           {note && (
             <p className="pk-problem" role="alert">
               {note}
             </p>
           )}
-          <p className="pk-fine">
-            You take seat 1. Send the link, or fill seats with the house{houses.length ? ` (up to ${houses.length} of its accounts)` : ""} from the table. Keep about 0.6 NEAR in
-            the account: nearly all the gas of a hand goes to checking your shuffle proof, and that call must be able to reserve 0.26 NEAR. Your chips come back when you leave; the
-            record fee does not.
-          </p>
+          {gratis ? (
+            <p className="pk-fine">
+              The house opens the table, holds seat 1 and plays it for {FREE_TABLE_HANDS} hands; you take seat 2. Every step you make is signed by your game account and sent by the
+              house, which pays its gas. With more than two seats, send the link to friends and start when you like.
+            </p>
+          ) : (
+            <p className="pk-fine">
+              You take seat 1. Send the link, or fill seats with the house{houses.length ? ` (up to ${houses.length} of its accounts)` : ""} from the table. Keep about 0.6 NEAR in
+              the account: nearly all the gas of a hand goes to checking your shuffle proof, and that call must be able to reserve 0.26 NEAR. Your chips come back when you leave;
+              the record fee does not.
+            </p>
+          )}
         </section>
       </div>
     </div>
@@ -414,7 +468,7 @@ function TableWall({ wall, you, houses, onOpen }: { wall: Tables; you: string | 
                     </span>
                     <small>host {who(table.host)}</small>
                   </span>
-                  <span role="cell">{asNear(table.stake, 2)}</span>
+                  <span role="cell">{isFreeStake(table) ? "Free" : asNear(table.stake, 2)}</span>
                   <span role="cell" className="pk-tables__now">
                     {open ? (
                       <span className="pk-open">Open</span>
@@ -699,7 +753,11 @@ function LiveTable({ id, firstSeq, session, onSignIn, onBack }: { id: string; fi
             if (!session || !view) return;
             void click("Took a seat", undefined, () => takeSeat(session, id, BigInt(view.stake)));
           },
-          start: () => session && void click("Started the table", undefined, () => startTable(session, id)),
+          // A free table is hosted by the server: it is asked to start it. Any other is started by its host's own call.
+          start: () =>
+            session &&
+            view &&
+            void click("Started the table", undefined, () => (isFreeStake(view) && view.host !== session.accountId ? startFreeTable(id) : startTable(session, id))),
           leave: () =>
             session &&
             void click(mySeat !== null && view?.dealt.includes(mySeat) ? "Asked to leave after this hand" : "Left the table and cashed out", mySeat ?? undefined, () =>

@@ -85,6 +85,15 @@ a table the sponsor itself opened, under rate limits per caller and overall. Not
 nothing is won. On testnet a three-round free match cost the sponsor about 0.026 NEAR in all (measured 2026-11-11),
 about half of it the storage of the permanent result.
 
+**Poker has free tables too.** The poker contract takes a stake of nothing from its owner's own accounts only
+(`contracts/poker-table`, "A free table"): the sponsor opens the table with a 0.25 NEAR deposit that comes back when
+it closes, holds seat 1 and plays it (`POST /api/poker/table/free`, `games/poker/table/house.ts`). A guest takes a
+seat for nothing and every step, the shuffle and its zero-knowledge proof included, is a delegate action the sponsor
+sends, by the poker contract's own narrow rules (`POKER_RULES` in `relayRules.ts`). Chips at a free table are only
+chips: nobody is paid for them. On testnet seven hands for two seats cost the sponsor about 0.52 NEAR of gas, nearly
+all of it for checking the shuffles (measured 2026-11-13), so a free table is played for ten hands, and on mainnet
+free poker stays off until it is switched on (`POKER_FREE=1`).
+
 ### Sign in with Google, no wallet
 
 With a sponsor in place, `/play` also offers "Continue with Google" through [NEAR Auth](https://docs.auth.near.org)

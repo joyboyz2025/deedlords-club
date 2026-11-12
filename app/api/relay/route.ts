@@ -5,10 +5,14 @@
 //
 // The sponsor's money is at stake in every line here: what may be sent is decided by relayRules.ts (one deposit-free
 // seat call from a game account's own key) and freeDesk.ts (only for tables the sponsor itself opened, under limits).
+// A call to the poker contract is taken the same way, by the poker contract's own rules, for a free poker table
+// (a stake of nothing, which only the owner's accounts can open; games/poker/table/house.ts).
 
 import { clientKey } from "@/games/co-ty-phu/agent/rateLimit";
 import { isGrantedKey, isSponsored, jsonAnswer, limits } from "@/games/co-ty-phu/chain/freeDesk";
-import { Refused, relayable } from "@/games/co-ty-phu/chain/relayRules";
+import { POKER_RULES, Refused, relayable } from "@/games/co-ty-phu/chain/relayRules";
+import { TABLE_CONTRACT } from "@/games/poker/table/contract";
+import { isFreeTableOfOurs } from "@/games/poker/table/house";
 import { fromBase64 } from "@/lib/chain/base58";
 import { isContractFailure } from "@/lib/chain/client";
 import { CHAIN } from "@/lib/chain/config";
@@ -20,8 +24,14 @@ import { type DelegateAction, readSignedDelegate } from "@/lib/chain/transaction
 
 export const dynamic = "force-dynamic";
 
-/** A signed delegate action for one move is about 400 bytes; the longest `play` about 3,000; a `turn` with its TEE proof up to 16 KB (base64 of it: a third more). */
-const MAX_DELEGATE_TEXT = 24_576;
+/**
+ * A signed delegate action for one move is about 400 bytes; the longest `play` about 3,000; a `turn` with its TEE proof
+ * up to 16 KB; a poker shuffle with its proof about 23 KB (base64 of it: a third more). relayRules.ts holds each call
+ * to its own length.
+ */
+const MAX_DELEGATE_TEXT = 36_864;
+/** Room for the sponsor's transaction to run: a poker shuffle is checked for a few seconds, and a node may answer late. */
+export const maxDuration = 60;
 /** All a game account needs to exist: an account this small pays no storage. */
 const OPENING_YOCTO = 1n;
 
@@ -49,10 +59,14 @@ export async function POST(request: Request): Promise<Response> {
   let bytes: Uint8Array;
   let action: DelegateAction;
   let what: { matchId: string; method: string; ownKey: boolean };
+  let poker = false;
   try {
     bytes = fromBase64(body.delegate);
     action = readSignedDelegate(bytes);
-    what = relayable(action, CHAIN.contractId);
+    poker = action.receiverId === TABLE_CONTRACT && TABLE_CONTRACT !== CHAIN.contractId;
+    what = poker ? relayable(action, TABLE_CONTRACT, POKER_RULES) : relayable(action, CHAIN.contractId);
+    // A key granted through NEAR Auth is granted for the board game's contract only.
+    if (poker && !what.ownKey) throw new Refused("a free poker table is played with a game account's own key");
   } catch (error) {
     return error instanceof Refused ? jsonAnswer(403, { error: error.message }) : jsonAnswer(400, { error: `not a signed call: ${text(error)}` });
   }
@@ -61,7 +75,8 @@ export async function POST(request: Request): Promise<Response> {
   }
   try {
     if (!what.ownKey && !(await isGrantedKey(action.senderId, action.publicKey))) return jsonAnswer(403, { error: "this key is not one the account granted for the game" });
-    if (!(await isSponsored(what.matchId, paying))) return jsonAnswer(403, { error: `${what.matchId} is not an open free table of this server` });
+    if (!(poker ? await isFreeTableOfOurs(what.matchId) : await isSponsored(what.matchId, paying)))
+      return jsonAnswer(403, { error: `${what.matchId} is not an open free table of this server` });
   } catch {
     return jsonAnswer(502, { error: `cannot reach ${CHAIN.network}` });
   }

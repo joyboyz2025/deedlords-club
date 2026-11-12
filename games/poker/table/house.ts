@@ -19,6 +19,11 @@
 // there and takes nothing: the contract pays what calling time pays to the seats, never to whoever calls it.
 // POKER_SWEEP_ACCOUNT names an account that does only that (no house seat at all, so no stake on the table): its key
 // is POKER_SWEEP_KEY, or the file NEAR's tools keep. With it the watch runs, and sweeps, on a server with no house.
+//
+// Free tables (a stake of nothing; the contract lets only its owner's own accounts open one): the account that
+// sponsors free play (lib/chain/sponsor.ts) opens them and holds seat 0 at each, played here like any house seat. It
+// never sits at a table with a stake. A visitor's seat there costs nothing, and their calls are sent by the same
+// sponsor (app/api/relay), so a game account with no NEAR plays poker against it.
 
 import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -27,9 +32,12 @@ import { join } from "node:path";
 import { RULES_MODEL, llmFor, llmModels } from "@/games/co-ty-phu/agent/llm";
 import { intEnv, rateLimiter } from "@/games/co-ty-phu/agent/rateLimit";
 import { ChainClient, type Session } from "@/lib/chain/client";
+import { MOVE_GAS } from "@/lib/chain/config";
 import { parseSecretKey } from "@/lib/chain/keys";
+import { sponsor } from "@/lib/chain/sponsor";
+import { type FunctionCall, jsonArgs } from "@/lib/chain/transaction";
 import { type Keys, ORDER, keyProof, keysFromSecret } from "../crypto";
-import { RECORD_FEE, STAKE, TABLE_CHAIN, gasFor } from "./contract";
+import { FREE_TABLE_DEPOSIT, FREE_TABLE_HANDS, MAX_SEATS, RECORD_FEE, STAKE, TABLE_CHAIN, TABLE_CONTRACT, gasFor } from "./contract";
 import { advise } from "./decide";
 import { type SeatStore, type TableView, betCall, betOptions, duty, fromBase64, holeCards, toBase64 } from "./seat";
 
@@ -37,10 +45,16 @@ export type Played =
   | { played: true; what: string; seat?: number; hash: string; reason?: string; driver?: string; account?: string; model?: string }
   /** `again`: the answer may differ in a moment (the node has not seen the table yet): worth asking once more. */
   | { played: false; why: string; again?: boolean };
-type House = { accountId: string; session: Session; secret: string };
+type House = { accountId: string; session: Pick<Session, "call" | "transact">; secret: string };
 
 /** How many tables one house account sits at at once: each holds a stake of its money. */
 export const MAX_HOUSE_TABLES = 4;
+/** How many free tables may be open at once: each holds a deposit of the sponsor's until it closes. */
+export const MAX_FREE_TABLES = intEnv(process.env.POKER_FREE_TABLES, 4);
+/** What an account must hold for a node to take a shuffle with its 260 Tgas attached: about 0.3 NEAR. */
+const SHUFFLE_RESERVE = 3n * 10n ** 23n;
+/** A free table nobody came to is closed by its host this long after it was opened. */
+const FREE_LOBBY_MS = 10 * 60_000;
 const ACCOUNT_ID = /^(?=.{2,64}$)[a-z0-9]+(?:[-_.][a-z0-9]+)*$/;
 const client = new ChainClient(TABLE_CHAIN);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -65,13 +79,17 @@ const defaultModel = (): string => process.env.DEEDLORDS_HOUSE_MODEL?.trim() || 
 
 /** The model each house seat at table `id` bets by, by account. */
 export function modelsAt(id: string, accounts: string[]): Record<string, string> {
-  return Object.fromEntries(accounts.map((account) => [account, seatModels.get(`${id}:${account}`) ?? defaultModel()]));
+  return Object.fromEntries(accounts.map((account) => [account, seatModel(id, account)]));
+}
+/** The model the seat of `account` at table `id` bets by. */
+function seatModel(id: string, account: string): string {
+  return seatModels.get(`${id}:${account}`) ?? (account === sponsor()?.accountId ? modelInId(id) : null) ?? defaultModel();
 }
 const WATCH_EVERY_MS = 5_000;
 /** A table without the house is swept this long after its deadline: a player's own page calls time first. */
 const SWEEP_GRACE_MS = 30_000;
 /** The account that calls time on tables without a house seat: POKER_SWEEP_ACCOUNT, else the first house account. */
-function sweeper(): { accountId: string; session: Session } | null {
+function sweeper(): Pick<House, "accountId" | "session"> | null {
   const accountId = process.env.POKER_SWEEP_ACCOUNT?.trim() ?? "";
   const at = `${TABLE_CHAIN.network}:${accountId}`;
   if (shelf.deedlordsTableSweeperV1?.at === at) return shelf.deedlordsTableSweeperV1.sweeper ?? houses()[0] ?? null;
@@ -80,7 +98,10 @@ function sweeper(): { accountId: string; session: Session } | null {
     try {
       let secret = process.env.POKER_SWEEP_KEY?.trim() ?? "";
       if (!secret) {
-        const file = JSON.parse(readFileSync(join(homedir(), ".near-credentials", TABLE_CHAIN.network, `${accountId}.json`), "utf8")) as { private_key?: string; secret_key?: string };
+        const file = JSON.parse(readFileSync(join(homedir(), ".near-credentials", TABLE_CHAIN.network, `${accountId}.json`), "utf8")) as {
+          private_key?: string;
+          secret_key?: string;
+        };
         secret = file.private_key ?? file.secret_key ?? "";
       }
       if (secret) made = { accountId, session: client.session(accountId, parseSecretKey(secret)) };
@@ -101,7 +122,10 @@ const modelBudget = rateLimiter(intEnv(process.env.DEEDLORDS_LLM_GLOBAL_LIMIT, 3
  * POKER_HOUSE_KEYS (commas, same order), or on a developer's machine the file NEAR's tools keep.
  */
 export function houses(): House[] {
-  const names = (process.env.POKER_HOUSE_ACCOUNTS?.trim() ?? (TABLE_CHAIN.network === "testnet" ? "pokerhouse.deedlords.testnet,pokerhouse2.deedlords.testnet,pokerhouse3.deedlords.testnet" : ""))
+  const names = (
+    process.env.POKER_HOUSE_ACCOUNTS?.trim() ??
+    (TABLE_CHAIN.network === "testnet" ? "pokerhouse.deedlords.testnet,pokerhouse2.deedlords.testnet,pokerhouse3.deedlords.testnet" : "")
+  )
     .split(",")
     .map((name) => name.trim())
     .filter((name) => ACCOUNT_ID.test(name));
@@ -113,7 +137,10 @@ export function houses(): House[] {
     try {
       let secret = given[index] ?? "";
       if (!secret) {
-        const file = JSON.parse(readFileSync(join(homedir(), ".near-credentials", TABLE_CHAIN.network, `${accountId}.json`), "utf8")) as { private_key?: string; secret_key?: string };
+        const file = JSON.parse(readFileSync(join(homedir(), ".near-credentials", TABLE_CHAIN.network, `${accountId}.json`), "utf8")) as {
+          private_key?: string;
+          secret_key?: string;
+        };
         secret = file.private_key ?? file.secret_key ?? "";
       }
       if (secret) made.push({ accountId, session: client.session(accountId, parseSecretKey(secret)), secret });
@@ -145,7 +172,39 @@ const store = (id: string): SeatStore => ({
   },
 });
 
-const isHouse = (accountId: string | null): boolean => houses().some((playing) => playing.accountId === accountId);
+/**
+ * The free tables' host: the account that sponsors free play, as a seat of the house. Its calls go out through the
+ * sponsor's own session, which owns the nonce of its key. `null` when this server sponsors nothing.
+ */
+export function freeHost(): House | null {
+  // On mainnet only once it is switched on (POKER_FREE=1): the contract there must be the build that takes a stake of
+  // nothing, and every hand costs the sponsor real NEAR.
+  if (TABLE_CHAIN.network === "mainnet" && process.env.POKER_FREE?.trim() !== "1") return null;
+  const paying = sponsor();
+  if (!paying) return null;
+  const send = (calls: FunctionCall[]) => paying.session.sendTo(TABLE_CONTRACT, calls);
+  return {
+    accountId: paying.accountId,
+    secret: paying.secret,
+    session: { call: (method, args, gas = MOVE_GAS) => send([{ method, args: jsonArgs(args), gas, deposit: 0n }]), transact: send },
+  };
+}
+
+/** Every account the server plays seats with: the house's, and the free tables' host (which sits at free tables only). */
+export function seats(): House[] {
+  const [staking, host] = [houses(), freeHost()];
+  return host && !staking.some((one) => one.accountId === host.accountId) ? [...staking, host] : staking;
+}
+
+const isHouse = (accountId: string | null): boolean => seats().some((playing) => playing.accountId === accountId);
+const isFree = (table: Pick<TableView, "stake">): boolean => BigInt(table.stake) === 0n;
+/** When a free table was opened, from its id (`f-<time in base 36>-…`); 0 for any other id. */
+const openedAt = (id: string): number => (/^f-([0-9a-z]{6,9})-/.test(id) ? parseInt(id.split("-")[1], 36) : 0);
+/** The model a free table's host bets by is written in its id, for a server that remembers nothing between requests. */
+const modelInId = (id: string): string | null => {
+  const letter = /^f-[0-9a-z]+-[0-9a-z]{4}-([0-9a-z])$/.exec(id)?.[1];
+  return letter === undefined ? null : (houseModels()[parseInt(letter, 36)] ?? null);
+};
 /** Every table that is not settled, in pages. */
 async function everyTable(): Promise<TableView[]> {
   const all: TableView[] = [];
@@ -219,7 +278,7 @@ export function houseStep(id: string, options: StepOptions = {}): Promise<Played
  * it. Started by the first request and by every seat the house takes; it stops by itself when no table is left.
  */
 export function watch(): void {
-  if (shelf.deedlordsTableWatchV2 || (!houses().length && !sweeper())) return;
+  if (shelf.deedlordsTableWatchV2 || (!seats().length && !sweeper())) return;
   const watching = { busy: false, idle: 0, timer: setInterval(() => void round(), WATCH_EVERY_MS) };
   shelf.deedlordsTableWatchV2 = watching;
   async function round() {
@@ -246,7 +305,7 @@ export function watch(): void {
 }
 
 async function step(id: string, options: StepOptions): Promise<Played> {
-  const playing = houses();
+  const playing = seats();
   if (!playing.length) return { played: false, why: "no house plays on this server" };
   const view = await client.view<TableView | null>("get_match", { id });
   if (!view) {
@@ -259,15 +318,16 @@ async function step(id: string, options: StepOptions): Promise<Played> {
   if (options.add) {
     if (!view.players.includes(null)) return { played: false, why: "every seat is taken" };
     if (!view.players.some((player) => player && !isHouse(player))) return { played: false, why: "the house sits down with players, not alone" };
-    if (BigInt(view.stake) !== STAKE) return { played: false, why: "the house only sits at tables with the standard stake" };
-    const free = playing.filter((one) => !here.includes(one));
-    if (!free.length) return { played: false, why: "every house seat is already at this table" };
+    // At a free table any of the server's accounts may sit: nothing is staked. With a stake, only the house's own.
+    if (!isFree(view) && BigInt(view.stake) !== STAKE) return { played: false, why: "the house only sits at free tables and at tables with the standard stake" };
+    const free = (isFree(view) ? playing : houses()).filter((one) => !here.includes(one));
+    if (!free.length) return { played: false, why: isFree(view) || houses().length ? "every house seat is already at this table" : "no house plays for stakes on this server" };
     if (!options.mayJoin?.()) return { played: false, why: "too many seats were asked for from here: wait a few minutes" };
     const tables = await housed();
     const next = free.find((one) => tables.filter((table) => table.players.includes(one.accountId)).length < MAX_HOUSE_TABLES);
     if (!next) return { played: false, why: "the house is at every table it can play right now: try again in a few minutes" };
     const key = toBase64(keyProof(cardKeys(next, id), next.accountId));
-    const outcome = await next.session.transact([{ method: "join", args: jsonBytes({ id, key }), gas: gasFor("join"), deposit: STAKE + RECORD_FEE }]);
+    const outcome = await next.session.transact([{ method: "join", args: jsonBytes({ id, key }), gas: gasFor("join"), deposit: isFree(view) ? 0n : STAKE + RECORD_FEE }]);
     if (options.model) seatModels.set(`${id}:${next.accountId}`, options.model);
     if (seatModels.size > 2_000) for (const key of [...seatModels.keys()].slice(0, 1_000)) seatModels.delete(key);
     watch();
@@ -275,11 +335,21 @@ async function step(id: string, options: StepOptions): Promise<Played> {
   }
 
   if (!here.length) return { played: false, why: "the house does not sit at this table" };
-  if (view.phase === "lobby") return { played: false, why: "the table has not started" };
+  if (view.phase === "lobby") {
+    // A free table nobody came to: its host closes it, and the deposit comes back.
+    const host = here.find((one) => one.accountId === view.host);
+    if (host && isFree(view) && !view.players.some((player) => player && !isHouse(player)) && Date.now() > openedAt(id) + FREE_LOBBY_MS) {
+      const outcome = await host.session.call("leave", { id }, gasFor("leave"));
+      return { played: true, what: "leave", hash: outcome.hash };
+    }
+    return { played: false, why: "the table has not started" };
+  }
   const seatOf = (one: House) => view.players.indexOf(one.accountId);
   // No player is left: the house's seats ask to leave, each paid what it holds, and the table closes. A hand under
   // way is played to its end first, which is what the rest of this step does.
-  const staying = view.players.some((player) => player && !isHouse(player)) ? [] : here.filter((one) => !view.leaving[seatOf(one)]);
+  // A free table's host has played its hands: it asks to leave too, and the table closes when this hand is over.
+  const spent = isFree(view) && view.hand >= FREE_TABLE_HANDS - 1 ? here.filter((one) => one.accountId === view.host && !view.leaving[seatOf(one)]) : [];
+  const staying = view.players.some((player) => player && !isHouse(player)) ? spent : here.filter((one) => !view.leaving[seatOf(one)]);
   if (staying.length) {
     const outcomes = await Promise.all(staying.map((one) => one.session.call("leave", { id }, gasFor("leave"))));
     return { played: true, what: "leave", hash: outcomes[0].hash };
@@ -306,7 +376,7 @@ async function step(id: string, options: StepOptions): Promise<Played> {
       if (view.phase === "bet") {
         const hole = holeCards(view, seat, keys, await store(id).deck(view.hand, view.dealt.length - 1));
         if (!hole || hole.some((card) => card === null)) return { played: false, why: "the house cannot read its cards" };
-        const name = seatModels.get(`${id}:${one.accountId}`) ?? defaultModel();
+        const name = seatModel(id, one.accountId);
         const llm = name === RULES_MODEL || !modelBudget.allow("*") ? null : llmFor(process.env, name);
         const advice = await advise(view, seat, hole as number[], { llm });
         const call = await betCall(view, seat, advice.action, advice.amount, keys, store(id));
@@ -324,3 +394,60 @@ async function step(id: string, options: StepOptions): Promise<Played> {
 }
 
 const jsonBytes = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value));
+
+/**
+ * Opens a free table of `seats` seats for whoever asks: the sponsor's account hosts it and holds seat 0, betting by
+ * `model` (one of `houseModels()`; the server's house model when not given). Free tables nobody came to are closed
+ * first. Throws with what to tell the visitor when there is no room or no sponsor.
+ */
+export async function openFreeTable(seatCount: number, model: string | undefined, turnSeconds: number): Promise<{ id: string; hash: string; host: string; model: string }> {
+  const host = freeHost();
+  if (!host) throw new Error("no free tables on this server");
+  if (!Number.isInteger(seatCount) || seatCount < 2 || seatCount > MAX_SEATS) throw new Error(`seats: 2 to ${MAX_SEATS}`);
+  // The host must hold the table's deposit and what a shuffle's gas reserves, for its own seat and for the visitor's.
+  const held = await client.balance(host.accountId);
+  if (held === null || held < FREE_TABLE_DEPOSIT + 2n * SHUFFLE_RESERVE)
+    throw new Error("the house is out of NEAR for free tables right now: try a table with a stake, or come back later");
+  const mine = (await everyTable()).filter((table) => isFree(table) && table.host === host.accountId);
+  const stale = mine.filter((table) => table.phase === "lobby" && !table.players.some((player) => player && !isHouse(player)) && Date.now() > openedAt(table.id) + FREE_LOBBY_MS);
+  const closed = await Promise.allSettled(stale.slice(0, 3).map((table) => host.session.call("leave", { id: table.id }, gasFor("leave"))));
+  if (mine.length - closed.filter((one) => one.status === "fulfilled").length >= MAX_FREE_TABLES)
+    throw new Error("every free table is taken right now: join one from the wall, or try again in a few minutes");
+  const place = model === undefined ? -1 : houseModels().indexOf(model);
+  const letters = Array.from({ length: 4 }, () => "abcdefghijkmnpqrstuvwxyz"[Math.floor(Math.random() * 24)]).join("");
+  const id = `f-${Date.now().toString(36)}-${letters}${place >= 0 && place < 36 ? `-${place.toString(36)}` : ""}`;
+  const key = toBase64(keyProof(cardKeys(host, id), host.accountId));
+  const outcome = await host.session.transact([
+    { method: "create_match", args: jsonBytes({ id, stake: "0", key, seats: seatCount, turn_seconds: turnSeconds }), gas: gasFor("create_match"), deposit: FREE_TABLE_DEPOSIT },
+  ]);
+  if (model) seatModels.set(`${id}:${host.accountId}`, model);
+  watch();
+  return { id, hash: outcome.hash, host: host.accountId, model: seatModel(id, host.accountId) };
+}
+
+/** The host starts its free table that is not full, once a player sits at it: only the host can, and the host is the server's. */
+export async function startFreeTable(id: string): Promise<Played> {
+  const host = freeHost();
+  if (!host) return { played: false, why: "no free tables on this server" };
+  const view = await client.view<TableView | null>("get_match", { id });
+  if (!view) return { played: false, why: "the table is not on chain yet", again: true };
+  if (!isFree(view) || view.host !== host.accountId) return { played: false, why: "not a free table of this server" };
+  if (view.phase !== "lobby") return { played: false, why: "the table has started" };
+  if (!view.players.some((player) => player && !isHouse(player))) return { played: false, why: "nobody sits at the table yet" };
+  const outcome = await host.session.call("start", { id }, gasFor("start"));
+  watch();
+  return { played: true, what: "start", hash: outcome.hash };
+}
+
+/** Whether table `id` is a free one the server pays the players' calls of: asked by the relayer for every call. */
+export async function isFreeTableOfOurs(id: string): Promise<boolean> {
+  const until = freeKnown.get(id);
+  if (until !== undefined && until > Date.now()) return true;
+  const view = await client.view<TableView | null>("get_match", { id });
+  // The contract lets only its owner's own accounts open a table with a stake of nothing.
+  if (!view || !isFree(view) || !isHouse(view.host)) return false;
+  if (freeKnown.size > 500) freeKnown.clear();
+  freeKnown.set(id, Date.now() + 30 * 60_000);
+  return true;
+}
+const freeKnown = new Map<string, number>();
