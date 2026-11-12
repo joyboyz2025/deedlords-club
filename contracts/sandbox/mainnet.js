@@ -213,6 +213,10 @@ async function deploy(mode, keyStore, keyFile) {
   const pokerWasm = POKER_WASM ? fs.readFileSync(POKER_WASM) : null;
 
   const steps = [];
+  // A contract with no code yet is deployed and initialised in one transaction; one already there is upgraded, state kept.
+  const NO_CODE = "11111111111111111111111111111111";
+  const gameFresh = !gameOnChain || gameOnChain.code_hash === NO_CODE;
+  const pokerFresh = !pokerOnChain || pokerOnChain.code_hash === NO_CODE;
   const gameFund = BigInt(wasm.length + 2_000) * BYTE + STATE_ROOM;
   if (!gameOnChain)
     steps.push({
@@ -224,10 +228,10 @@ async function deploy(mode, keyStore, keyFile) {
     });
   if (!gameOnChain || gameOnChain.code_hash !== hashOf(wasm))
     steps.push({
-      what: `deploy ${path.basename(GAME_WASM)} (hash ${hashOf(wasm)}) to ${game} and call new(owner=${PARENT}, house=${house}, max_stake=${fmt(MAX_STAKE)}, fee_bps=${FEE_BPS}) in one transaction`,
+      what: `deploy ${path.basename(GAME_WASM)} (hash ${hashOf(wasm)}) to ${game}${gameFresh ? ` and call new(owner=${PARENT}, house=${house}, max_stake=${fmt(MAX_STAKE)}, fee_bps=${FEE_BPS}) in one transaction` : " (an upgrade: its state is kept)"}`,
       cost: NEAR(0.01),
       kind: "deploy-game",
-      fresh: !gameOnChain || gameOnChain.code_hash === "11111111111111111111111111111111",
+      fresh: gameFresh,
     });
   if (!houseOnChain) steps.push({ what: `create ${house} with ${fmt(HOUSE_FUND)}`, cost: HOUSE_FUND, kind: "create", id: house, fund: HOUSE_FUND });
   if (pokerWasm) {
@@ -236,10 +240,10 @@ async function deploy(mode, keyStore, keyFile) {
     if (!pokerOnChain) steps.push({ what: `create ${poker} with ${fmt(pokerFund)}`, cost: pokerFund, kind: "create", id: poker, fund: pokerFund });
     if (!pokerOnChain || pokerOnChain.code_hash !== hashOf(pokerWasm))
       steps.push({
-        what: `deploy ${path.basename(POKER_WASM)} (hash ${hashOf(pokerWasm)}) to ${poker} and call new(${pokerInit()}) in one transaction`,
+        what: `deploy ${path.basename(POKER_WASM)} (hash ${hashOf(pokerWasm)}) to ${poker}${pokerFresh ? ` and call new(${pokerInit()}) in one transaction` : " (an upgrade: its state is kept)"}`,
         cost: NEAR(0.01),
         kind: "deploy-poker",
-        fresh: !pokerOnChain || pokerOnChain.code_hash === "11111111111111111111111111111111",
+        fresh: pokerFresh,
       });
     if (!sweepOnChain)
       steps.push({
