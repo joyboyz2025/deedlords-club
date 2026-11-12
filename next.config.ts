@@ -1,10 +1,5 @@
 import type { NextConfig } from "next";
 
-// Thiếu biến này thì trang vẫn build được nhưng không tạo được phòng, nên chặn ngay từ lúc deploy.
-if (process.env.VERCEL && !process.env.NEXT_PUBLIC_ROOM_URL) {
-  throw new Error("Thiếu NEXT_PUBLIC_ROOM_URL: đặt bằng địa chỉ Worker sau khi chạy npm run deploy:room");
-}
-
 const config: NextConfig = {
   // The dev badge sits on top of the page's own corner; the pages are checked in screenshots.
   devIndicators: false,
