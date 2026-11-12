@@ -7,21 +7,22 @@
 import { bn254 } from "@noble/curves/bn254.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 
-const Point = bn254.G1.Point;
-type G1 = ReturnType<typeof Point.fromAffine>;
-const ORDER = bn254.fields.Fr.ORDER;
+export const Point = bn254.G1.Point;
+export type G1 = ReturnType<typeof Point.fromAffine>;
+/** The order of the group: scalars are numbers modulo this. */
+export const ORDER = bn254.fields.Fr.ORDER;
 
 export const DECK = 52;
-const POINT = 64;
-const SCALAR = 32;
-const CARD = 2 * POINT;
+export const POINT = 64;
+export const SCALAR = 32;
+export const CARD = 2 * POINT;
 
 /** A seat's card key. The secret never leaves the browser. */
 export type Keys = { secret: bigint; publicKey: Uint8Array };
 
 const text = new TextEncoder();
 
-function concat(...parts: Uint8Array[]): Uint8Array {
+export function concat(...parts: Uint8Array[]): Uint8Array {
   const out = new Uint8Array(parts.reduce((length, part) => length + part.length, 0));
   let at = 0;
   for (const part of parts) {
@@ -31,25 +32,25 @@ function concat(...parts: Uint8Array[]): Uint8Array {
   return out;
 }
 
-function scalarBytes(value: bigint): Uint8Array {
+export function scalarBytes(value: bigint): Uint8Array {
   const out = new Uint8Array(SCALAR);
   for (let i = 0; i < SCALAR; i++) out[i] = Number((value >> BigInt(8 * i)) & 0xffn);
   return out;
 }
 
-function scalarOf(bytes: Uint8Array): bigint {
+export function scalarOf(bytes: Uint8Array): bigint {
   let value = 0n;
   for (let i = bytes.length - 1; i >= 0; i--) value = (value << 8n) | BigInt(bytes[i]);
   return value;
 }
 
-function encode(point: G1): Uint8Array {
+export function encode(point: G1): Uint8Array {
   if (point.is0()) return new Uint8Array(POINT);
   const { x, y } = point.toAffine();
   return concat(scalarBytes(x), scalarBytes(y));
 }
 
-function decode(bytes: Uint8Array): G1 {
+export function decode(bytes: Uint8Array): G1 {
   if (bytes.every((byte) => byte === 0)) return Point.ZERO;
   const point = Point.fromAffine({ x: scalarOf(bytes.subarray(0, SCALAR)), y: scalarOf(bytes.subarray(SCALAR, POINT)) });
   point.assertValidity();
@@ -57,12 +58,12 @@ function decode(bytes: Uint8Array): G1 {
 }
 
 /** A uniform scalar in 1..ORDER-1. */
-function randomScalar(): bigint {
+export function randomScalar(): bigint {
   return (scalarOf(crypto.getRandomValues(new Uint8Array(48))) % (ORDER - 1n)) + 1n;
 }
 
 /** A uniform integer in 0..below-1. */
-function randomBelow(below: number): number {
+export function randomBelow(below: number): number {
   const limit = Math.floor(0x1_0000_0000 / below) * below;
   for (;;) {
     const value = crypto.getRandomValues(new Uint32Array(1))[0];
@@ -71,7 +72,7 @@ function randomBelow(below: number): number {
 }
 
 /** sha256 over the parts with the top byte cleared, as a little-endian scalar: the contract's `challenge`. */
-function challenge(...parts: Uint8Array[]): bigint {
+export function challenge(...parts: Uint8Array[]): bigint {
   const hash = sha256(concat(...parts));
   hash[SCALAR - 1] = 0;
   return scalarOf(hash);
@@ -105,29 +106,6 @@ function points(): G1[] {
 /** The deck nobody has shuffled yet: every card in order, in the clear. */
 export function openDeck(): Uint8Array {
   return concat(...points().map((point) => concat(new Uint8Array(POINT), encode(point))));
-}
-
-/**
- * Shuffles `before` and re-encrypts every card under `key` with fresh randomness. `opening` (where each card came
- * from, then the 52 scalars) is what the contract's `audit` wants after the hand; until then it must stay secret.
- */
-export function shuffle(before: Uint8Array, key: Uint8Array): { deck: Uint8Array; opening: Uint8Array } {
-  const order = Array.from({ length: DECK }, (_, at) => at);
-  for (let i = DECK - 1; i > 0; i--) {
-    const j = randomBelow(i + 1);
-    [order[i], order[j]] = [order[j], order[i]];
-  }
-  const tableKeyPoint = decode(key);
-  const cards: Uint8Array[] = [];
-  const scalars: Uint8Array[] = [];
-  for (const from of order) {
-    const scalar = randomScalar();
-    const c1 = decode(before.subarray(from * CARD, from * CARD + POINT)).add(Point.BASE.multiply(scalar));
-    const c2 = decode(before.subarray(from * CARD + POINT, (from + 1) * CARD)).add(tableKeyPoint.multiply(scalar));
-    cards.push(encode(c1), encode(c2));
-    scalars.push(scalarBytes(scalar));
-  }
-  return { deck: concat(...cards), opening: concat(Uint8Array.from(order), ...scalars) };
 }
 
 /** The seat's share of the decryption of the card at deck position `at`: `secret·C1`. */

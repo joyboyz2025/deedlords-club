@@ -36,12 +36,6 @@ pub fn add(a: &[u8], b: &[u8]) -> Vec<u8> {
     sum(&[(false, a), (false, b)])
 }
 
-/// Fails the call unless every 64-byte piece of `points` is a point of the curve.
-pub fn check_points(points: &[u8]) {
-    let terms: Vec<(bool, &[u8])> = points.chunks(POINT).map(|point| (false, point)).collect();
-    sum(&terms);
-}
-
 /// The challenge of a proof made non-interactive: sha256 over the parts with the top byte cleared, read as a
 /// little-endian scalar. 248 bits, so it is always below the group order.
 pub fn challenge(parts: &[&[u8]]) -> [u8; SCALAR] {

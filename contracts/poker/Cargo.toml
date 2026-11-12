@@ -25,3 +25,11 @@ debug = false
 strip = "symbols"
 panic = "abort"
 overflow-checks = true
+
+# The curve library is very slow unoptimized, and the tests make and check whole shuffle proofs with it.
+[profile.dev.package."*"]
+opt-level = 3
+
+# The tests rank all 2.6 million five-card hands.
+[profile.dev]
+opt-level = 2

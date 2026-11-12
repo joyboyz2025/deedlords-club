@@ -9,14 +9,16 @@
 //!   decryption of the other's two hole cards (`deal`); bets (`act`); both give their shares for the board cards of a
 //!   street (`open`), and for their own hole cards at the end (`show`). Every share comes with a Chaum-Pedersen proof
 //!   checked here with the chain's curve functions, so a wrong share is refused on the spot.
-//! * Shuffles are checked after the hand, before any chip moves: each seat opens its order and its randomness
-//!   (`audit`) and the contract recomputes its deck. A seat that cannot open an honest shuffle runs out of time and
-//!   forfeits the whole match. This shows every card of a finished hand, folded ones too.
+//! * A shuffle comes with a zero-knowledge proof that it is one (see [`shuffle`]): the contract takes no deck unless
+//!   it is the deck before it in another order, re-encrypted, so no seat can deal from a deck it can read. The order
+//!   stays secret for good, and so do the cards nobody showed.
 //! * Each step has a deadline. After it anyone may call `timeout`: the seat that was awaited loses everything on the
 //!   table, so nobody gains by stalling.
 
 mod cards;
 mod curve;
+mod fr;
+mod shuffle;
 #[cfg(test)]
 mod tests;
 
@@ -25,11 +27,20 @@ use near_sdk::serde_json::{json, Value};
 use near_sdk::store::{IterableMap, LookupMap};
 use near_sdk::{env, near, require, AccountId, NearToken, PanicOnDefault, Promise};
 
-use curve::{add, generator, mul, sum, POINT, SCALAR};
+use curve::{add, generator, sum, POINT, SCALAR};
 
 pub const CHIPS: u32 = 100;
 pub const SMALL_BLIND: u32 = 1;
 pub const BIG_BLIND: u32 = 2;
+/// The least a seat may stake: 0.1 NEAR. A match under way stores up to 15 KB (two decks while the second seat
+/// shuffles), which NEAR makes the contract's balance cover at 1 NEAR per 100 KB; with two stakes of this size the
+/// match's own money covers it, so opening matches can never tie up money that other matches must be paid from.
+pub const MIN_STAKE: u128 = 10u128.pow(23);
+/// What a seat pays on top of its stake, and does not get back once the match has started: 0.002 NEAR. A settled
+/// match leaves a summary that is stored for good (about 300 bytes with two long account names, 0.003 NEAR of
+/// storage), and nothing else pays for it: without this the summaries would use up the balance the contract needs to
+/// hold its own code, and one day a match could not be settled.
+pub const RECORD_FEE: u128 = 2 * 10u128.pow(21);
 pub const DEFAULT_TURN_SECONDS: u32 = 120;
 pub const MAX_TURN_SECONDS: u32 = 86_400;
 pub const MAX_ID_LEN: usize = 32;
@@ -41,8 +52,6 @@ pub const DECK_BYTES: usize = DECK * CARD_BYTES;
 pub const KEY_BYTES: usize = 2 * POINT + SCALAR;
 /// A decryption share: token ‖ A ‖ B ‖ z.
 pub const TOKEN_BYTES: usize = 3 * POINT + SCALAR;
-/// A shuffle opened: where each of the 52 cards came from, then the 52 scalars it was re-encrypted with.
-pub const OPENING_BYTES: usize = DECK * (1 + SCALAR);
 /// Deck positions used by a hand: 0-1 are seat 0's hole cards, 2-3 seat 1's, 4-8 the board.
 const DEALT: usize = 9;
 
@@ -56,7 +65,6 @@ pub enum Phase {
     Bet,
     Open,
     Showdown,
-    Audit,
 }
 
 #[near(serializers = [borsh, json])]
@@ -66,7 +74,8 @@ pub enum Outcome {
     /// The seat that takes the pot, by a fold or at the showdown.
     Won(u8),
     Split,
-    /// A position did not decrypt to a card: every chip put in goes back, and the audit finds who shuffled falsely.
+    /// A position did not decrypt to a card, which proved shuffles and proved shares rule out: every chip put in
+    /// goes back.
     Void,
 }
 
@@ -113,7 +122,6 @@ pub struct Match {
     pub board: Vec<u8>,
     /// Hole cards shown at the showdown.
     pub hole: Vec<Vec<u8>>,
-    pub outcome: Option<Outcome>,
     pub last: Option<Hand>,
     /// Counts the changes stored for this match. A public RPC may answer from a node that is a block behind, so a
     /// reader keeps the view with the highest number.
@@ -189,7 +197,6 @@ impl Match {
         self.tokens = vec![vec![]; 2 * DEALT];
         self.board = vec![];
         self.hole = vec![vec![], vec![]];
-        self.outcome = None;
     }
 
     fn pay(&mut self, seat: usize, chips: u32) {
@@ -219,12 +226,6 @@ impl Match {
             self.phase = Phase::Bet;
             self.to_act = 1 - self.button() as u8;
         }
-    }
-
-    fn end_hand(&mut self, outcome: Outcome) {
-        self.outcome = Some(outcome);
-        self.phase = Phase::Audit;
-        self.done = [false; 2];
     }
 
     /// The seats the match is waiting for.
@@ -262,6 +263,7 @@ impl Match {
             "id": id,
             "phase": self.phase,
             "stake": U128(self.stake.as_yoctonear()),
+            "deposit": U128(self.stake.as_yoctonear() + RECORD_FEE),
             "players": self.players,
             "keys": bytes(&self.keys),
             "turnSeconds": self.turn_seconds,
@@ -279,7 +281,6 @@ impl Match {
             "tokens": bytes(&self.tokens),
             "board": self.board,
             "hole": self.hole,
-            "outcome": self.outcome,
             "last": self.last,
             "seq": self.seq,
         })
@@ -294,7 +295,8 @@ impl Contract {
         Contract { matches: IterableMap::new(b"m"), decks: LookupMap::new(b"d"), results: LookupMap::new(b"r") }
     }
 
-    /// Opens a match and takes seat 0. The attached deposit is the stake, worth 100 chips.
+    /// Opens a match and takes seat 0. The attached deposit is the stake (at least [`MIN_STAKE`]), worth 100 chips,
+    /// plus [`RECORD_FEE`].
     #[payable]
     pub fn create_match(&mut self, id: String, stake: U128, key: Base64VecU8, turn_seconds: Option<u32>) {
         require!(!id.is_empty() && id.len() <= MAX_ID_LEN, "match id must be 1..=32 characters");
@@ -302,9 +304,9 @@ impl Contract {
         require!(!self.matches.contains_key(&id) && !self.results.contains_key(&id), "this match id was already used");
         let turn_seconds = turn_seconds.unwrap_or(DEFAULT_TURN_SECONDS);
         require!((5..=MAX_TURN_SECONDS).contains(&turn_seconds), "turn_seconds must be 5..=86400");
-        require!(stake.0 > 0 && stake.0 % u128::from(CHIPS) == 0, "the stake must be a positive multiple of 100 yoctoNEAR");
+        require!(stake.0 >= MIN_STAKE && stake.0.is_multiple_of(u128::from(CHIPS)), "the stake must be at least 0.1 NEAR and a multiple of 100 yoctoNEAR");
         let stake = NearToken::from_yoctonear(stake.0);
-        require!(env::attached_deposit() == stake, "attach exactly the stake");
+        require!(env::attached_deposit().as_yoctonear() == stake.as_yoctonear() + RECORD_FEE, "attach exactly the stake and the record fee of 0.002 NEAR");
         let mut m = Match {
             stake,
             players: vec![env::predecessor_account_id()],
@@ -323,7 +325,6 @@ impl Contract {
             tokens: vec![],
             board: vec![],
             hole: vec![],
-            outcome: None,
             last: None,
             seq: 0,
         };
@@ -332,12 +333,12 @@ impl Contract {
         self.save(id, m);
     }
 
-    /// Takes seat 1 with the same stake; the first hand starts.
+    /// Takes seat 1 with the same stake and fee; the first hand starts.
     #[payable]
     pub fn join(&mut self, id: String, key: Base64VecU8) {
         let mut m = self.matches.get(&id).cloned().unwrap_or_else(|| env::panic_str("no such match"));
         require!(m.phase == Phase::Lobby, "the match has started");
-        require!(env::attached_deposit() == m.stake, "attach exactly the stake");
+        require!(env::attached_deposit().as_yoctonear() == m.stake.as_yoctonear() + RECORD_FEE, "attach exactly the stake and the record fee of 0.002 NEAR");
         m.players.push(env::predecessor_account_id());
         m.keys.push(checked_key(&key.0));
         m.phase = Phase::Shuffle;
@@ -345,28 +346,33 @@ impl Contract {
         self.save(id, m);
     }
 
-    /// In the lobby the creator takes the stake back. Between hands (before the first shuffle of a hand) either seat
+    /// In the lobby the creator takes the stake and the fee back. Between hands (before the first shuffle of a hand) either seat
     /// may end the match: both are paid the chips they hold.
     pub fn leave(&mut self, id: String) {
         let m = self.matches.get(&id).cloned().unwrap_or_else(|| env::panic_str("no such match"));
         require!(m.players.contains(&env::predecessor_account_id()), "only an account in a seat may leave");
         if m.phase == Phase::Lobby {
             self.matches.remove(&id);
-            Promise::new(m.players[0].clone()).transfer(m.stake).detach();
+            Promise::new(m.players[0].clone()).transfer(NearToken::from_yoctonear(m.stake.as_yoctonear() + RECORD_FEE)).detach();
         } else {
             require!(m.phase == Phase::Shuffle && m.shuffled == 0, "a hand is under way: finish it first");
             self.settle(id, m, "left");
         }
     }
 
-    /// The seat whose turn it is replaces the deck with its own shuffle of it: 52 cards, C1 ‖ C2 each.
-    pub fn shuffle(&mut self, id: String, seat: u8, deck: Base64VecU8) {
+    /// The seat whose turn it is replaces the deck with its own shuffle of it (52 cards, C1 ‖ C2 each) and proves that
+    /// it is one: see [`shuffle`]. A deck without a valid proof is refused.
+    pub fn shuffle(&mut self, id: String, seat: u8, deck: Base64VecU8, proof: Base64VecU8) {
         let (mut m, _) = self.turn(&id, seat, Phase::Shuffle);
         require!(deck.0.len() == DECK_BYTES, "a deck is 52 cards of 128 bytes");
-        curve::check_points(&deck.0);
+        require!(proof.0.len() == shuffle::PROOF_BYTES, "a shuffle proof is 10144 bytes");
+        let before = if m.shuffled == 0 { open_deck() } else { self.deck(&id, m.hand, 0) };
+        let key = add(&m.keys[0], &m.keys[1]);
+        require!(shuffle::holds(&key, &before, &deck.0, &proof.0), "the proof does not show that this deck is a shuffle of the deck before it");
         self.decks.insert(deck_key(&id, m.hand, m.shuffled), deck.0);
         m.shuffled += 1;
         if m.shuffled == 2 {
+            self.decks.remove(&deck_key(&id, m.hand, 0));
             m.phase = Phase::Deal;
         }
         m.restart_clock();
@@ -398,7 +404,7 @@ impl Contract {
         let (mut m, me) = self.turn(&id, seat, Phase::Bet);
         let other = 1 - me;
         match action.as_str() {
-            "fold" => m.end_hand(Outcome::Won(other as u8)),
+            "fold" => return self.finish(id, m, Outcome::Won(other as u8)),
             "call" => {
                 m.pay(me, m.bet[other] - m.bet[me]);
                 m.done[me] = true;
@@ -416,13 +422,11 @@ impl Contract {
             }
             _ => env::panic_str("action must be fold, call or raise"),
         }
-        if m.phase == Phase::Bet {
-            // Matched bets close the street once both seats have acted, or at once when a seat is all in.
-            if m.bet[0] == m.bet[1] && (m.done == [true; 2] || m.chips.contains(&0)) {
-                m.after_bets();
-            } else {
-                m.to_act = other as u8;
-            }
+        // Matched bets close the street once both seats have acted, or at once when a seat is all in.
+        if m.bet[0] == m.bet[1] && (m.done == [true; 2] || m.chips.contains(&0)) {
+            m.after_bets();
+        } else {
+            m.to_act = other as u8;
         }
         m.restart_clock();
         self.save(id, m);
@@ -443,12 +447,11 @@ impl Contract {
         if m.done == [true; 2] {
             let points = card_points();
             let cards: Vec<u8> = at.iter().filter_map(|&at| m.card_at(&deck, &points, at)).collect();
-            if cards.len() == at.len() {
-                m.board.extend(cards);
-                m.after_open();
-            } else {
-                m.end_hand(Outcome::Void);
+            if cards.len() != at.len() {
+                return self.finish(id, m, Outcome::Void);
             }
+            m.board.extend(cards);
+            m.after_open();
             m.restart_clock();
         }
         self.save(id, m);
@@ -474,60 +477,9 @@ impl Contract {
                     std::cmp::Ordering::Equal => Outcome::Split,
                 }
             };
-            m.end_hand(outcome);
-            m.restart_clock();
+            return self.finish(id, m, outcome);
         }
         self.save(id, m);
-    }
-
-    /// The seat opens its shuffle: for each of the 52 cards the position it came from (one byte), then the 52 scalars
-    /// it re-encrypted them with. The contract recomputes the seat's deck from the deck before it and refuses an
-    /// opening that does not give exactly the deck the seat sent. When both seats have opened, the hand is paid.
-    pub fn audit(&mut self, id: String, seat: u8, opening: Base64VecU8) {
-        let (mut m, seat) = self.turn(&id, seat, Phase::Audit);
-        require!(opening.0.len() == OPENING_BYTES, "an opening is 52 positions, then 52 scalars of 32 bytes");
-        let (order, scalars) = opening.0.split_at(DECK);
-        let mut seen = [false; DECK];
-        for &from in order {
-            require!(usize::from(from) < DECK && !seen[usize::from(from)], "the order must name each of the 52 positions once");
-            seen[usize::from(from)] = true;
-        }
-        let step = u8::from(seat != m.button());
-        let before = if step == 0 { open_deck() } else { self.deck(&id, m.hand, 0) };
-        let after = self.deck(&id, m.hand, step);
-        let (g, key) = (generator(), add(&m.keys[0], &m.keys[1]));
-        for (to, &from) in order.iter().enumerate() {
-            let scalar = &scalars[to * SCALAR..(to + 1) * SCALAR];
-            let from = &before[usize::from(from) * CARD_BYTES..][..CARD_BYTES];
-            let card = [add(&from[..POINT], &mul(&g, scalar)), add(&from[POINT..], &mul(&key, scalar))].concat();
-            require!(after[to * CARD_BYTES..][..CARD_BYTES] == card, "this is not how the deck was shuffled");
-        }
-        m.done[seat] = true;
-        if m.done != [true; 2] {
-            self.save(id, m);
-            return;
-        }
-        let pot = m.put[0] + m.put[1];
-        let outcome = m.outcome.unwrap();
-        match outcome {
-            Outcome::Won(winner) => m.chips[usize::from(winner)] += pot,
-            // At a showdown both seats put in the same, so a split pot and a void hand both give each its own back.
-            Outcome::Split | Outcome::Void => {
-                m.chips[0] += m.put[0];
-                m.chips[1] += m.put[1];
-            }
-        }
-        m.last = Some(Hand { number: m.hand, board: m.board.clone(), hole: m.hole.clone(), outcome, pot });
-        self.decks.remove(&deck_key(&id, m.hand, 0));
-        self.decks.remove(&deck_key(&id, m.hand, 1));
-        m.hand += 1;
-        if m.chips.iter().any(|&chips| chips < BIG_BLIND) {
-            self.settle(id, m, "busted");
-        } else {
-            m.new_hand();
-            m.restart_clock();
-            self.save(id, m);
-        }
     }
 
     /// After the deadline: the seat the match was waiting for forfeits, and the other takes every chip. If it was
@@ -584,6 +536,30 @@ impl Contract {
         require!(m.phase == phase, "not now: the hand is at another step");
         require!(m.awaited().contains(&seat), "not this seat's turn");
         (m, seat)
+    }
+
+    /// Pays the hand that just ended, then starts the next one, or settles the match when a seat cannot post the big
+    /// blind any more.
+    fn finish(&mut self, id: String, mut m: Match, outcome: Outcome) {
+        let pot = m.put[0] + m.put[1];
+        match outcome {
+            Outcome::Won(winner) => m.chips[usize::from(winner)] += pot,
+            // At a showdown both seats put in the same, so a split pot and a void hand both give each its own back.
+            Outcome::Split | Outcome::Void => {
+                m.chips[0] += m.put[0];
+                m.chips[1] += m.put[1];
+            }
+        }
+        m.last = Some(Hand { number: m.hand, board: m.board.clone(), hole: m.hole.clone(), outcome, pot });
+        self.decks.remove(&deck_key(&id, m.hand, 1));
+        m.hand += 1;
+        if m.chips.iter().any(|&chips| chips < BIG_BLIND) {
+            self.settle(id, m, "busted");
+        } else {
+            m.new_hand();
+            m.restart_clock();
+            self.save(id, m);
+        }
     }
 
     fn save(&mut self, id: String, mut m: Match) {

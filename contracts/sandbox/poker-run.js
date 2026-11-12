@@ -1,11 +1,13 @@
-// Deedlords Poker: deploy the contract and play it with the same code the page runs (games/poker/seat.ts, crypto.ts).
+// Deedlords Poker: deploy the contract and play it with the same code the page runs (games/poker/seat.ts, shuffle.ts,
+// crypto.ts).
 //
 //   node --experimental-strip-types poker-run.js                      local near-sandbox (never leaves this machine)
 //   POKER_PARENT=<you>.testnet node --experimental-strip-types poker-run.js testnet [--redeploy]
 //
 // It plays: a hand to the showdown (each seat's own decryption of its hole cards must equal what the contract shows),
-// a folded hand, and a seat leaving between hands; then a second match in which a share made with the wrong key is
-// refused, the second shuffler ignores the first shuffle, cannot open its own at the audit, and forfeits by timeout.
+// a folded hand (whose cards stay hidden), and a seat leaving between hands; then a second match in which the second
+// shuffler tries a deck that is not a shuffle of the first seat's (refused with its proof), a share made with the
+// wrong key is refused, and a seat that stops playing forfeits by timeout.
 // On testnet it creates poker.<parent> (skipped if it exists) and plays between p1.<parent> and p2.<parent>. Keys are
 // read from the NEAR credentials directory, never printed. Refuses mainnet.
 
@@ -21,10 +23,12 @@ const Y = 10n ** 24n;
 const NEAR = (n) => (BigInt(Math.round(n * 1000)) * Y) / 1000n;
 const fmt = (yocto) => `${(Number(BigInt(yocto) / 10n ** 18n) / 1e6).toFixed(4)} NEAR`;
 const TGAS = 10n ** 12n;
-/// An account must hold about 0.001 NEAR per Tgas it attaches, so calls attach what they need: the audit recomputes a
-/// whole shuffle (about 117 Tgas), everything else stays under 20.
-const gasFor = (method) => (method === "audit" ? 180n : 40n) * TGAS;
+/// An account must hold about 0.001 NEAR per Tgas it attaches, so calls attach what they need: checking a shuffle
+/// proof is the one heavy call (about 215 Tgas burnt), everything else stays under 20 Tgas.
+const gasFor = (method) => (method === "shuffle" ? 260n : 40n) * TGAS;
 const WASM = process.env.POKER_WASM ?? path.join(__dirname, "../poker/target/wasm32-unknown-unknown/release/deedlords_poker.wasm");
+/// What a seat pays on top of its stake for the match's permanent record (the contract's RECORD_FEE).
+const RECORD_FEE = 2n * 10n ** 21n;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const CARD = (card) => "23456789TJQKA"[card % 13] + "cdhs"[Math.floor(card / 13)];
 
@@ -41,8 +45,8 @@ async function call(account, contractId, methodName, args, deposit = 0n) {
       return outcome;
     } catch (e) {
       const text = String(e && (e.message || e));
-      if (attempt >= 6 || !/429|Rate limit|timeout|Timeout|ECONNRESET|fetch failed|Exceeded the/.test(text)) throw e;
-      await sleep(1500 * (attempt + 1));
+      if (attempt >= 9 || !/429|Rate limit|timeout|Timeout|ECONNRESET|fetch failed|Exceeded the/.test(text)) throw e;
+      await sleep(3000 * (attempt + 1));
     }
   }
 }
@@ -54,7 +58,8 @@ async function refused(promise, words) {
 }
 
 async function run({ contractId, accounts, stake, explorer }) {
-  const { newKeys, keyProof, openDeck, shuffle, shares, tableKey } = await import("../../games/poker/crypto.ts");
+  const { newKeys, keyProof, openDeck, shares, tableKey } = await import("../../games/poker/crypto.ts");
+  const { shuffle } = await import("../../games/poker/shuffle.ts");
   const { duty, holeCards, holeAt, betOptions, toBase64, fromBase64 } = await import("../../games/poker/seat.ts");
   /// A read, tried again when the public RPC answers 429.
   const view = async (method, args) => {
@@ -62,8 +67,8 @@ async function run({ contractId, accounts, stake, explorer }) {
       try {
         return await accounts[0].viewFunction({ contractId, methodName: method, args });
       } catch (e) {
-        if (attempt >= 6 || !/429|Rate limit|timeout|Timeout|ECONNRESET|fetch failed/.test(String(e && (e.message || e)))) throw e;
-        await sleep(1500 * (attempt + 1));
+        if (attempt >= 9 || !/429|Rate limit|timeout|Timeout|ECONNRESET|fetch failed/.test(String(e && (e.message || e)))) throw e;
+        await sleep(3000 * (attempt + 1));
       }
     }
   };
@@ -90,11 +95,10 @@ async function run({ contractId, accounts, stake, explorer }) {
     return outcome;
   };
 
-  /// A match and what each seat keeps to itself: its card key and the openings of its shuffles.
+  /// A match and what each seat keeps to itself: its card key.
   const sitDown = async (id, turnSeconds) => {
     const keys = [newKeys(), newKeys()];
-    const openings = [new Map(), new Map()];
-    const stores = [0, 1].map((seat) => ({
+    const store = {
       deck: async (hand, step) => {
         for (let tries = 0; ; tries++) {
           const deck = await view("get_deck", { id, hand, step });
@@ -103,42 +107,63 @@ async function run({ contractId, accounts, stake, explorer }) {
           await sleep(600);
         }
       },
-      saveOpening: (deck, opening) => openings[seat].set(toBase64(deck), opening),
-      loadOpening: (deck) => openings[seat].get(toBase64(deck)) ?? null,
-    }));
+    };
     const proof = (seat) => toBase64(keyProof(keys[seat], accounts[seat].accountId));
     console.log(`match ${id}: ${accounts[0].accountId} against ${accounts[1].accountId}, stake ${fmt(stake)}`);
-    console.log(`  create_match  ${link(await call(accounts[0], contractId, "create_match", { id, stake: stake.toString(), key: proof(0), turn_seconds: turnSeconds }, stake))}`);
-    await refused(call(accounts[1], contractId, "join", { id, key: proof(0) }, stake), /does not show that you know this key/);
-    console.log(`  join          ${link(await call(accounts[1], contractId, "join", { id, key: proof(1) }, stake))}`);
-    return { id, keys, stores, seq: 2 };
+    console.log(`  create_match  ${link(await call(accounts[0], contractId, "create_match", { id, stake: stake.toString(), key: proof(0), turn_seconds: turnSeconds }, stake + RECORD_FEE))}`);
+    await refused(call(accounts[1], contractId, "join", { id, key: proof(1) }, stake), /attach exactly the stake and the record fee/);
+    await refused(call(accounts[1], contractId, "join", { id, key: proof(0) }, stake + RECORD_FEE), /does not show that you know this key/);
+    console.log(`  join          ${link(await call(accounts[1], contractId, "join", { id, key: proof(1) }, stake + RECORD_FEE))}`);
+    return { id, keys, store, seq: 2 };
   };
 
-  /// Plays the hand under way to its end. `bet(view, seat)` answers [action, amount]; `tamper(view, seat, call)` may
-  /// replace a call a seat owes. Returns the last view seen in the audit phase.
+  /// Plays the hand under way until it ends, or until `bet(view, seat)` answers nothing (the seat stops playing).
+  /// `bet` answers [action, amount]; `tamper(view, seat, call)` may try other calls first and returns the call to
+  /// send. Returns what each seat decrypted as its own hole cards and the last transaction.
   const playHand = async (table, bet, tamper = (_view, _seat, owed) => owed) => {
-    const { id, keys, stores } = table;
+    const { id, keys, store } = table;
     const hand = (await read(table)).hand;
-    let mine = [null, null];
-    let audit = null;
+    const mine = [null, null];
+    let last = null;
     for (;;) {
       const now = await read(table);
-      if (!now || now.hand !== hand) return audit;
-      if (now.phase === "audit") audit = now;
+      if (!now || now.hand !== hand) return { mine, last };
       const seat = now.awaited[0];
       if (now.phase === "bet") {
         // Before its first bet a seat can read its own two cards, and nobody else's.
-        mine[seat] ??= holeCards(now, seat, keys[seat], await stores[seat].deck(now.hand, 1));
-        const [action, amount] = bet(now, seat);
-        await move(table, accounts[seat], "act", { id, seat, action, amount: amount ?? null });
+        mine[seat] ??= holeCards(now, seat, keys[seat], await store.deck(now.hand, 1));
+        const answer = bet(now, seat);
+        if (!answer) return { mine, last, stopped: seat };
+        last = link(await move(table, accounts[seat], "act", { id, seat, action: answer[0], amount: answer[1] ?? null }));
         continue;
       }
-      const owed = await tamper(now, seat, await duty(now, seat, keys[seat], stores[seat]));
-      const outcome = await move(table, accounts[seat], owed.method, owed.args).catch((e) => e);
-      if (outcome instanceof Error) return { ...audit, refused: { seat, method: owed.method, text: String(outcome.message) }, mine };
-      if (now.phase === "audit" && now.done.some(Boolean)) return { ...audit, mine, last: link(outcome) };
+      const owed = await tamper(now, seat, await duty(now, seat, keys[seat], store));
+      last = link(await move(table, accounts[seat], owed.method, owed.args));
     }
   };
+
+  /// What the contract's account holds and stores, read until two readings agree (reads may lag a block).
+  const holdings = async (accountId = contractId) => {
+    const read = () => accounts[0].connection.provider.query({ request_type: "view_account", finality: "final", account_id: accountId });
+    for (let last = await read(); ; ) {
+      await sleep(1500);
+      const now = await read();
+      if (now.amount === last.amount && now.storage_usage === last.storage_usage) return { amount: BigInt(now.amount), bytes: now.storage_usage };
+      last = now;
+    }
+  };
+  const before = await holdings();
+
+  // --- A table nobody joins ----------------------------------------------------------------------------------------
+  const lonely = `l-${Date.now().toString(36)}`;
+  const purse = (await holdings(accounts[0].accountId)).amount;
+  await call(accounts[0], contractId, "create_match", { id: lonely, stake: stake.toString(), key: toBase64(keyProof(newKeys(), accounts[0].accountId)) }, stake + RECORD_FEE);
+  await refused(call(accounts[1], contractId, "leave", { id: lonely }), /only an account in a seat may leave/);
+  await call(accounts[0], contractId, "leave", { id: lonely });
+  const spent = purse - (await holdings(accounts[0].accountId)).amount;
+  assert.ok(spent < NEAR(0.005), `closing a table nobody joined cost ${fmt(spent)}: the stake and the fee must come back`);
+  assert.equal(await view("get_match", { id: lonely }), null);
+  console.log(`table ${lonely}: opened and closed with nobody in it; it cost ${fmt(spent)} of gas`);
 
   // --- An honest match ---------------------------------------------------------------------------------------------
   const honest = await sitDown(`p-${Date.now().toString(36)}`, 120);
@@ -149,19 +174,21 @@ async function run({ contractId, accounts, stake, explorer }) {
     if (now.street === 3 && owed === 0 && seat !== now.button) return ["raise", Math.min(10, raise.max)];
     return ["call"];
   });
-  assert.equal(first.refused, undefined, `an honest call was refused: ${JSON.stringify(first.refused)}`);
-  assert.deepEqual(first.mine, first.hole, "each seat decrypted the very hole cards the contract showed at the end");
-  assert.equal(first.board.length, 5);
   let after = await read(honest);
+  const shown = after.last;
+  assert.deepEqual(first.mine, shown.hole, "each seat decrypted the very hole cards the contract showed at the end");
+  assert.equal(shown.board.length, 5);
+  assert.equal(new Set([...shown.board, ...shown.hole.flat()]).size, 9, "nine different cards");
   const pot = 2 * (6 + 10);
-  const won = first.outcome === "split" ? [100, 100] : [0, 1].map((seat) => 100 - pot / 2 + (first.outcome.won === seat ? pot : 0));
+  const won = shown.outcome === "split" ? [100, 100] : [0, 1].map((seat) => 100 - pot / 2 + (shown.outcome.won === seat ? pot : 0));
   assert.deepEqual(after.chips, won, "the pot went to the better hand");
   assert.deepEqual([after.hand, after.button, after.phase], [1, 1, "shuffle"]);
-  console.log(`  hand 1: board ${first.board.map(CARD).join(" ")}; ${first.hole.map((hole) => hole.map(CARD).join(" ")).join(" against ")}; ${first.outcome === "split" ? "split pot" : `seat ${first.outcome.won} wins ${pot}`}   ${first.last}`);
+  console.log(`  hand 1: board ${shown.board.map(CARD).join(" ")}; ${shown.hole.map((hole) => hole.map(CARD).join(" ")).join(" against ")}; ${shown.outcome === "split" ? "split pot" : `seat ${shown.outcome.won} wins ${pot}`}   ${first.last}`);
 
   const second = await playHand(honest, () => ["fold"]);
   after = await read(honest);
-  assert.deepEqual(second.outcome, { won: 0 }, "seat 1 had the button and folded its small blind");
+  assert.deepEqual(after.last.outcome, { won: 0 }, "seat 1 had the button and folded its small blind");
+  assert.deepEqual(after.last.hole, [[], []], "nobody sees the cards of a folded hand");
   assert.deepEqual(after.chips, [won[0] + 1, won[1] - 1]);
   console.log(`  hand 2: seat 1 folds; chips ${after.chips.join(" : ")}   ${second.last}`);
 
@@ -173,28 +200,35 @@ async function run({ contractId, accounts, stake, explorer }) {
 
   // --- A match with a cheat ----------------------------------------------------------------------------------------
   const crooked = await sitDown(`c-${Date.now().toString(36)}`, 20);
-  const { id, keys, stores } = crooked;
-  const key = tableKey(keys.map((k) => k.publicKey));
-  let wrongShare = false;
-  const cheated = await playHand(crooked, () => ["fold"], async (now, seat, owed) => {
-    if (now.phase === "shuffle" && now.shuffled === 1) {
-      // Seat 1 throws seat 0's shuffle away and encrypts a deck of its own.
-      const fresh = shuffle(openDeck(), key);
-      stores[seat].saveOpening(fresh.deck, fresh.opening);
-      return { method: "shuffle", args: { id, seat, deck: toBase64(fresh.deck) } };
-    }
-    if (now.phase === "deal" && !wrongShare) {
-      wrongShare = true;
-      const forged = shares(keys[1 - seat], await stores[seat].deck(now.hand, 1), holeAt(1 - seat));
-      await refused(call(accounts[seat], contractId, "deal", { id, seat, tokens: toBase64(forged) }), /not made with this seat's key/);
-    }
-    return owed;
-  });
-  assert.ok(wrongShare, "a share made with the other seat's key was refused");
-  assert.deepEqual([cheated.refused.seat, cheated.refused.method], [1, "audit"], "the seat that shuffled falsely cannot open its shuffle");
-  assert.match(cheated.refused.text, /not how the deck was shuffled/);
-  const honestAudit = await duty(await read(crooked), 0, keys[0], stores[0]);
-  if (honestAudit) await move(crooked, accounts[0], honestAudit.method, honestAudit.args);
+  const { id, keys, store } = crooked;
+  const notAShuffle = /does not show that this deck is a shuffle/;
+  const tried = { ownDeck: false, movedCard: false, wrongShare: false };
+  const stopped = await playHand(
+    crooked,
+    // Seat 0 calls; seat 1 then stops playing.
+    (_now, seat) => (seat === 0 ? ["call"] : null),
+    async (now, seat, owed) => {
+      if (now.phase === "shuffle" && now.shuffled === 1) {
+        // Seat 1 throws seat 0's shuffle away and shuffles the open deck: a valid proof, but of another deck.
+        const own = shuffle(openDeck(), tableKey(now.keys.map(fromBase64)));
+        await refused(call(accounts[seat], contractId, "shuffle", { id, seat, deck: toBase64(own.deck), proof: toBase64(own.proof) }), notAShuffle);
+        tried.ownDeck = true;
+        // Or shuffles honestly, then puts the first card in the second card's place too.
+        const deck = fromBase64(owed.args.deck);
+        deck.set(deck.subarray(0, 128), 128);
+        await refused(call(accounts[seat], contractId, "shuffle", { id, seat, deck: toBase64(deck), proof: owed.args.proof }), notAShuffle);
+        tried.movedCard = true;
+      }
+      if (now.phase === "deal" && !tried.wrongShare) {
+        const forged = shares(keys[1 - seat], await store.deck(now.hand, 1), holeAt(1 - seat));
+        await refused(call(accounts[seat], contractId, "deal", { id, seat, tokens: toBase64(forged) }), /not made with this seat's key/);
+        tried.wrongShare = true;
+      }
+      return owed;
+    },
+  );
+  assert.deepEqual(tried, { ownDeck: true, movedCard: true, wrongShare: true }, "every cheat was tried and refused");
+  assert.equal(stopped.stopped, 1);
   await refused(call(accounts[0], contractId, "timeout", { id }), /deadline has not passed/);
   await sleep(22_000);
   const timedOut = await move(crooked, accounts[0], "timeout", { id });
@@ -202,7 +236,17 @@ async function run({ contractId, accounts, stake, explorer }) {
   const forfeit = await view("get_result", { id });
   assert.deepEqual([forfeit.reason, forfeit.chips], ["timeout", [200, 0]]);
   assert.equal(BigInt(forfeit.payouts[0]), stake * 2n);
-  console.log(`  the false shuffle could not be opened; after the deadline ${forfeit.players[0]} takes ${fmt(forfeit.payouts[0])}   ${link(timedOut)}`);
+  console.log(`  a deck that is not a shuffle was refused twice, a forged share once; seat 1 stopped and after the deadline ${forfeit.players[0]} takes ${fmt(forfeit.payouts[0])}   ${link(timedOut)}`);
+
+  // Every stake was paid out and every deck deleted: the contract stores nothing more than the two results, and
+  // keeps exactly the four record fees, which are more than those bytes cost (1 NEAR per 100 KB).
+  const afterAll = await holdings();
+  const [kept, bytes] = [afterAll.amount - before.amount, afterAll.bytes - before.bytes];
+  if (!explorer) assert.ok(bytes < 1200, `the contract stores ${bytes} bytes more than before: something was not deleted`);
+  // On the sandbox nobody else plays, so the sum is exact. On testnet other tables open and settle meanwhile.
+  if (!explorer) assert.ok(kept >= 4n * RECORD_FEE && kept < 4n * RECORD_FEE + NEAR(0.001), `the contract kept ${fmt(kept)}, not the four record fees`);
+  assert.ok(kept >= BigInt(bytes) * 10n ** 19n, "the fees do not cover the storage of the results");
+  console.log(`  the contract kept ${bytes} bytes (two results), which cost ${fmt(BigInt(bytes) * 10n ** 19n)} to store, and ${fmt(kept)} in record fees`);
 
   console.log("  most gas burnt by one call, in Tgas:");
   for (const [method, tgas] of Object.entries(gasOf)) console.log(`    ${method.padEnd(13)} ${tgas.toFixed(1)}`);
@@ -275,7 +319,7 @@ async function testnetRun() {
     console.log(`redeployed ${wasm.length} bytes to ${pokerId} (state kept)`);
   }
   const accounts = [await near.account(`p1.${parent}`), await near.account(`p2.${parent}`)];
-  await run({ contractId: pokerId, accounts, stake: NEAR(0.05), explorer: "https://testnet.nearblocks.io" });
+  await run({ contractId: pokerId, accounts, stake: NEAR(0.1), explorer: "https://testnet.nearblocks.io" });
   console.log(`contract: https://testnet.nearblocks.io/address/${pokerId}\nall good on testnet`);
 }
 

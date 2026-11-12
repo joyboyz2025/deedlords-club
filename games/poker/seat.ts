@@ -4,10 +4,11 @@
 //
 // Imports only ./crypto.ts, so node can load this file as it is.
 
-import { type Keys, cardAt, openDeck, shares, shuffle, tableKey, token } from "./crypto.ts";
+import { type Keys, cardAt, openDeck, shares, tableKey, token } from "./crypto.ts";
+import { shuffle } from "./shuffle.ts";
 
 export type Outcome = { won: number } | "split" | "void";
-export type Phase = "lobby" | "shuffle" | "deal" | "bet" | "open" | "showdown" | "audit";
+export type Phase = "lobby" | "shuffle" | "deal" | "bet" | "open" | "showdown";
 
 /** `get_match` of the contract. Byte strings are base64. */
 export type MatchView = {
@@ -32,7 +33,6 @@ export type MatchView = {
   tokens: string[];
   board: number[];
   hole: number[][];
-  outcome: Outcome | null;
   last: { number: number; board: number[]; hole: number[][]; outcome: Outcome; pot: number } | null;
   /** Counts the changes stored for the match: of two views, the one with the higher number is the newer. */
   seq: number;
@@ -40,12 +40,10 @@ export type MatchView = {
 
 export type Call = { method: string; args: Record<string, unknown> };
 
-/** Where a seat reads the decks from and keeps the openings of its own shuffles until the audit. */
+/** Where a seat reads the decks from. */
 export type SeatStore = {
-  /** The deck after shuffle `step` of hand `hand`, read until the chain has it. */
+  /** The deck after shuffle `step` of hand `hand` (0: the first seat's, kept until the second shuffles; 1: the deck dealt). */
   deck(hand: number, step: number): Promise<Uint8Array>;
-  saveOpening(deck: Uint8Array, opening: Uint8Array): void;
-  loadOpening(deck: Uint8Array): Uint8Array | null;
 };
 
 export const toBase64 = (bytes: Uint8Array): string => btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
@@ -56,26 +54,19 @@ export const holeAt = (seat: number): number[] => [2 * seat, 2 * seat + 1];
 export const streetAt = (street: number): number[] => (street === 1 ? [4, 5, 6] : street === 2 ? [7] : [8]);
 
 /**
- * The call `seat` owes the table now that needs no decision: its shuffle, its decryption shares, or the opening of
- * its shuffle. `null` when the table is not waiting for this seat, or is waiting for its bet.
+ * The call `seat` owes the table now that needs no decision: its shuffle with the proof that it is one, or its
+ * decryption shares. `null` when the table is not waiting for this seat, or is waiting for its bet.
  */
 export async function duty(view: MatchView, seat: number, keys: Keys, store: SeatStore): Promise<Call | null> {
   if (!view.awaited.includes(seat) || view.phase === "bet" || view.phase === "lobby") return null;
-  const call = (method: string, field: string, bytes: Uint8Array): Call => ({ method, args: { id: view.id, seat, [field]: toBase64(bytes) } });
   if (view.phase === "shuffle") {
     const before = view.shuffled === 0 ? openDeck() : await store.deck(view.hand, 0);
-    const { deck, opening } = shuffle(before, tableKey(view.keys.map(fromBase64)));
-    // Kept before the deck is sent: a shuffle that cannot be opened after the hand forfeits the match.
-    store.saveOpening(deck, opening);
-    return call("shuffle", "deck", deck);
-  }
-  if (view.phase === "audit") {
-    const opening = store.loadOpening(await store.deck(view.hand, seat === view.button ? 0 : 1));
-    if (!opening) throw new Error("this browser no longer has the opening of its shuffle");
-    return call("audit", "opening", opening);
+    const { deck, proof } = shuffle(before, tableKey(view.keys.map(fromBase64)));
+    return { method: "shuffle", args: { id: view.id, seat, deck: toBase64(deck), proof: toBase64(proof) } };
   }
   const at = view.phase === "deal" ? holeAt(1 - seat) : view.phase === "open" ? streetAt(view.street) : holeAt(seat);
-  return call(view.phase === "showdown" ? "show" : view.phase, "tokens", shares(keys, await store.deck(view.hand, 1), at));
+  const tokens = shares(keys, await store.deck(view.hand, 1), at);
+  return { method: view.phase === "showdown" ? "show" : view.phase, args: { id: view.id, seat, tokens: toBase64(tokens) } };
 }
 
 /** The seat's own hole cards, once the other seat has dealt them: `null` before that, or for a card that is no card. */
