@@ -84,3 +84,19 @@ export async function rpc<T>(url: string, method: string, params: unknown, optio
     }
   }
 }
+
+/**
+ * A transaction read back by its hash, as the node's `tx` method gives it. An ordinary node forgets a transaction
+ * within a day or so (on 2026-11-13 two of the three public mainnet nodes no longer knew a turn of the afternoon
+ * before); an archival node keeps them all and answers more slowly. So the ordinary nodes are asked first, and the
+ * archive (`archiveUrl`, when there is one) for what they can no longer show.
+ */
+export async function readTransaction<T>(nodes: { rpcUrl: string; archiveUrl: string | null }, hash: string, signerId: string, options: RpcOptions = {}): Promise<T> {
+  const params = { tx_hash: hash, sender_account_id: signerId, wait_until: "NONE" };
+  try {
+    return await rpc<T>(nodes.rpcUrl, "tx", params, options);
+  } catch (error) {
+    if (!nodes.archiveUrl) throw error;
+    return rpc<T>(nodes.archiveUrl, "tx", params, options);
+  }
+}

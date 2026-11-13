@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { rpc, RpcError } from "../lib/chain/rpc.ts";
+import { readTransaction, rpc, RpcError } from "../lib/chain/rpc.ts";
 
 type Reply = { status: number; body?: unknown };
 
@@ -38,6 +38,27 @@ test("what a node says about the request itself is not asked of another node", a
   try {
     await assert.rejects(rpc("https://c.test,https://d.test", "query", {}), (error) => error instanceof RpcError && error.code === "UNKNOWN_ACCOUNT");
     assert.deepEqual(nodes.asked, ["https://c.test"]);
+  } finally {
+    nodes.restore();
+  }
+});
+
+test("a transaction the ordinary nodes have forgotten is read from the archive", async () => {
+  const forgotten = { error: { name: "HANDLER_ERROR", cause: { name: "UNKNOWN_TRANSACTION", info: { requested_transaction_hash: "h" } } } };
+  const nodes = fakeNodes({
+    "https://e.test": [
+      { status: 200, body: forgotten },
+      { status: 200, body: forgotten },
+    ],
+  });
+  try {
+    assert.equal(await readTransaction<string>({ rpcUrl: "https://e.test", archiveUrl: "https://archive.test" }, "h", "signer.near"), "answer of https://archive.test");
+    assert.deepEqual(nodes.asked, ["https://e.test", "https://archive.test"]);
+    // With no archive to turn to, the node's own answer is what the caller gets.
+    await assert.rejects(
+      readTransaction({ rpcUrl: "https://e.test", archiveUrl: null }, "h", "signer.near"),
+      (error) => error instanceof RpcError && error.code === "UNKNOWN_TRANSACTION",
+    );
   } finally {
     nodes.restore();
   }

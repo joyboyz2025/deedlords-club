@@ -9,7 +9,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Arrow, Chain } from "@/components/landing/icons";
 import { CHAIN } from "@/lib/chain/config";
-import { rpc } from "@/lib/chain/rpc";
+import { readTransaction } from "@/lib/chain/rpc";
 import { VERIFICATION_CENTER, checkAttestation, checkProof, cleanProof, proofAnswer, type Check, type TeeProof } from "@/lib/teeProof";
 import { parseAnswer } from "../agent/llm";
 import { cleanPlan } from "../agent/plan";
@@ -22,7 +22,7 @@ const ACCOUNT = /^(?:[0-9a-f]{64}|(?=.{2,64}$)[a-z0-9]+(?:[-_.][a-z0-9]+)*)$/;
 
 async function readTurn(hash: string, from: string): Promise<Read> {
   type Tx = { transaction?: { actions?: { FunctionCall?: { method_name?: string; args?: string } }[] }; status?: { SuccessValue?: string; Failure?: unknown } };
-  const tx = await rpc<Tx>(CHAIN.rpcUrl, "tx", { tx_hash: hash, sender_account_id: from, wait_until: "NONE" }, { timeoutMs: 15_000 });
+  const tx = await readTransaction<Tx>(CHAIN, hash, from, { timeoutMs: 15_000 });
   const call = tx.transaction?.actions?.map((action) => action.FunctionCall).find((one) => one?.method_name === "turn");
   // A relayed turn is a delegate action: its inner call sits one level down.
   const inner =

@@ -13,6 +13,8 @@ export type Network = "mainnet" | "testnet" | "sandbox";
 export type ChainConfig = {
   network: Network;
   rpcUrl: string;
+  /** Nodes that keep every transaction ever made, for reading back one the ordinary nodes have forgotten (rpc.ts `readTransaction`). `null`: none. */
+  archiveUrl: string | null;
   contractId: string;
   /** The chibi characters' NFT contract (contracts/chibi). */
   chibiId: string;
@@ -39,6 +41,7 @@ export const CHAIN: ChainConfig =
     ? {
         network,
         rpcUrl: process.env.NEXT_PUBLIC_NEAR_RPC ?? "https://free.rpc.fastnear.com,https://near.drpc.org,https://rpc.mainnet.near.org",
+        archiveUrl: process.env.NEXT_PUBLIC_NEAR_ARCHIVE_RPC ?? "https://archival-rpc.mainnet.fastnear.com,https://archival-rpc.mainnet.near.org",
         contractId: process.env.NEXT_PUBLIC_DEEDLORDS_CONTRACT ?? "game.deedlords.near",
         chibiId: process.env.NEXT_PUBLIC_DEEDLORDS_CHIBI ?? "chibi.deedlords.near",
         // No helper hands out real NEAR.
@@ -53,6 +56,7 @@ export const CHAIN: ChainConfig =
     ? {
         network,
         rpcUrl: process.env.NEXT_PUBLIC_NEAR_RPC ?? `${devUrl}/rpc`,
+        archiveUrl: null,
         contractId: process.env.NEXT_PUBLIC_DEEDLORDS_CONTRACT ?? "game.sandbox",
         chibiId: process.env.NEXT_PUBLIC_DEEDLORDS_CHIBI ?? "chibi.sandbox",
         devUrl,
@@ -67,6 +71,7 @@ export const CHAIN: ChainConfig =
         // Three public nodes: when one limits this address the next takes over (see rpc.ts). A deployment that expects
         // visitors names a node of its own here.
         rpcUrl: process.env.NEXT_PUBLIC_NEAR_RPC ?? "https://test.rpc.fastnear.com,https://near-testnet.drpc.org,https://rpc.testnet.near.org",
+        archiveUrl: process.env.NEXT_PUBLIC_NEAR_ARCHIVE_RPC ?? "https://archival-rpc.testnet.fastnear.com,https://archival-rpc.testnet.near.org",
         contractId: process.env.NEXT_PUBLIC_DEEDLORDS_CONTRACT ?? "game.deedlords.testnet",
         chibiId: process.env.NEXT_PUBLIC_DEEDLORDS_CHIBI ?? "chibi.deedlords.testnet",
         devUrl: helperUrl,

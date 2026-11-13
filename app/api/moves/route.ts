@@ -5,7 +5,7 @@
 
 import { matchTransactions, type LedgerSources, type MoveTx } from "@/games/co-ty-phu/chain/ledger";
 import { CHAIN } from "@/lib/chain/config";
-import { rpc } from "@/lib/chain/rpc";
+import { readTransaction } from "@/lib/chain/rpc";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +33,7 @@ export async function GET(request: Request): Promise<Response> {
         indexerUrl: CHAIN.indexerUrl,
         contractId: CHAIN.contractId,
         known: cache.known,
-        readTx: (hash, signer) => rpc(CHAIN.rpcUrl, "tx", { tx_hash: hash, sender_account_id: signer, wait_until: "NONE" }, { timeoutMs: 10_000 }),
+        readTx: (hash, signer) => readTransaction(CHAIN, hash, signer, { timeoutMs: 10_000 }),
       }),
     };
     cache.lists.set(id, list);
