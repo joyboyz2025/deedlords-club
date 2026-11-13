@@ -170,21 +170,35 @@ export function checkProof(proof: TeeProof): Check[] {
 /**
  * Whether NEAR AI's public attestation report, asked now with a fresh nonce, names the proof's signer: for the model
  * (a `provider_tee` proof) or for its gateway (a `gateway` proof).
+ *
+ * Asked up to `tries` times. A model is served by more than one machine and a report is made on the spot, with the
+ * nonce just sent: now and then one comes back without the machine that signed (measured on 2026-11-13: two readings
+ * in six of the same, valid proof said "not in today's report", and the next one named it). A signer that a later
+ * report names is attested; only one that none of them names is not.
  */
-export async function checkAttestation(proof: TeeProof, get: typeof fetch = fetch): Promise<Check> {
+export async function checkAttestation(proof: TeeProof, get: typeof fetch = fetch, tries = 3, pauseMs = 1_200): Promise<Check> {
   const label = proof.kind === "provider_tee" ? `NEAR AI attests this signer for ${proof.model}` : "NEAR AI attests this signer for its gateway";
-  try {
-    const nonce = hex(crypto.getRandomValues(new Uint8Array(32)));
-    const query = new URLSearchParams({ model: proof.model, provider: "near", signing_algo: "ecdsa", nonce, include_tls_fingerprint: "false" });
-    const answer = await get(`${NEAR_AI_URL}/attestation/report?${query}`, { headers: { accept: "application/json", "x-no-aliasing": "true" } });
-    if (!answer.ok) return { label, ok: false, detail: `the report could not be read (HTTP ${answer.status})` };
-    const report = (await answer.json()) as { gateway_attestation?: { signing_address?: string }; model_attestations?: { signing_address?: string; model_name?: string }[] };
-    const named =
-      proof.kind === "provider_tee"
-        ? (report.model_attestations ?? []).filter((one) => one.signing_address?.toLowerCase() === proof.signer).length === 1
-        : report.gateway_attestation?.signing_address?.toLowerCase() === proof.signer;
-    return { label, ok: named, detail: named ? "the signer is in today's report, next to its Intel TDX and NVIDIA evidence" : "the signer is not in today's report" };
-  } catch {
-    return { label, ok: false, detail: "NEAR AI did not answer" };
+  let last: Check = { label, ok: false, detail: "NEAR AI did not answer" };
+  for (let attempt = 0; attempt < tries; attempt++) {
+    if (attempt > 0) await new Promise((done) => setTimeout(done, pauseMs));
+    try {
+      const nonce = hex(crypto.getRandomValues(new Uint8Array(32)));
+      const query = new URLSearchParams({ model: proof.model, provider: "near", signing_algo: "ecdsa", nonce, include_tls_fingerprint: "false" });
+      const answer = await get(`${NEAR_AI_URL}/attestation/report?${query}`, { headers: { accept: "application/json", "x-no-aliasing": "true" } });
+      if (!answer.ok) {
+        last = { label, ok: false, detail: `the report could not be read (HTTP ${answer.status})` };
+        continue;
+      }
+      const report = (await answer.json()) as { gateway_attestation?: { signing_address?: string }; model_attestations?: { signing_address?: string; model_name?: string }[] };
+      const named =
+        proof.kind === "provider_tee"
+          ? (report.model_attestations ?? []).some((one) => one.signing_address?.toLowerCase() === proof.signer)
+          : report.gateway_attestation?.signing_address?.toLowerCase() === proof.signer;
+      if (named) return { label, ok: true, detail: "the signer is in today's report, next to its Intel TDX and NVIDIA evidence" };
+      last = { label, ok: false, detail: `the signer is not in today's report (asked ${attempt + 1} ${attempt === 0 ? "time" : "times"})` };
+    } catch {
+      last = { label, ok: false, detail: "NEAR AI did not answer" };
+    }
   }
+  return last;
 }

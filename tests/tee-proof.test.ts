@@ -102,3 +102,23 @@ test("advice from a NEAR AI model comes with its proof, ready for the turn trans
   const other = (await advise(match, seat, { llm: { baseUrl: "https://api.example.com/v1", apiKey: "k", model: "m", label: "m" }, fetch: (async () => new Response(JSON.stringify({ id: "x", choices: [{ message: { content: JSON.stringify({ plan: PLAN, reason: "r" }) } }] }))) as typeof fetch }))!;
   assert.equal(other.proof ?? null, null);
 });
+
+test("a signer that a second report names is attested; one that no report names is not", async () => {
+  const { checkAttestation } = await import("../lib/teeProof.ts");
+  const proof = { v: 1, model: "Qwen/Test", chat: "chatcmpl-1", kind: "provider_tee", algo: "ecdsa", signer: "0xabc", sig: "0x", req: "", res: "" } as never;
+  const reports = (...answers: unknown[]) => {
+    let asked = 0;
+    const get = (async () => new Response(JSON.stringify(answers[Math.min(asked++, answers.length - 1)]), { status: 200 })) as unknown as typeof fetch;
+    return { get, asked: () => asked };
+  };
+  const without = { model_attestations: [{ signing_address: "0xdef" }] };
+  const withIt = { model_attestations: [{ signing_address: "0xDEF" }, { signing_address: "0xABC" }] };
+  // A report made on the spot may leave out the machine that signed: the next one is asked.
+  const second = reports(without, withIt);
+  assert.equal((await checkAttestation(proof, second.get, 3, 1)).ok, true);
+  assert.equal(second.asked(), 2);
+  const never = reports(without);
+  const refused = await checkAttestation(proof, never.get, 3, 1);
+  assert.deepEqual([refused.ok, never.asked()], [false, 3]);
+  assert.match(refused.detail, /not in today's report \(asked 3 times\)/);
+});

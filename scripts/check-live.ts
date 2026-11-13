@@ -51,12 +51,16 @@ type Tx = {
   status: { SuccessValue?: string; Failure?: unknown };
 };
 
+// What is found is kept and printed at the end: a public node or NEAR AI's report may fail to answer once, and then
+// everything is read a second time before anything is called a failure.
 let failed = 0;
+let printed: string[] = [];
+const say = (text: string) => printed.push(text);
 const line = (ok: boolean, what: string, found = "") => {
   if (!ok) failed++;
-  console.log(`  ${ok ? "✓" : "✗"} ${what}${found ? `\n      ${found}` : ""}`);
+  say(`  ${ok ? "✓" : "✗"} ${what}${found ? `\n      ${found}` : ""}`);
 };
-const head = (title: string) => console.log(`\n${title}`);
+const head = (title: string) => say(`\n${title}`);
 const near = (yocto: bigint) => `${(Number(yocto / 10n ** 18n) / 1e6).toFixed(5)} NEAR`;
 const bytes = (base64: string | undefined) => Uint8Array.from(atob(base64 ?? ""), (char) => char.charCodeAt(0));
 const json = (call: Call | undefined): Record<string, unknown> => {
@@ -160,7 +164,7 @@ async function aiTurn(one: { hash: string; signer: string }) {
   );
   const attested = await checkAttestation(proof);
   line(attested.ok, attested.label, attested.detail);
-  console.log(`      ${link(one.hash)}`);
+  say(`      ${link(one.hash)}`);
 }
 
 async function payout() {
@@ -179,7 +183,7 @@ async function payout() {
     paid.map((receipt) => `${near(BigInt(receipt.receipt?.Action?.actions?.find((action) => action.Transfer)?.Transfer?.deposit ?? "0"))} to ${receipt.receiver_id}`).join(", ") ||
       "no transfer found",
   );
-  console.log(`      ${spent(tx)}; ${link(PAYOUT.hash)}`);
+  say(`      ${spent(tx)}; ${link(PAYOUT.hash)}`);
 }
 
 const [hash, signer] = process.argv.slice(2);
@@ -191,12 +195,19 @@ const steps: [string, () => Promise<void>][] = [
   ["AI turn", () => aiTurn(hash && signer ? { hash, signer } : AI_TURN)],
   ["payout", payout],
 ];
-for (const [name, step] of steps) {
-  try {
-    await step();
-  } catch (error) {
-    line(false, `${name}: could not be read`, error instanceof Error ? error.message : String(error));
+for (let reading = 0; reading < 2; reading++) {
+  failed = 0;
+  printed = [];
+  for (const [name, step] of steps) {
+    try {
+      await step();
+    } catch (error) {
+      line(false, `${name}: could not be read`, error instanceof Error ? error.message : String(error));
+    }
   }
+  if (failed === 0) break;
+  if (reading === 0) await new Promise((done) => setTimeout(done, 4_000));
 }
+console.log(printed.join("\n"));
 console.log(failed === 0 ? "\nEvery check passed." : `\n${failed} check${failed === 1 ? "" : "s"} did not pass.`);
 process.exit(failed === 0 ? 0 : 1);
