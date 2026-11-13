@@ -212,10 +212,14 @@ export class ChainClient {
    * `pipelined`: a transaction is only handed to the node before the next one may be signed, and its result is waited
    * for apart, so several can be on their way at once. For an account many requests send from (a server's).
    */
-  session(accountId: string, pair: KeyPair, options: { pipelined?: boolean } = {}): Session {
-    return new Session(this, accountId, pair, options.pipelined ?? false);
+  session(accountId: string, pair: KeyPair, options: { pipelined?: boolean; passedOverAfterMs?: number } = {}): Session {
+    return new Session(this, accountId, pair, options.pipelined ?? false, options.passedOverAfterMs);
   }
 }
+
+/** A transaction the chain still does not know after this long, while its key's nonce has moved on, was passed over. */
+const PASSED_OVER_AFTER_MS = 6_000;
+const passedOver = (error: unknown): boolean => error instanceof RpcError && error.code === "INVALID_TRANSACTION" && /passed over/.test(error.detail);
 
 export class Session {
   readonly accountId: string;
@@ -224,12 +228,14 @@ export class Session {
   private readonly pipelined: boolean;
   private nonce: bigint | null = null;
   private last: Promise<unknown> = Promise.resolve();
+  private readonly passedOverAfterMs: number;
 
-  constructor(client: ChainClient, accountId: string, pair: KeyPair, pipelined = false) {
+  constructor(client: ChainClient, accountId: string, pair: KeyPair, pipelined = false, passedOverAfterMs = PASSED_OVER_AFTER_MS) {
     this.client = client;
     this.accountId = accountId;
     this.pair = pair;
     this.pipelined = pipelined;
+    this.passedOverAfterMs = passedOverAfterMs;
   }
 
   get publicKey(): Uint8Array {
@@ -270,8 +276,20 @@ export class Session {
    */
   sendTo(receiverId: string, actions: Action[], about: { delegatedTo?: string } = {}): Promise<Outcome> {
     if (!this.pipelined) return this.inTurn(() => this.retried((fresh) => this.sendOnce(receiverId, actions, fresh, true)));
-    const handed = this.inTurn(() => this.retried((fresh) => this.sendOnce(receiverId, actions, fresh, false)));
-    return handed.then(({ hash }) => this.wait(hash).then((result) => outcomeOf(result, hash, about.delegatedTo)));
+    // Handed over in turn, waited for apart. One the chain passed over (see `wait`) is signed and handed over again.
+    const once = async (): Promise<Outcome> => {
+      const { hash, nonce } = await this.inTurn(() => this.retried((fresh) => this.sendOnce(receiverId, actions, fresh, false)));
+      return outcomeOf(await this.wait(hash, nonce), hash, about.delegatedTo);
+    };
+    const again = async (left: number): Promise<Outcome> => {
+      try {
+        return await once();
+      } catch (error) {
+        if (left <= 0 || !passedOver(error)) throw error;
+        return again(left - 1);
+      }
+    };
+    return again(2);
   }
 
   /**
@@ -343,10 +361,17 @@ export class Session {
 
   /** Signs and sends. `untilRun`: waits for the result; otherwise returns once the node has taken the transaction. */
   private async sendOnce(receiverId: string, actions: Action[], fresh: boolean, untilRun: true): Promise<Outcome>;
-  private async sendOnce(receiverId: string, actions: Action[], fresh: boolean, untilRun: false): Promise<{ hash: string }>;
-  private async sendOnce(receiverId: string, actions: Action[], fresh: boolean, untilRun: boolean): Promise<Outcome | { hash: string }> {
+  private async sendOnce(receiverId: string, actions: Action[], fresh: boolean, untilRun: false): Promise<{ hash: string; nonce: bigint }>;
+  private async sendOnce(receiverId: string, actions: Action[], fresh: boolean, untilRun: boolean): Promise<Outcome | { hash: string; nonce: bigint }> {
     const { rpcUrl } = this.client.config;
     if (this.nonce === null || fresh) this.nonce = await this.readNonce();
+    else if (this.pipelined) {
+      // A server's key signs on other servers too (each request of a host like Vercel may run on its own): the nonce
+      // kept here may be behind what they have used. The chain's is read before every signature, and the larger kept:
+      // ours when a transaction of ours is still on its way, the chain's when somebody else has signed since.
+      const onChain = await this.readNonce();
+      if (onChain > this.nonce) this.nonce = onChain;
+    }
     const nonce = this.nonce + 1n;
     const { hash, bytes } = signTransaction(
       {
@@ -375,26 +400,60 @@ export class Session {
         this.nonce = null; // not accepted: read the nonce again next time
         throw error;
       }
-      if (untilRun) result = await this.wait(hash);
+      if (untilRun) result = await this.wait(hash, nonce);
     }
     this.nonce = nonce;
-    return result ? outcomeOf(result, hash) : { hash };
+    return result ? outcomeOf(result, hash) : { hash, nonce };
   }
 
-  private async wait(hash: string): Promise<TxResult> {
-    const until = Date.now() + 90_000;
+  /**
+   * Waits until the transaction has run. `nonce`: the one it was signed with. Two servers signing with the same key at
+   * the same moment both read the same nonce; the node takes both transactions, the chain runs one and passes the
+   * other over without a word, and asking after it answers "unknown" for ever (at a free poker table, where the
+   * sponsor relays a guest's shares while it sends the house's own, this left a seat waiting ninety seconds and ruled
+   * late). So once it has been unknown for a while, the key is looked at: if its nonce has reached ours and the chain
+   * still does not know our transaction, another one took its place, and this throws the error a stale nonce throws,
+   * for the caller to sign again.
+   */
+  private async wait(hash: string, nonce?: bigint): Promise<TxResult> {
+    const { rpcUrl } = this.client.config;
+    const started = Date.now();
+    const until = started + 90_000;
+    let looked = 0;
     for (;;) {
       try {
-        return await rpc<TxResult>(this.client.config.rpcUrl, "tx", { tx_hash: hash, sender_account_id: this.accountId, wait_until: "EXECUTED_OPTIMISTIC" }, { timeoutMs: 30_000 });
+        return await rpc<TxResult>(rpcUrl, "tx", { tx_hash: hash, sender_account_id: this.accountId, wait_until: "EXECUTED_OPTIMISTIC" }, { timeoutMs: 30_000 });
       } catch (error) {
         const pending = error instanceof RpcError && (error.code === "TIMEOUT_ERROR" || error.code === "UNKNOWN_TRANSACTION" || error.code === "TIMEOUT");
         if (!pending || Date.now() > until) {
           this.nonce = null;
           throw error;
         }
+        if (nonce !== undefined && Date.now() - started >= this.passedOverAfterMs && Date.now() - looked >= Math.min(2_000, this.passedOverAfterMs)) {
+          looked = Date.now();
+          const onChain = await this.client.accessKeyNonce(this.accountId, this.pair.publicKey).catch(() => null);
+          if (onChain !== null && onChain >= nonce && !(await this.known(hash))) {
+            this.nonce = null;
+            throw new RpcError(`transaction ${hash} was passed over: another one took its nonce`, "INVALID_TRANSACTION", { detail: "InvalidNonce: passed over" });
+          }
+        }
         await sleep(300);
       }
     }
+  }
+
+  /** Whether the chain has the transaction at all, run or not. Asked twice, a moment apart: a node may be a block behind. */
+  private async known(hash: string): Promise<boolean> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) await sleep(Math.min(700, this.passedOverAfterMs));
+      try {
+        await rpc<TxResult>(this.client.config.rpcUrl, "tx", { tx_hash: hash, sender_account_id: this.accountId, wait_until: "NONE" }, { timeoutMs: 10_000 });
+        return true;
+      } catch (error) {
+        if (!(error instanceof RpcError && error.code === "UNKNOWN_TRANSACTION")) return true; // not a "no": keep waiting
+      }
+    }
+    return false;
   }
 }
 
