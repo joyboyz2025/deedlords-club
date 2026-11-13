@@ -365,8 +365,8 @@ turn(match, seat, {
           <FareTable />
         </section>
 
-        <section className="lp-sec lp-gates" aria-labelledby="lp-gates">
-          <h2 id="lp-gates">Board from the wallet you already have</h2>
+        <section className="lp-sec lp-boarding" aria-labelledby="lp-boarding">
+          <h2 id="lp-boarding">Board from the wallet you already have</h2>
           <p className="lp-lede">The club runs on NEAR. You do not have to start there.</p>
           <ul className="lp-gate-list">
             <li>
