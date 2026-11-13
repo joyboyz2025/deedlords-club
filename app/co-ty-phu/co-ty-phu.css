@@ -116,6 +116,22 @@
   color: #b3261e;
 }
 
+/* Giving up, asked once more inside the menu. */
+.tp-quit {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1.5px solid #c8352a;
+  border-radius: 14px;
+}
+
+.tp-quit p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+
 .tp-btn--big {
   width: 100%;
   min-height: 52px;

@@ -150,6 +150,8 @@ export class ChainRoom {
   private idleTurn: { key: string; since: number; after: number } | null = null;
   /** Somebody else moves for the viewer (their agent): the room makes no move of its own. */
   private held = false;
+  /** The viewer gave up while their roll was on its way: sent when it has landed. */
+  private giveUp = false;
   private stopped = false;
   private sent: MoveTx[] = [];
   /** The transaction (and the re-read after it) in progress. One at a time. */
@@ -216,6 +218,11 @@ export class ChainRoom {
   readonly send = (message: ClientMessage): void => {
     const action = toAction(message);
     const match = this.chain;
+    // Giving up while a roll is on its way: not lost, sent as soon as the roll has landed (`occupy`).
+    if (action === "Resign" && match && this.caller && !this.result && this.dicePending && match.meta.status === "playing") {
+      this.giveUp = true;
+      return;
+    }
     if (!action || !match || !this.caller || this.result || this.dicePending || match.meta.status !== "playing") return;
     const seat = seatOf(match.meta, this.accountId);
     if (seat === null) return;
@@ -345,6 +352,10 @@ export class ChainRoom {
       .finally(() => {
         this.working = null;
         this.emit();
+        if (this.giveUp && !this.dicePending) {
+          this.giveUp = false;
+          this.send({ t: "resign" });
+        }
         this.kick();
         this.endIdleTurn();
       });

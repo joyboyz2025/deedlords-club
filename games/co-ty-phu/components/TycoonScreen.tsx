@@ -616,6 +616,8 @@ function Game({
 }) {
   const [selected, setSelected] = useState<number | null>(null);
   const [sheet, setSheet] = useState<Sheet>(null);
+  /** Give up was pressed in the menu: the menu asks once more. */
+  const [quitting, setQuitting] = useState(false);
   const [showResult, setShowResult] = useState(true);
   // Mặc định khóa màn hình: camera đứng yên nhìn cả bàn, không tự xoay theo quân cho khỏi chóng mặt. Ai mở khóa thì camera tự bám theo lượt.
   const [locked, setLocked] = useState(true);
@@ -671,7 +673,10 @@ function Game({
   const trades = active && view.phase === "playing" && !chain;
 
   if (has3D) {
-    const close = () => setSheet(null);
+    const close = () => {
+      setSheet(null);
+      setQuitting(false);
+    };
     return (
       <div className="tp-game3d">
         <div className="tp-stage">
@@ -781,18 +786,31 @@ function Game({
                 <button type="button" className="tp-btn" onClick={() => setSheet({ kind: "rules" })}>
                   Rules
                 </button>
-                {chain?.resign && active && view.phase === "playing" && (
-                  <button
-                    type="button"
-                    className="tp-btn tp-btn--quit"
-                    onClick={() => {
-                      if (!window.confirm("Give up this match? Your cities go back to the bank and you take the last place. This cannot be undone.")) return;
-                      chain.resign?.();
-                      close();
-                    }}
-                  >
+                {/* Asked again here, in the sheet, not with the browser's own dialog: the browsers inside wallets and
+                    chat apps do not show that one, and the button then did nothing at all. */}
+                {chain?.resign && active && view.phase === "playing" && !quitting && (
+                  <button type="button" className="tp-btn tp-btn--quit" onClick={() => setQuitting(true)}>
                     Give up
                   </button>
+                )}
+                {chain?.resign && active && view.phase === "playing" && quitting && (
+                  <div className="tp-quit" role="group" aria-label="Give up this match?">
+                    <p>Give up this match? Your cities go back to the bank and you take the last place. This cannot be undone.</p>
+                    <button
+                      type="button"
+                      className="tp-btn tp-btn--quit"
+                      onClick={() => {
+                        chain.resign?.();
+                        setQuitting(false);
+                        close();
+                      }}
+                    >
+                      Yes, give up
+                    </button>
+                    <button type="button" className="tp-btn" onClick={() => setQuitting(false)}>
+                      Keep playing
+                    </button>
+                  </div>
                 )}
                 {view.phase === "ended" && !showResult && (
                   <button
