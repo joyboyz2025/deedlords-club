@@ -56,6 +56,31 @@ Copied unchanged unless they are listed under "Changed during extraction":
 - Extraction of the property game into this standalone repo
 - Rules engine aligned with `docs/ENGINE-RULES.md` for the Rust port: board and English card texts loaded from `shared/board.json`; integer `cityRents`; every random value through an injectable `Rng` (documented Fisher–Yates, dice drawn only after a roll is legal); cards drawn with replacement (`decks` removed); `round` and `maxRounds`; Blitz rules (deal, build once per city per turn, `builtThisTurn`, 75% house value); English log texts. New `tools/diff/` (snapshot, seeded recording Rng, trace generator with coverage table; `npm run diff:gen`, `npm run diff:check`) and tests for all of the above.
 
+## The chain, poker and everything else (in-window, 2026-11-10 to 2026-11-14)
+
+Nothing listed here existed before the hackathon or was copied from another project. All of it was written in this
+repository with an AI coding assistant (Claude Code) at the owner's direction; the commit history from `2c263be`
+(2026-11-10) on is its record.
+
+- **Contracts:** the Rust port of the board game's rules (`contracts/engine`), the board-game contract
+  (`contracts/deedlords`), the characters as NFTs (`contracts/chibi`), poker (`contracts/poker`: BN254 arithmetic on
+  NEAR's `alt_bn128` host functions, the verifier of the shuffle proof, heads-up play; `contracts/poker-table`: tables
+  of two to nine seats, side pots, free tables), and the scripts that test and deploy them (`contracts/sandbox`).
+- **Poker's cryptography in the browser** (`games/poker/crypto.ts`, `shuffle.ts`): ElGamal over BN254, the prover of
+  the shuffle, Chaum-Pedersen and Schnorr proofs, on `@noble/curves`. The shuffle proof follows the published
+  Terelius-Wikström construction as the CHVote specification writes it out; the code is this project's own.
+- **The chain client** (`lib/chain/`): RPC with failover, keys, transactions and delegate actions encoded by hand,
+  session keys, NEAR Connect wallets, an EVM wallet's signature turned into a NEAR key, 1Click quotes and payments.
+- **Free play** (`app/api/relay`, `app/api/free`, `games/co-ty-phu/chain/freeDesk.ts`, `relayRules.ts`), sign-in
+  through NEAR Auth, the shared sign-in and top bar (`components/hall/`).
+- **AI agents** (`games/co-ty-phu/agent/`, `games/poker/table/decide.ts`, `lib/agentKey.ts`) and the TEE proofs of
+  their moves (`lib/teeProof.ts`, `/verify`).
+- **Pages:** the landing, `/play` and its lobby, the poker tables, `/agents`, `/account`, `/character`, `/shop`,
+  `/bag`, `/verify`. The board's own in-game screen (`TycoonScreen.tsx`, `Board3D.tsx`) is the copied one, changed to
+  read a chain match.
+- **Mainnet:** deployed on 2026-11-13 by the owner with `contracts/sandbox/mainnet.js` (accounts and code hashes in
+  the README).
+
 ## Deedlords Arena (in-window, 2026-11-11)
 
 A second game, written in this repo during the hackathon window. Nothing of it was copied from the earlier platform or from another project. Commits `7912f3b`, `530eb0d`, `aea0424`.

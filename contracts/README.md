@@ -1,6 +1,26 @@
 # Deedlords contracts
 
-Two crates in one Cargo workspace:
+Deployed on NEAR mainnet under `deedlords.near` (read on 2026-11-13; `npm run check:live` at the repository root
+reads them again):
+
+| Account | Crate | Code hash |
+|---|---|---|
+| `game.deedlords.near` | `deedlords/` | `Ha6nhaKnZ8p4SyGrvhgzniXNujjhbwfi3WKobcwMv5o6` |
+| `poker.deedlords.near` | `poker-table/` | `7gBmMKnAkiroQJsMa1NnEoogPTotqsnEHiFzk6KRPb5Y` |
+| `chibi.deedlords.near` | `chibi/` | `BxzvTicT3UR8VcocQL7tDMW3D29jSTbfRGAWB6L7158C` |
+
+On testnet under `deedlords.testnet`: `game.`, `pokertable.` (`poker-table/`), `poker.` (`poker/`), `chibi.`, `arena.`.
+`sandbox/mainnet.js plan` prints every transaction a mainnet deployment or upgrade would sign, `rehearse` runs the same
+steps on a local near-sandbox, `run --yes` sends them; an upgrade keeps the contract's state.
+
+The rest of this file is about the board game's contract. The poker contracts document themselves at the top of their
+sources: `poker/src/shuffle.rs` (the shuffle proof and its verifier), `poker/src/curve.rs` (BN254 through NEAR's
+`alt_bn128` host functions), `poker-table/src/lib.rs` (a table of two to nine seats: keys, shuffles, shares, bets,
+deadlines, free tables), `poker-table/src/pots.rs` (side pots). Each is its own Cargo workspace:
+`cargo test --manifest-path poker/Cargo.toml`, `cargo test --manifest-path poker-table/Cargo.toml` (about eight minutes:
+one hand of nine seats is played with real proofs).
+
+The crates:
 
 | Crate | What it is |
 |---|---|
