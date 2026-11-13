@@ -55,6 +55,11 @@ export function hasWalletAccount(): boolean {
   return readStored<Stored>(SIGNED_IN) !== null;
 }
 
+/** The connected wallet account's id, read from what this browser keeps: nothing is opened or asked of the wallet. */
+export function storedWalletAccount(): string | null {
+  return readStored<Stored>(SIGNED_IN)?.accountId ?? null;
+}
+
 /** The session of the connected account, or `null` when nobody is connected or the key is not on the account. */
 export async function openWalletSession(): Promise<WalletAccount | null> {
   const stored = readStored<Stored>(SIGNED_IN);

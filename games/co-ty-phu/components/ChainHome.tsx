@@ -30,7 +30,7 @@ import { armAgent, useAgent } from "../chain/useAgent";
 import { useFreeSponsor } from "../chain/useFree";
 import { approvesInWindow, sendStake, usePlayer, type Player } from "../chain/usePlayer";
 import { Arrow } from "@/components/landing/icons";
-import { AgentStub, DeparturesBoard, Hall, PassengerStub } from "./Desk";
+import { AgentStub, CheckIn, DeparturesBoard, Hall, PassengerStub } from "./Desk";
 import { TopUp } from "./TopUp";
 
 const REFRESH_MS = 3_000;
@@ -81,7 +81,7 @@ export function ChainHome() {
     <Hall page="play" account={player === undefined ? undefined : player && { accountId: player.accountId, balance: state.balance }}>
       <div className="fd-hall">
         <section className="fd-wall">
-          <h1 className="fd-line">Pick a flight, or open one.</h1>
+          <h1 className="fd-line">{player === null ? "Check in, then pick a flight." : "Pick a flight, or open one."}</h1>
           <p className="fd-lede">
             The contract holds every match on this board. Stakes are {CHAIN.network === "mainnet" ? "real NEAR" : "test NEAR"}
             {limits && limits.fee_bps > 0 ? `; it keeps ${formatBps(limits.fee_bps)} of each pot` : ""}.
@@ -99,27 +99,30 @@ export function ChainHome() {
           <DeparturesBoard matches={matches} offline={offline} linkTo={linkTo} you={player?.accountId ?? null} />
         </section>
         <aside className="fd-ticket" aria-label="Your ticket">
-          <PassengerStub state={state} helper={helper} freePlay={Boolean(sponsor)} />
-          <AgentStub desk={desk} signedIn={Boolean(player)} />
-          <FlightStub
-            player={player ?? null}
-            balance={state.balance}
-            helper={helper}
-            limits={limits}
-            linkTo={linkTo}
-            sponsor={sponsor ?? null}
-            onFunded={() => void state.refreshBalance()}
-          />
+          {player === null ? (
+            // Nobody signed in: the club's one sign-in step lies on the desk. The stubs are dealt once it is done.
+            <CheckIn state={state} helper={helper} />
+          ) : (
+            <>
+              <PassengerStub state={state} helper={helper} freePlay={Boolean(sponsor)} compact />
+              <FlightStub
+                player={player ?? null}
+                balance={state.balance}
+                helper={helper}
+                limits={limits}
+                linkTo={linkTo}
+                sponsor={sponsor ?? null}
+                onFunded={() => void state.refreshBalance()}
+              />
+              <AgentStub desk={desk} signedIn={Boolean(player)} compact />
+            </>
+          )}
         </aside>
       </div>
     </Hall>
   );
 }
 
-/**
- * The last stub: opening a match. A game account or a wallet picks the stake; a helper's test account takes the
- * helper's own. Where somebody sponsors play, the first choice is a free table: nothing staked, no NEAR needed.
- */
 /** The models this server offers for agents (GET /api/agent/playbook); empty while read, or when none is configured. */
 function useOfferedModels(): string[] {
   const [models, setModels] = useState<string[]>([]);
@@ -136,6 +139,20 @@ function useOfferedModels(): string[] {
   return models;
 }
 
+/** How a table is played: against the house's agents, with friends in a room, or for a stake. */
+type Mode = "ai" | "friends" | "stake";
+const MODES: Record<Mode, { name: string; line: string }> = {
+  ai: { name: "vs AI", line: "Free" },
+  friends: { name: "Friends", line: "Free room" },
+  stake: { name: "Stake", line: "Win NEAR" },
+};
+const roundsWords = (rounds: number) => (rounds >= TO_THE_END ? "to the end" : `${rounds} rounds`);
+
+/**
+ * The stub that starts a game, built like a casual game's play screen: pick how to play, press one button. Everything
+ * else has a default and folds under "Table options". Signed out, the button seats a guest first and then opens the
+ * table. A helper's test account takes the helper's own stake.
+ */
 function FlightStub({
   player,
   balance,
@@ -147,20 +164,23 @@ function FlightStub({
 }: {
   player: Player | null;
   balance: bigint | null | undefined;
-  /** NEAR was brought to the account: read its balance again. */
-  onFunded: () => void;
   helper: DevConfig | null;
   limits: Limits | null;
   linkTo: (id: string) => string;
   /** The account that pays for free tables, `null` when nobody does. */
   sponsor: string | null;
+  /** NEAR was brought to the account: read its balance again. */
+  onFunded: () => void;
 }) {
   const router = useRouter();
-  // `null`: not chosen yet, so the first offer stands: a free table where there is one.
+  const modes: Mode[] = sponsor ? ["ai", "friends", "stake"] : ["stake"];
+  const [picked, setPicked] = useState<Mode | null>(null);
+  const mode = picked !== null && modes.includes(picked) ? picked : modes[0];
+  // `null`: not chosen yet, so the first chip stands.
   const [chosen, setChosen] = useState<number | null>(null);
   // A stake of the visitor's own, typed in NEAR: it stands instead of the chips while it is filled in.
   const [typed, setTyped] = useState("");
-  const [opponent, setOpponent] = useState<FreeOpponent>("agent");
+  const [typing, setTyping] = useState(false);
   const [rounds, setRounds] = useState(TO_THE_END);
   const [seatCount, setSeatCount] = useState(SEAT_COUNTS[0]);
   // The house's agents at a free table: one model each, picked from what this server offers.
@@ -189,44 +209,19 @@ function FlightStub({
     }
   };
 
-  if (player?.via === "helper") {
-    const withHelper = (match: NewMatch) => run(async () => (await devCreateMatch({ ...match, player: player.accountId })).id);
-    return (
-      <section className="fd-stub" aria-label="Open a match">
-        <h2 className="fd-stub__title">Flight</h2>
-        <p className="fd-small">
-          The helper on this machine signs for its test accounts
-          {helper ? `: ${formatNear(helper.stake)} NEAR a seat.` : "."}
-        </p>
-        <button type="button" className="fd-go" disabled={opening} onClick={() => withHelper({ kind: "duel", open: true })}>
-          {opening ? "Opening…" : "Open a duel"} <Arrow size={20} />
-        </button>
-        {helper?.solo && (
-          <button type="button" className="fd-pill" disabled={opening} onClick={() => withHelper({ kind: "solo" })}>
-            Play the house instead
-          </button>
-        )}
-        {problem && (
-          <p className="fd-problem" role="alert">
-            {problem}
-          </p>
-        )}
-      </section>
-    );
-  }
-
-  const stakes = [...(sponsor ? [0] : []), ...STAKES.filter((amount) => limits === null || near(amount) <= BigInt(limits.max_stake))];
+  const stakes = STAKES.filter((amount) => limits === null || near(amount) <= BigInt(limits.max_stake));
   const largest = limits === null ? 1 : Number(BigInt(limits.max_stake) / 10n ** 21n) / 1000;
   const own = ownStake(typed, largest);
   const preset = chosen !== null && stakes.includes(chosen) ? chosen : (stakes[0] ?? STAKES[0]);
-  const stake = typed.trim() && "amount" in own ? own.amount : preset;
-  const typedProblem = typed.trim() && "problem" in own ? own.problem : null;
-  // A stake typed in, even one not taken yet, is never a free table.
-  const free = stake === 0 && !typed.trim();
+  const free = mode !== "stake";
+  const ownTyped = typing && typed.trim() !== "";
+  const stake = free ? 0 : ownTyped && "amount" in own ? own.amount : preset;
+  const typedProblem = !free && ownTyped && "problem" in own ? own.problem : null;
+  const opponent: FreeOpponent = mode === "ai" ? "agent" : "friend";
   const cost = near(stake) + STORAGE_DEPOSIT;
-  // Against the house agent: two seats, and the game starts as soon as the visitor sits. Any other table is a room:
-  // whoever opens it hosts it, the seats fill as people come, and the game starts when the host says so.
-  const room = !(free && opponent === "agent");
+  // Against the house agent: the game starts as soon as the visitor sits. Any other table is a room: whoever opens it
+  // hosts it, the seats fill as people come, and the game starts when the host says so.
+  const room = mode !== "ai";
   const seats = room ? seatCount : 1 + agentModels.length;
   const terms = {
     stake: near(stake),
@@ -255,129 +250,113 @@ function FlightStub({
       await sendStake(player!, openDuelCalls(id, terms));
       return id;
     });
+  if (player?.via === "helper") {
+    const withHelper = (match: NewMatch) => run(async () => (await devCreateMatch({ ...match, player: player.accountId })).id);
+    return (
+      <section className="fd-stub" aria-label="Open a match">
+        <h2 className="fd-stub__title">Flight</h2>
+        <p className="fd-small">
+          The helper on this machine signs for its test accounts
+          {helper ? `: ${formatNear(helper.stake)} NEAR a seat.` : "."}
+        </p>
+        <button type="button" className="fd-go" disabled={opening} onClick={() => withHelper({ kind: "duel", open: true })}>
+          {opening ? "Opening…" : "Open a duel"} <Arrow size={20} />
+        </button>
+        {helper?.solo && (
+          <button type="button" className="fd-pill" disabled={opening} onClick={() => withHelper({ kind: "solo" })}>
+            Play the house instead
+          </button>
+        )}
+        {problem && (
+          <p className="fd-problem" role="alert">
+            {problem}
+          </p>
+        )}
+      </section>
+    );
+  }
+
+  const label = opening
+    ? !player
+      ? "Opening…"
+      : player.via === "wallet"
+        ? "Waiting for your wallet…"
+        : approvesInWindow(player) && !free
+          ? "Waiting for your approval…"
+          : free
+            ? "Opening your table…"
+            : "Opening the match…"
+    : mode === "ai"
+      ? agentModels.length === 1
+        ? "Play vs AI"
+        : `Play vs ${agentModels.length} AIs`
+      : mode === "friends"
+        ? `Open a room of ${seats}`
+        : `Open for ${formatNear(cost.toString())} NEAR`;
+  const options = mode === "ai" ? `${agentModels.length} ${agentModels.length === 1 ? "AI" : "AIs"} · ${roundsWords(rounds)}` : `${seats} seats · ${roundsWords(rounds)}`;
 
   return (
-    <section className="fd-stub" aria-label="Open a match">
-      <h2 className="fd-stub__title">Flight</h2>
-      <div className="fd-pick">
-        <span id="fd-stake">Stake a seat</span>
-        <div className="fd-segments" role="group" aria-labelledby="fd-stake">
-          {stakes.map((amount) => (
-            <button
-              key={amount}
-              type="button"
-              aria-pressed={!typed.trim() && amount === stake}
-              onClick={() => {
-                setChosen(amount);
-                setTyped("");
-              }}
-            >
-              {amount === 0 ? "Free" : amount}
+    <section className="fd-stub" aria-label="Start a game">
+      <h2 className="fd-stub__title">New game</h2>
+      {modes.length > 1 && (
+        <div className="fd-modes" role="group" aria-label="How to play">
+          {modes.map((entry) => (
+            <button key={entry} type="button" aria-pressed={entry === mode} onClick={() => setPicked(entry)}>
+              <b>{MODES[entry].name}</b>
+              <small>{MODES[entry].line}</small>
             </button>
           ))}
         </div>
-      </div>
-      <div className="fd-pick fd-own">
-        <label htmlFor="fd-own-stake">Or your own</label>
-        <span className="fd-own__box">
-          <input
-            id="fd-own-stake"
-            type="text"
-            inputMode="decimal"
-            autoComplete="off"
-            placeholder={`${SMALLEST_STAKE} to ${largest}`}
-            value={typed}
-            aria-invalid={typedProblem ? true : undefined}
-            aria-describedby={typedProblem ? "fd-own-problem" : undefined}
-            onChange={(event) => setTyped(event.target.value.replace(",", "."))}
-          />
-          <span aria-hidden="true">NEAR</span>
-        </span>
-      </div>
+      )}
+      {!free && (
+        <div className="fd-pick fd-pick--stake">
+          <span id="fd-stake">A seat costs</span>
+          <div className="fd-segments" role="group" aria-labelledby="fd-stake">
+            {stakes.map((amount) => (
+              <button
+                key={amount}
+                type="button"
+                aria-pressed={!ownTyped && amount === stake}
+                onClick={() => {
+                  setChosen(amount);
+                  setTyping(false);
+                }}
+              >
+                {amount}
+              </button>
+            ))}
+            <button type="button" aria-pressed={ownTyped} aria-expanded={typing} onClick={() => setTyping(!typing)}>
+              Other
+            </button>
+          </div>
+        </div>
+      )}
+      {!free && typing && (
+        <div className="fd-pick fd-own">
+          <label htmlFor="fd-own-stake">Your own stake</label>
+          <span className="fd-own__box">
+            <input
+              id="fd-own-stake"
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
+              autoFocus
+              placeholder={`${SMALLEST_STAKE} to ${largest}`}
+              value={typed}
+              aria-invalid={typedProblem ? true : undefined}
+              aria-describedby={typedProblem ? "fd-own-problem" : undefined}
+              onChange={(event) => setTyped(event.target.value.replace(",", "."))}
+            />
+            <span aria-hidden="true">NEAR</span>
+          </span>
+        </div>
+      )}
       {typedProblem && (
         <p id="fd-own-problem" className="fd-problem fd-own__problem" role="alert">
           {typedProblem}
         </p>
       )}
-      {free && (
-        <div className="fd-pick">
-          <span id="fd-opponent">Opponent</span>
-          <div className="fd-segments" role="group" aria-labelledby="fd-opponent">
-            <button type="button" aria-pressed={opponent === "agent"} onClick={() => setOpponent("agent")}>
-              AI agent
-            </button>
-            <button type="button" aria-pressed={opponent === "friend"} onClick={() => setOpponent("friend")}>
-              A friend
-            </button>
-          </div>
-        </div>
-      )}
-      {free && opponent === "agent" && (
-        <>
-          <div className="fd-pick">
-            <span id="fd-agents">AI opponents</span>
-            <div className="fd-segments" role="group" aria-labelledby="fd-agents">
-              {[1, 2, 3].map((count) => (
-                <button key={count} type="button" aria-pressed={count === agentModels.length} onClick={() => setAgentCount(count)}>
-                  {count}
-                </button>
-              ))}
-            </div>
-          </div>
-          {agentModels.map((model, i) => (
-            <label key={i} className="fd-field">
-              <span>AI {i + 1}</span>
-              <select
-                value={pickable.includes(model) ? model : RULES_MODEL}
-                onChange={(event) => {
-                  setPickedModels(true);
-                  setAgentModels((now) => now.map((old, j) => (j === i ? event.target.value : old)));
-                }}
-              >
-                {pickable.map((name) => (
-                  <option key={name} value={name}>
-                    {name === RULES_MODEL ? "No model: house numbers" : name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))}
-        </>
-      )}
-      {room && (
-        <div className="fd-pick">
-          <span id="fd-seats">Seats</span>
-          <div className="fd-segments" role="group" aria-labelledby="fd-seats">
-            {SEAT_COUNTS.map((count) => (
-              <button key={count} type="button" aria-pressed={count === seatCount} onClick={() => setSeatCount(count)}>
-                {count}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      <div className="fd-pick">
-        <span id="fd-rounds">Rounds</span>
-        <div className="fd-segments" role="group" aria-labelledby="fd-rounds">
-          {ROUND_CHOICES.map((count) => (
-            <button key={count} type="button" aria-pressed={count === rounds} onClick={() => setRounds(count)}>
-              {roundsLabel(count)}
-            </button>
-          ))}
-        </div>
-      </div>
-      {free ? (
-        <dl className="fd-sum">
-          <div>
-            <dt>You pay</dt>
-            <dd>Nothing</dd>
-          </div>
-          <div>
-            <dt>Gas</dt>
-            <dd>On the house</dd>
-          </div>
-        </dl>
-      ) : (
+      {!free && (
         <dl className="fd-sum">
           <div>
             <dt>Pot for {seats} seats</dt>
@@ -394,35 +373,85 @@ function FlightStub({
         </dl>
       )}
       <button type="button" className="fd-go" disabled={!player || opening || short || stakes.length === 0 || Boolean(typedProblem)} onClick={open}>
-        {!player
-          ? free
-            ? "Check in to play for free"
-            : "Check in to open a match"
-          : opening
-            ? player.via === "wallet"
-              ? "Waiting for your wallet…"
-              : approvesInWindow(player) && !free
-                ? "Waiting for your approval…"
-                : free
-                  ? "Opening your table…"
-                  : "Opening the match…"
-            : free
-              ? "Open a free table"
-              : `Open for ${formatNear(cost.toString())} NEAR`}
-        {player && !opening && <Arrow size={20} />}
+        {label}
+        {!opening && <Arrow size={20} />}
       </button>
-      {free && (
-        <p className="fd-fine">
-          {opponent === "agent"
-            ? `The same contract, the same dice, every move a transaction. The house opens the table, sits ${agentModels.length === 1 ? "its AI agent" : `${agentModels.length} AI agents, each on its own model,`} across from you and pays the gas. Nothing is staked, so nothing is won.`
-            : "The house opens the table and pays the gas. You host the room: send its link, and start the game when everybody is in. Nothing is staked, so nothing is won."}
-        </p>
-      )}
+      <details className="fd-more">
+        <summary>
+          <span>
+            <b>Table options</b>
+            <small>{options}</small>
+          </span>
+        </summary>
+        <div className="fd-more__body">
+          {mode === "ai" && (
+            <>
+              <div className="fd-pick">
+                <span id="fd-agents">AI opponents</span>
+                <div className="fd-segments" role="group" aria-labelledby="fd-agents">
+                  {[1, 2, 3].map((count) => (
+                    <button key={count} type="button" aria-pressed={count === agentModels.length} onClick={() => setAgentCount(count)}>
+                      {count}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {agentModels.map((model, i) => (
+                <label key={i} className="fd-field">
+                  <span>AI {i + 1} plays by</span>
+                  <select
+                    value={pickable.includes(model) ? model : RULES_MODEL}
+                    onChange={(event) => {
+                      setPickedModels(true);
+                      setAgentModels((now) => now.map((old, j) => (j === i ? event.target.value : old)));
+                    }}
+                  >
+                    {pickable.map((name) => (
+                      <option key={name} value={name}>
+                        {name === RULES_MODEL ? "No model: house numbers" : name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </>
+          )}
+          {room && (
+            <div className="fd-pick">
+              <span id="fd-seats">Seats</span>
+              <div className="fd-segments" role="group" aria-labelledby="fd-seats">
+                {SEAT_COUNTS.map((count) => (
+                  <button key={count} type="button" aria-pressed={count === seatCount} onClick={() => setSeatCount(count)}>
+                    {count}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="fd-pick">
+            <span id="fd-rounds">Rounds</span>
+            <div className="fd-segments" role="group" aria-labelledby="fd-rounds">
+              {ROUND_CHOICES.map((count) => (
+                <button key={count} type="button" aria-pressed={count === rounds} onClick={() => setRounds(count)}>
+                  {roundsLabel(count)}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </details>
       {/* Too little on the account for this stake: the way to the missing NEAR, right here. */}
-      {player && !free && short && !typedProblem && <TopUp player={player} balance={balance} needed={needed} onArrived={onFunded} />}
-      {player && !free && !short && (
+      {player && !free && short && !typedProblem ? (
+        <TopUp player={player} balance={balance} needed={needed} onArrived={onFunded} />
+      ) : (
         <p className="fd-fine">
-          {`Your stake and a ${formatNear(STORAGE_DEPOSIT.toString())} NEAR storage deposit, which comes back when the match is settled, less about 0.012. ${approvesInWindow(player) ? "You approve the stake in the sign-in window. " : ""}You host the room: send its link, and start the game when everybody is in.`}
+          {mode === "ai"
+            ? "Nothing staked, nothing won, no NEAR needed. The house opens the table, seats its AI and pays the gas; every move is still a transaction."
+            : mode === "friends"
+              ? "Nothing staked and the house pays the gas. You host the room: send its link, then start when everybody is in."
+              : !player
+                ? `A stake needs NEAR on your account: ${formatNear(cost.toString())} NEAR for this seat, with its storage deposit.`
+                : `Your stake and a ${formatNear(STORAGE_DEPOSIT.toString())} NEAR storage deposit, which comes back at settlement, less about 0.012. ${approvesInWindow(player) ? "You approve the stake in the sign-in window. " : ""}You host the room: send its link, then start.`}
         </p>
       )}
       {problem && (

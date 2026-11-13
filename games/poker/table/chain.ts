@@ -11,7 +11,7 @@ import { parseSecretKey } from "@/lib/chain/keys";
 import { type FunctionCall, jsonArgs } from "@/lib/chain/transaction";
 import { readStored, writeStored } from "@/lib/storage";
 import { canRelay, post, relay } from "../../co-ty-phu/chain/free";
-import { exportGameKey, openKeySession } from "../../co-ty-phu/chain/keySession";
+import { pokerAccount } from "../pokerAccount";
 import { type Keys, keyProof, keysFromSecret, newKeys, secretText } from "../crypto";
 import { MAX_SEATS, RECORD_FEE, STAKE, TABLE_CHAIN, TABLE_CONTRACT, gasFor } from "./contract";
 import { type Call, type SeatStore, type TableResult, type TableView, fromBase64, toBase64 } from "./seat";
@@ -22,11 +22,10 @@ export const tableClient = new ChainClient(TABLE_CHAIN);
 export const TURN_SECONDS = 300;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** This browser's game account as a signer for the table contract, or `null` when there is none. */
+/** The account this browser plays poker as (pokerAccount.ts), as a signer for the table contract, or `null` when there is none. */
 export function tableSession(): Session | null {
-  const account = openKeySession();
-  const key = exportGameKey();
-  return account && key ? tableClient.session(account.accountId, parseSecretKey(key)) : null;
+  const account = pokerAccount();
+  return account ? tableClient.session(account.accountId, parseSecretKey(account.secretKey)) : null;
 }
 
 /** The free tables this page has seen: their calls go through the sponsor. A table's stake never changes. */

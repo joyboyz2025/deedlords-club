@@ -75,7 +75,20 @@ function writeSent(accountId: string, sent: Sent | null) {
   }
 }
 
-export function TopUp({ player, balance, needed, onArrived }: { player: Player; balance: bigint | null | undefined; needed: bigint; onArrived: () => void }) {
+export function TopUp({
+  player,
+  balance,
+  needed,
+  onArrived,
+  made = "the stake, a storage deposit and a hold for gas, of which the deposit and the hold come back",
+}: {
+  player: Player;
+  balance: bigint | null | undefined;
+  needed: bigint;
+  onArrived: () => void;
+  /** What `needed` is made of, in the words of the game that asks (the board game's by default). */
+  made?: string;
+}) {
   const want = topUpAmount(needed, balance);
   const holds = typeof balance === "bigint" ? `${formatNear(balance.toString(), 2)} NEAR` : "nothing yet";
   const evmAddress = player.via === "key" && player.source === "evm" ? player.evmAddress : null;
@@ -87,8 +100,7 @@ export function TopUp({ player, balance, needed, onArrived }: { player: Player; 
   return (
     <div className="fd-topup" role="group" aria-label="Add NEAR for this stake">
       <p className="fd-topup__lead">
-        <b>Add {formatNear(want.toString(), 2)} NEAR to play this stake.</b> Your game account holds {holds}; this table needs {formatNear(needed.toString(), 2)}: the stake, a
-        storage deposit and a hold for gas, of which the deposit and the hold come back.
+        <b>Add {formatNear(want.toString(), 2)} NEAR to play this stake.</b> Your game account holds {holds}; this table needs {formatNear(needed.toString(), 2)}: {made}.
       </p>
       {byWallet && evmAddress ? (
         <WalletPay player={player} evmAddress={evmAddress} want={want} onArrived={onArrived} />

@@ -1,0 +1,421 @@
+/*
+ * The one top row of Deedlords Club (components/hall/HallBar.tsx), the same on every page. It names its own colours
+ * and sizes, because it sits on three grounds that each declare theirs (.lp, .fd, .pk).
+ */
+
+.hb {
+  --hb-gold: #f8c93f;
+  --hb-cream: #fff7e6;
+  --hb-soft: #f0d9c4;
+  --hb-ink: #2a1208;
+  position: relative;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: clamp(14px, 2.4vw, 32px);
+  min-height: 60px;
+  max-width: 1440px;
+  margin: 0 auto;
+  color: var(--hb-cream);
+  font-size: 15.5px;
+}
+
+/* On a ground with no side padding of its own (the landing, the Arena's trailer). */
+.hb[data-padded] {
+  width: min(1440px, 100%);
+  padding: max(8px, env(safe-area-inset-top)) clamp(16px, 3.2vw, 44px) 0;
+}
+
+.hb a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.hb svg {
+  flex: none;
+}
+
+.hb :focus-visible {
+  outline: 3px solid var(--hb-gold);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* The wordmark: gold slab under the foil plate; the club's second word smaller. */
+.hb-mark {
+  flex: none;
+  font-family: var(--font-alfa), serif;
+  font-size: clamp(24px, 2.4vw, 32px);
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background:
+    var(--hb-foil) 0 0 / 420px auto,
+    var(--hb-gold);
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(0 2px 1.5px rgb(74 30 4 / 70%));
+}
+
+.hb a.hb-mark {
+  color: transparent;
+}
+
+.hb-mark small {
+  font-size: 0.56em;
+  letter-spacing: 0.04em;
+}
+
+/* The games on one side of the rule, the visitor's own pages on the other. */
+.hb nav {
+  display: flex;
+  align-items: center;
+  gap: clamp(14px, 2vw, 28px);
+  color: var(--hb-soft);
+  font-weight: 600;
+}
+
+.hb nav i {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  background: rgb(255 247 230 / 24%);
+}
+
+.hb nav a {
+  padding: 8px 0 5px;
+  border-bottom: 3px solid transparent;
+  transition:
+    border-color 0.2s,
+    color 0.2s;
+}
+
+.hb nav a:hover,
+.hb nav a[aria-current="page"] {
+  border-color: var(--hb-gold);
+  color: var(--hb-cream);
+}
+
+/* The same club on the other network, when it is live: the last link of the row. */
+.hb nav a.hb-othernet {
+  color: var(--hb-gold);
+}
+
+.hb-end {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+/* The network this page plays on, and the way to the other one. */
+.hb-net {
+  display: inline-flex;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1.5px solid var(--hb-gold);
+  border-radius: 999px;
+  background: rgb(52 10 8 / 78%);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.hb-net > * {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 7px 12px;
+  color: var(--hb-soft);
+}
+
+.hb-net i {
+  font-style: normal;
+}
+
+.hb-net > [aria-current="true"] {
+  background: var(--hb-gold);
+  color: var(--hb-ink);
+}
+
+.hb-net > [aria-disabled="true"] {
+  opacity: 0.75;
+  cursor: default;
+}
+
+.hb-net > a:hover {
+  color: var(--hb-cream);
+}
+
+.hb-net small {
+  padding: 1px 6px;
+  border: 1px solid currentcolor;
+  border-radius: 999px;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Who is signed in: the character's face, the name, what the account holds. */
+.hb-acct {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 14px 0 5px;
+  border: 1.5px solid rgb(255 244 220 / 45%);
+  border-radius: 999px;
+  color: var(--hb-cream);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  list-style: none;
+  transition: border-color 0.2s;
+}
+
+.hb-acct::-webkit-details-marker {
+  display: none;
+}
+
+.hb-acct:hover,
+.hb-menu[open] > .hb-acct {
+  border-color: var(--hb-cream);
+}
+
+.hb-acct b {
+  max-width: 12em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hb-acct small {
+  color: var(--hb-soft);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Nobody signed in, or no character yet: the one gold chip of the row. */
+.hb a.hb-acct--in {
+  padding: 0 14px;
+  border-color: var(--hb-gold);
+  background: var(--hb-gold);
+  color: var(--hb-ink);
+}
+
+/* The face is drawn the same wherever the bar sits (the hall's own pages also style it in chibi.css). */
+.hb .cb-face {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--size, 28px);
+  height: var(--size, 28px);
+  overflow: hidden;
+  border: 2px solid rgb(248 201 63 / 70%);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, #7a1712, #2a120a);
+  color: var(--hb-gold);
+  font-family: var(--font-alfa), serif;
+  font-size: calc(var(--size, 28px) * 0.4);
+  line-height: 1;
+}
+
+.hb .cb-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.hb-menu {
+  position: relative;
+}
+
+.hb-menu__list {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  min-width: 232px;
+  padding: 8px;
+  border: 1.5px solid rgb(248 201 63 / 55%);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #2a120a, #201009);
+  box-shadow: 0 14px 28px rgb(20 4 2 / 45%);
+  font-size: 14.5px;
+}
+
+.hb-menu__list p {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 8px 12px 10px;
+  border-bottom: 1px solid rgb(255 247 230 / 14%);
+}
+
+.hb-menu__list p strong {
+  overflow: hidden;
+  font-size: 15.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hb-menu__list p small {
+  color: var(--hb-soft);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hb-menu__list a,
+.hb-menu__list button {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--hb-cream);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hb-menu__list a:hover,
+.hb-menu__list button:hover,
+.hb-menu__list a[aria-current="page"] {
+  background: rgb(255 247 230 / 8%);
+}
+
+.hb-menu__list button {
+  margin-top: 4px;
+  border-top: 1px solid rgb(255 247 230 / 14%);
+  border-radius: 0 0 10px 10px;
+  color: var(--hb-soft);
+}
+
+/* Signed in with no character yet: a gold dot on the link that makes one. */
+.hb nav a[data-ask]::after {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--hb-gold);
+  vertical-align: 0.55em;
+}
+
+/* A cramped row never pushes the account off the screen: the pages give way and scroll. */
+.hb nav {
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
+.hb nav::-webkit-scrollbar {
+  display: none;
+}
+
+.hb-end {
+  flex: none;
+}
+
+/* The balance rides in the chip only where one row has room for it; it is always in the chip's menu. */
+@media (max-width: 1359px) {
+  .hb-acct small {
+    display: none;
+  }
+}
+
+.hb[data-twonets] .hb-acct small {
+  display: none;
+}
+
+.hb-acct b {
+  max-width: 9em;
+}
+
+/* Below a laptop's width: the wordmark and who plays on one line, the pages on a second line that scrolls sideways. */
+@media (max-width: 1279px) {
+  .hb {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  .hb nav {
+    order: 3;
+    width: 100%;
+    padding-bottom: 6px;
+  }
+}
+
+@media (max-width: 1099px) {
+  .hb {
+    max-width: 640px;
+  }
+
+  .hb[data-padded] {
+    max-width: none;
+  }
+}
+
+/* A phone: the network's name without "NEAR", and the face alone for the account (the name is in its menu). */
+@media (max-width: 520px) {
+  .hb {
+    gap: 10px;
+  }
+
+  .hb-end {
+    gap: 6px;
+  }
+
+  .hb-net i,
+  .hb-menu .hb-acct > b,
+  .hb a.hb-acct--in svg {
+    display: none;
+  }
+
+  .hb-net > * {
+    padding: 6px 10px;
+  }
+
+  .hb-menu .hb-acct {
+    padding: 0 5px;
+  }
+
+  .hb-menu .hb-acct::after {
+    content: "";
+    width: 7px;
+    height: 7px;
+    margin: 0 6px 3px 2px;
+    border-right: 2px solid var(--hb-soft);
+    border-bottom: 2px solid var(--hb-soft);
+    transform: rotate(45deg);
+  }
+}
+
+@media (max-width: 420px) {
+  .hb-mark {
+    font-size: 21px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hb * {
+    transition: none;
+  }
+}
+
+/* The narrowest phones: the network chip drops its icon so that "Sign in" stays on the wordmark's line. */
+@media (max-width: 420px) {
+  .hb-net svg {
+    display: none;
+  }
+
+  .hb a.hb-acct--in {
+    padding: 0 12px;
+  }
+}

@@ -1,0 +1,195 @@
+/*
+ * Before a hand: the poker lobby and a table waiting for players, cut down to one gold action per screen.
+ * Same forms as the Deedlords desk (app/play/pregame.css). See docs/design/pregame-ux.md.
+ */
+
+.pk-stub.pk-stub--thin {
+  gap: 6px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.pk-stub--thin .pk-stamp {
+  width: 40px;
+  height: 40px;
+  font-size: 15px;
+}
+
+.pk-modes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.pk-modes button {
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  min-height: 60px;
+  padding: 8px 6px;
+  border: 1.5px solid rgb(42 18 8 / 30%);
+  border-radius: 16px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    color 0.2s,
+    border-color 0.2s;
+}
+
+.pk-modes b {
+  font-size: 15.5px;
+  line-height: 1.2;
+}
+
+.pk-modes small {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.pk-modes button:hover {
+  border-color: var(--ink);
+}
+
+.pk-modes button[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--cream);
+}
+
+.pk-modes button[aria-pressed="true"] small {
+  color: var(--soft);
+}
+
+.pk-stub .pk-go {
+  margin-top: 6px;
+}
+
+.pt-picker__other {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.pk-more {
+  border-top: 1.5px solid rgb(42 18 8 / 14%);
+}
+
+.pk-more > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  padding: 4px 0;
+  list-style: none;
+  cursor: pointer;
+}
+
+.pk-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.pk-more > summary::after {
+  content: "";
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-right: 4px;
+  border-right: 2px solid var(--red);
+  border-bottom: 2px solid var(--red);
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 0.2s;
+}
+
+.pk-more[open] > summary::after {
+  transform: translateY(2px) rotate(-135deg);
+}
+
+.pk-more > summary b,
+.pk-more > summary small {
+  display: block;
+}
+
+.pk-more > summary b {
+  color: var(--ink);
+  font-size: 14.5px;
+}
+
+.pk-more > summary small {
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 13px;
+  text-overflow: ellipsis;
+}
+
+.pk-more > summary:focus-visible {
+  outline: 3px solid var(--red);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+.pk-more__body {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 6px;
+}
+
+.pk-more__body .pt-stake {
+  margin-top: 0;
+}
+
+.pk-more__body .pt-picker {
+  grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+}
+
+/* The table's own link, small, under the button that shares it. */
+.pk-invite {
+  contain: inline-size;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pk-stub--thin .pk-balance strong {
+  font-size: 22px;
+}
+
+/* The way back to the wall of tables, at the head of a table. */
+.pk-exit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1.5px solid rgb(255 247 230 / 38%);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--cream);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.pk-exit:hover {
+  border-color: var(--cream);
+}
+
+/* The way to the missing NEAR (the board game's TopUp, drawn by app/play/desk.css) under a poker stake. */
+.pk-topup {
+  display: grid;
+  gap: 8px;
+}
+
+.pk-stub[hidden] {
+  display: none;
+}

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useId, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import goldFoil from "@/assets/plates/gold-foil.webp";
 import paper from "@/assets/plates/strip-paper.png";
-import { Arrow, Bot, Chain, Copy, Gem, NearMark, Plane, Sliders, Spark, User } from "@/components/landing/icons";
+import { Arrow, Bot, Copy, Plane, Sliders, Spark, User } from "@/components/landing/icons";
 import { CHAIN } from "@/lib/chain/config";
 import { MAX_STYLE, MAX_WISH, RULES_MODEL } from "../agent/llm";
 import { BAIL_RULES, BUILD_ORDERS, MAX_CAUTION, MAX_CUSHION, MAX_RESERVE, PRESETS, SELL_ORDERS, describePlaybook, type Playbook } from "../agent/playbook";
@@ -12,13 +12,14 @@ import { MAX_NAME, MAX_RULE, MAX_RULES, instructions } from "../agent/roster";
 import { formatNear, seatNames, shortAccount } from "../chain/adapt";
 import { SMALLEST_STAKE, TURN_SECONDS, near, neededToOpen, roundOf, roundsLabel } from "../chain/calls";
 import { devFund, type DevConfig } from "../chain/devSession";
-import { googleSignInOffered, warmGoogleSignIn } from "../chain/googleSession";
 import { exportGameKey } from "../chain/keySession";
 import { QRCodeSVG } from "qrcode.react";
 import type { ChainListed } from "../chain/types";
 import type { AgentDesk } from "../chain/useAgent";
 import { approvesInWindow, withdraw, type Player, type PlayerState } from "../chain/usePlayer";
 import { ChibiFace } from "../../chibi/components/CharacterTag";
+import { HallBar } from "@/components/hall/HallBar";
+import { SignIn } from "@/components/hall/SignIn";
 import { CrossChain } from "./CrossChain";
 import { NearAiKeyPanel, useNearAi } from "./NearAiKey";
 import { OWN_PREFIX, isOwnModel, modelLabel } from "@/lib/agentKey";
@@ -29,33 +30,6 @@ import { useCharacter, useCharacters } from "../../chibi/useChibi";
 // landing page's: red hall, cream ticket paper, a dark board with a gold hairline.
 
 const problemText = (error: unknown) => (error instanceof Error ? error.message : String(error));
-
-/** Where the mainnet deployment of this site lives, once there is one. Unset: mainnet is shown as not live yet. */
-const MAINNET_URL = process.env.NEXT_PUBLIC_DEEDLORDS_MAINNET_URL?.trim() || null;
-const TESTNET_URL = process.env.NEXT_PUBLIC_DEEDLORDS_TESTNET_URL?.trim() || null;
-
-/**
- * Which NEAR network this page plays on, and the way to the other. A deployment talks to one network; the other is
- * another deployment, linked when it exists and marked as not live when it does not.
- */
-function Network() {
-  const here = CHAIN.network === "sandbox" ? "sandbox" : CHAIN.network;
-  const other = here === "testnet" ? { name: "mainnet", url: MAINNET_URL } : { name: "testnet", url: TESTNET_URL };
-  return (
-    <span className="fd-net" role="group" aria-label="NEAR network">
-      <span aria-current="true" title={`Contract ${CHAIN.contractId}`}>
-        <Chain size={16} /> NEAR {here}
-      </span>
-      {other.url ? (
-        <a href={other.url}>NEAR {other.name}</a>
-      ) : (
-        <span aria-disabled="true" title={`The ${other.name} deployment is not live yet`}>
-          NEAR {other.name} <small>soon</small>
-        </span>
-      )}
-    </span>
-  );
-}
 
 export type HallPage = "play" | "gate" | "agents" | "account" | "character" | "shop" | "bag";
 
@@ -70,6 +44,7 @@ export function Hall({ children, page = "play", account }: { children: ReactNode
     <main
       className="fd"
       data-gate={gate || undefined}
+      data-page={page}
       style={
         {
           "--fd-paper": `url(${paper.src})`,
@@ -77,67 +52,9 @@ export function Hall({ children, page = "play", account }: { children: ReactNode
         } as CSSProperties
       }
     >
-      <header className="fd-top">
-        <Link className="fd-mark" href="/" aria-label="Deedlords Club, home">
-          Deedlords <small>Club</small>
-        </Link>
-        <nav aria-label="Deedlords">
-          <Link href="/play" aria-current={page === "play" || page === "gate" ? "page" : undefined}>
-            Deedlords
-          </Link>
-          <Link href="/poker/tables">Poker</Link>
-          <Link href="/arena">Arena</Link>
-          <i aria-hidden="true" />
-          <Link href="/character" aria-current={page === "character" ? "page" : undefined}>
-            Character
-          </Link>
-          <Link href="/shop" aria-current={page === "shop" ? "page" : undefined}>
-            Shop
-          </Link>
-          <Link href="/bag" aria-current={page === "bag" ? "page" : undefined}>
-            Bag
-          </Link>
-          <Link href="/agents" aria-current={page === "agents" ? "page" : undefined}>
-            Agents
-          </Link>
-        </nav>
-        <div className="fd-top__end">
-          <Network />
-          {account ? (
-            <AccountChip accountId={account.accountId} balance={account.balance} page={page} />
-          ) : (
-            account === null && (
-              <Link className="fd-acct" href="/account">
-                <User size={16} /> Connect
-              </Link>
-            )
-          )}
-        </div>
-      </header>
+      <HallBar current={gate ? "play" : page} account={account} />
       {children}
     </main>
-  );
-}
-
-/**
- * Who is signed in, as the tables show them: their character's face and name (or their short account id), and what
- * they hold. An account with no character yet is asked to make one, on every page of the hall but that one.
- */
-function AccountChip({ accountId, balance, page }: { accountId: string; balance: bigint | null | undefined; page: HallPage }) {
-  const character = useCharacter(accountId);
-  return (
-    <>
-      {character === null && page !== "character" && (
-        <Link className="fd-acct fd-acct--ask" href="/character">
-          <User size={16} /> Make your character
-        </Link>
-      )}
-      <Link className="fd-acct" href="/account" data-in title={accountId}>
-        {character && <ChibiFace character={character} size={26} />}
-        <b>{character?.name ?? shortAccount(accountId)}</b>
-        {typeof balance === "bigint" && <small>{formatNear(balance.toString(), 2)} NEAR</small>}
-      </Link>
-    </>
   );
 }
 
@@ -168,9 +85,26 @@ function winnerTakes(match: ChainListed): string {
 const BOARD_LINES = 7;
 
 /** The matches the contract holds, as a departures board. Every row opens its match. */
-export function DeparturesBoard({ matches, offline, linkTo, you }: { matches: ChainListed[] | null; offline: boolean; linkTo: (id: string) => string; you: string | null }) {
+export function DeparturesBoard({
+  matches: listed,
+  offline,
+  linkTo,
+  you,
+}: {
+  matches: ChainListed[] | null;
+  offline: boolean;
+  linkTo: (id: string) => string;
+  you: string | null;
+}) {
   // Read the characters of everyone seated: the rows then show their names and faces (seatNames looks them up).
-  const characters = useCharacters(matches?.flatMap((match) => match.seats.map((seat) => seat.backer)) ?? []);
+  const characters = useCharacters(listed?.flatMap((match) => match.seats.map((seat) => seat.backer)) ?? []);
+  // What a player can do something about comes first: their own matches, then matches with a seat to take, then the
+  // ones under way. On a phone the board shows the first few and folds the rest under one button.
+  const [unfolded, setUnfolded] = useState(false);
+  const rank = (match: ChainListed) =>
+    you !== null && match.seats.some((seat) => seat.backer === you) ? 0 : match.status === "lobby" && match.seats.some((seat) => seat.backer === null) ? 1 : 2;
+  const matches = listed && [...listed].sort((a, b) => rank(a) - rank(b));
+  const folded = matches !== null && matches.length > BOARD_FOLD && !unfolded;
   return (
     <section className="fd-board" id="departures" aria-label="Matches the contract holds">
       <h2 className="fd-board__title">
@@ -195,13 +129,13 @@ export function DeparturesBoard({ matches, offline, linkTo, you }: { matches: Ch
               <span role="columnheader">Rounds</span>
               <span role="columnheader">Status</span>
             </div>
-            {matches.map((match) => {
+            {matches.map((match, line) => {
               const names = seatNames(match);
               const open = match.seats.filter((seat) => seat.backer === null).length;
               const mine = you !== null && match.seats.some((seat) => seat.backer === you);
               const boarding = match.status === "lobby";
               return (
-                <Link key={match.id} className="fd-row" role="row" href={linkTo(match.id)} data-mine={mine || undefined}>
+                <Link key={match.id} className="fd-row" role="row" href={linkTo(match.id)} data-mine={mine || undefined} data-folded={(folded && line >= BOARD_FOLD) || undefined}>
                   <span className="fd-row__code" role="cell">
                     {match.id}
                   </span>
@@ -256,11 +190,19 @@ export function DeparturesBoard({ matches, offline, linkTo, you }: { matches: Ch
               </div>
             ))}
           </div>
+          {folded && (
+            <button type="button" className="fd-board__more" onClick={() => setUnfolded(true)}>
+              Show all {matches.length} matches
+            </button>
+          )}
         </>
       )}
     </section>
   );
 }
+
+/** On a narrow screen the board shows this many rows before the rest is asked for. */
+const BOARD_FOLD = 4;
 
 function sourceLine(player: Player): string {
   if (player.via === "wallet") return `NEAR wallet · ${player.walletName.replace(/-/g, " ")}`;
@@ -269,6 +211,17 @@ function sourceLine(player: Player): string {
   return player.source === "evm"
     ? `Game account from ${player.evmAddress ? `${player.evmAddress.slice(0, 6)}…${player.evmAddress.slice(-4)}` : "your EVM wallet"}`
     : "Guest account, key kept in this browser";
+}
+
+/** The club's one sign-in ticket, with what the hall adds to it: the local helper's test accounts. */
+export function CheckIn({ state, helper, onWatch }: { state: PlayerState; helper: DevConfig | null; onWatch?: () => void }) {
+  return (
+    <SignIn
+      state={state}
+      onWatch={onWatch}
+      extra={helper && helper.players.length > 0 ? <TestAccounts players={helper.players} current={null} onChange={state.playAs} /> : undefined}
+    />
+  );
 }
 
 /** Below this a game account cannot open the smallest match, and the helper's faucet may top it up. */
@@ -282,26 +235,29 @@ export function PassengerStub({
   helper,
   freePlay = false,
   wallet = false,
+  compact = false,
+  onSignIn,
 }: {
   state: PlayerState;
   helper: DevConfig | null;
   /** Somebody sponsors free tables here: an account with no NEAR can play them. */ freePlay?: boolean;
   /** The account's own page: deposit, withdraw and keys are here. Elsewhere the stub says who plays and points to it. */
   wallet?: boolean;
+  /**
+   * Before a game: one line for who plays and one way to the wallet. Signed out, the ways in fold under one line, since
+   * the stub that opens or joins a table signs a guest in by itself. Sign out, deposit and keys are on the account page.
+   */
+  compact?: boolean;
+  /** For somebody looking on: back to the sign-in step. */
+  onSignIn?: () => void;
 }) {
-  const { player, balance, problem, busy, grant } = state;
+  const { player, balance, problem } = state;
   const [note, setNote] = useState<string | null>(null);
   const [funding, setFunding] = useState(false);
   // The panel under the account: where NEAR comes in, or the form that sends it out.
   const [funds, setFunds] = useState<"deposit" | "withdraw" | "xchain" | null>(null);
   // The account's chibi character: its face and name stand for the account once it has one.
   const character = useCharacter(player?.accountId);
-  // Google sign-in rests on the sponsor: it pays for the one signature and for every move after it.
-  const google = freePlay && googleSignInOffered();
-  useEffect(() => {
-    if (google && player === null) warmGoogleSignIn();
-  }, [google, player]);
-
   if (player === undefined) {
     return (
       <section className="fd-stub" aria-live="polite">
@@ -311,88 +267,26 @@ export function PassengerStub({
     );
   }
 
-  if (player === null && grant) {
+  // Nobody signed in. Before a game the page has already asked (the club's one sign-in step), so this is somebody
+  // looking on: one line, and the way back to that step. Anywhere else, the sign-in ticket itself.
+  if (player === null && compact) {
     return (
-      <section className="fd-stub" aria-label="Finish signing in">
-        <h2 className="fd-stub__title">Passenger</h2>
-        <div className="fd-who">
-          <span className="fd-stamp" aria-hidden="true">
-            G
-          </span>
+      <section className="fd-stub fd-stub--thin" aria-label="Not signed in">
+        <div className="fd-watch">
           <p>
-            <strong title={grant.identity.accountId}>{grant.identity.label}</strong>
-            <small>Your NEAR account: {shortAccount(grant.identity.accountId)}</small>
+            <strong>Watching</strong>
+            <small>Not signed in</small>
           </p>
-        </div>
-        <p className="fd-small">
-          One approval and this browser can play for you. It gets a key that moves your seat in Deedlords and nothing else: it cannot spend, and you are not asked again.
-        </p>
-        <button type="button" className="fd-go" disabled={busy} onClick={state.confirmGoogle}>
-          {busy ? "Waiting for your approval…" : "Approve this browser"}
-        </button>
-        <div className="fd-acts">
-          <button type="button" className="fd-pill fd-pill--quiet" disabled={busy} onClick={state.cancelGoogle}>
-            Cancel
-          </button>
-        </div>
-        {problem && (
-          <p className="fd-problem" role="alert">
-            {problem}
-          </p>
-        )}
-      </section>
-    );
-  }
-
-  if (player === null) {
-    return (
-      <section className="fd-stub" aria-label="Sign in">
-        <h2 className="fd-stub__title">Passenger</h2>
-        <p className="fd-small">
-          {freePlay ? "No wallet and no NEAR needed for a free table. A move never opens a wallet." : "You confirm a stake once. A move never opens a wallet."}
-        </p>
-        <button type="button" className="fd-go" disabled={busy} onClick={state.signInGuest}>
-          <User size={20} /> Play now as guest
-        </button>
-        <p className="fd-fine">A new game account. Its key stays in this browser.</p>
-        <div className="fd-ways">
-          {google && (
-            <button type="button" className="fd-way fd-way--wide" disabled={busy} onClick={state.signInGoogle}>
-              <b className="fd-way__g" aria-hidden="true">
-                G
-              </b>
-              <span>
-                <strong>{busy ? "Signing you in…" : "Continue with Google"}</strong>
-                <small>No wallet. A NEAR account of your own, through NEAR Auth</small>
-              </span>
-            </button>
-          )}
-          <button type="button" className="fd-way" disabled={busy} onClick={state.signInEvm}>
-            <Gem size={20} />
-            <span>
-              <strong>EVM wallet</strong>
-              <small>MetaMask, Rabby, Coinbase</small>
-            </span>
-          </button>
-          {CHAIN.wallets && (
-            <button type="button" className="fd-way" disabled={busy} onClick={state.signInWallet}>
-              <NearMark size={20} />
-              <span>
-                <strong>NEAR wallet</strong>
-                <small>Meteor, Intear, Nightly</small>
-              </span>
+          {onSignIn && (
+            <button type="button" className="fd-pill fd-pill--ink" onClick={onSignIn}>
+              <User size={16} /> Sign in
             </button>
           )}
         </div>
-        {helper && helper.players.length > 0 && <TestAccounts players={helper.players} current={null} onChange={state.playAs} />}
-        {problem && (
-          <p className="fd-problem" role="alert">
-            {problem}
-          </p>
-        )}
       </section>
     );
   }
+  if (player === null) return <CheckIn state={state} helper={helper} />;
 
   const faucet = player.via === "key" && helper?.faucet ? helper.faucet : null;
   const low = balance === null || (balance !== undefined && balance < LOW_BALANCE);
@@ -434,6 +328,69 @@ export function PassengerStub({
       return;
     state.signOut();
   };
+
+  if (compact) {
+    return (
+      <section className="fd-stub fd-stub--thin" aria-label="Your account">
+        <div className="fd-who fd-who--thin">
+          {character ? (
+            <ChibiFace character={character} size={36} />
+          ) : (
+            <span className="fd-stamp" aria-hidden="true">
+              {player.accountId
+                .replace(/[^a-z0-9]/gi, "")
+                .slice(0, 2)
+                .toUpperCase()}
+            </span>
+          )}
+          <p>
+            <strong title={player.accountId}>{character?.name ?? shortAccount(player.accountId)}</strong>
+            <small>{sourceLine(player)}</small>
+          </p>
+          <Link className="fd-balance fd-balance--link" href="/account" data-low={(low && !freePlay) || undefined} aria-label="Your wallet: balance, deposit, sign out">
+            {balance === undefined ? (
+              <small>reading…</small>
+            ) : balance === null ? (
+              <small>{freePlay ? "no NEAR needed" : "not on chain yet"}</small>
+            ) : (
+              <>
+                <strong>{formatNear(balance.toString())}</strong>
+                <small>NEAR</small>
+              </>
+            )}
+            <Arrow size={16} />
+          </Link>
+        </div>
+        {needsFunds &&
+          (faucet ? (
+            <button type="button" className="fd-go" disabled={funding} onClick={fund}>
+              {funding ? "Sending…" : `Get ${formatNear(faucet)} test NEAR`}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="fd-go"
+              onClick={() => copy(player.accountId, `Address copied. Send it ${formatNear(TO_START.toString(), 2)} NEAR or more and this page shows the balance.`)}
+            >
+              <Copy size={18} /> Copy the address to fund it
+            </button>
+          ))}
+        {needsFunds && (
+          <p className="fd-fine">
+            {faucet
+              ? "This account cannot play yet. The local faucet sends it enough for the smallest match."
+              : `This account cannot play yet. The smallest match needs ${formatNear(TO_START.toString(), 2)} NEAR on it: send that much or more from any NEAR wallet${CHAIN.network === "mainnet" ? ", or bring it in from another chain on your account page" : ` (test NEAR on ${CHAIN.network})`}.`}
+          </p>
+        )}
+        {player.via === "helper" && helper && <TestAccounts players={helper.players} current={player.accountId} onChange={state.playAs} />}
+        {(note ?? problem) && (
+          <p className="fd-fine" role="status">
+            {note ?? problem}
+          </p>
+        )}
+      </section>
+    );
+  }
 
   return (
     <section className="fd-stub" aria-label="Your account">
@@ -726,7 +683,7 @@ const SELL_LABELS: Record<Playbook["sell"], string> = {
  * long as they like and any number of rules. The one picked is the one that flies the owner's seat. `roomy`: on a page
  * of its own, with room to write.
  */
-export function AgentStub({ desk, signedIn, roomy = false }: { desk: AgentDesk; signedIn: boolean; roomy?: boolean }) {
+export function AgentStub({ desk, signedIn, roomy = false, compact = false }: { desk: AgentDesk; signedIn: boolean; roomy?: boolean; compact?: boolean }) {
   const { agents, agent, auto, models, save, pick, add, remove, setAuto, write, writing, problem } = desk;
   const [adjusting, setAdjusting] = useState(false);
   const ids = useId();
@@ -739,6 +696,44 @@ export function AgentStub({ desk, signedIn, roomy = false }: { desk: AgentDesk; 
   const told = instructions(agent);
   const setRule = (index: number, rule: string | null) =>
     save({ rules: rule === null ? agent.rules.filter((_, i) => i !== index) : agent.rules.map((old, i) => (i === index ? rule : old)) });
+
+  // Before a game: one switch, the agent it hands the seat to, and the way to the agents' own page.
+  if (compact) {
+    if (!signedIn) return null;
+    return (
+      <section className="fd-stub fd-stub--thin" aria-label="Your AI agent">
+        <div className="fd-copilot">
+          <label className="fd-switch">
+            <input type="checkbox" checked={auto} onChange={(event) => setAuto(event.target.checked)} />
+            <span>
+              Let my agent play <small>from the first roll</small>
+            </span>
+          </label>
+          {agents.length > 1 ? (
+            <select aria-label="The agent that plays your seat" value={agent.id} onChange={(event) => pick(event.target.value)}>
+              {agents.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <b className="fd-copilot__name">
+              <Bot size={16} /> {agent.name}
+            </b>
+          )}
+          <Link className="fd-copilot__edit" href="/agents" aria-label={`Edit ${agent.name} and your other agents`}>
+            <Sliders size={16} /> Agents
+          </Link>
+        </div>
+        <p className="fd-fine">
+          {hasModel ? shown : isOwnModel(agent.model) ? `${shown}, but no NEAR AI key in this browser: fallback numbers` : "Fallback numbers, no model"}
+          {hasModel && (told ? `, told ${told.length.toLocaleString("en-US")} characters of yours.` : ", not told anything yet.")}
+          {!hasModel && "."} You can also hand it your seat at the table.
+        </p>
+      </section>
+    );
+  }
 
   if (!signedIn) {
     return (

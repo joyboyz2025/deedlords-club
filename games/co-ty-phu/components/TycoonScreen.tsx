@@ -236,6 +236,8 @@ export type ChainStage = {
   ledger?: (onClose: () => void) => ReactNode;
   /** Gives up the match for the viewer's seat. Absent for somebody without a seat. */
   resign?: () => void;
+  /** The ways out of the table: the game's lobby and the club's menu. The match goes on without the page. */
+  exit?: { lobby: string; menu: string };
 };
 
 export type AgentTag = { driver: string; reason: string; fallback: boolean };
@@ -260,6 +262,11 @@ export function Stage({ view, offline, send, chain }: { view: View; offline: boo
             <strong>{chain?.label ?? `Room ${view.code}`}</strong>
           </div>
           {view.phase === "playing" && <GameClock view={view} />}
+          {chain?.exit && (
+            <Link className="tp-btn tp-btn--small" href={chain.exit.lobby}>
+              ← Lobby
+            </Link>
+          )}
           <SoundToggle />
         </header>
       )}
@@ -596,6 +603,13 @@ function Game({
                 </svg>
               </button>
             )}
+            {chain?.exit && (
+              <Link className="tp-round" href={chain.exit.lobby} aria-label="Leave the table: back to the lobby" title="Back to the lobby">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 8l-4 4 4 4M6 12h10" />
+                </svg>
+              </Link>
+            )}
             <button type="button" className="tp-round" aria-label="More: trades, mortgages, rules, camera lock, sound" onClick={() => setSheet({ kind: "menu" })}>
               <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
                 <path d="M5 7h14M5 12h14M5 17h14" />
@@ -699,6 +713,19 @@ function Game({
                   </button>
                 )}
               </div>
+              {chain?.exit && (
+                <div className="tp-more__buttons tp-more__exit">
+                  <Link className="tp-btn" href={chain.exit.lobby}>
+                    ← Back to the lobby
+                  </Link>
+                  <Link className="tp-btn" href={chain.exit.menu}>
+                    Club menu
+                  </Link>
+                </div>
+              )}
+              {chain?.exit && view.phase === "playing" && active && (
+                <p className="tp-hint">Leaving does not end the match: the contract moves a seat that is late, and your match stays first on the lobby&apos;s board.</p>
+              )}
               <Log log={log} lines={8} />
               <button type="button" className="tp-btn tp-btn--big" onClick={close}>
                 Close

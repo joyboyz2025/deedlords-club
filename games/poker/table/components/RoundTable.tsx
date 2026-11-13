@@ -28,6 +28,8 @@ export type TableActions = {
   callTime(): void;
   /** Seats house accounts, one after the other, each betting by its model. */
   addHouse(models: string[]): void;
+  /** Back to the wall of tables. The table goes on without the page. */
+  back?(): void;
 };
 
 export type HouseAtTable = {
@@ -314,6 +316,11 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
       <div className="pk-stage">
         <section className="pk-board pk-table" aria-label={`Table ${id}`}>
           <header className="pk-table__head">
+            {on.back && (
+              <button type="button" className="pk-exit" onClick={on.back}>
+                <span aria-hidden="true">←</span> Tables
+              </button>
+            )}
             <h1>
               <span>{reading ? "Table" : inLobby ? `Table of ${count}` : `Hand ${view.hand + 1}`}</span>
             </h1>
@@ -475,48 +482,60 @@ function HousePlanner({ house, free, busy, onAdd }: { house: HouseAtTable; free:
   const [plan, setPlan] = useState<string[]>(() => [first]);
   const count = Math.min(plan.length, Math.max(1, most));
   const setCount = (next: number) => setPlan((before) => Array.from({ length: next }, (_, at) => before[at] ?? house.models[at % Math.max(1, house.models.length)] ?? first));
+  const modelName = (option: string) => (option === "rules" ? "The odds alone (no model)" : option);
+  // One button seats the house with the plan as it stands; how many and which models fold under one line.
   return (
     <div className="pt-house" role="group" aria-label="House seats">
-      <div className="pt-house__head">
-        <b>House seats</b>
-        {most > 1 && (
-          <span className="pt-house__count" role="radiogroup" aria-label="How many house seats">
-            {Array.from({ length: most }, (_, at) => at + 1).map((n) => (
-              <button key={n} type="button" role="radio" aria-checked={count === n} disabled={busy} onClick={() => setCount(n)}>
-                {n}
-              </button>
-            ))}
-          </span>
-        )}
-      </div>
-      {most > 0 &&
-        plan.slice(0, count).map((model, at) => (
-          <label key={at} className="pt-house__seat">
-            <span>House {house.seats.length + at + 1}</span>
-            <select
-              value={model}
-              disabled={busy}
-              onChange={(event) => {
-                const chosen = event.target.value;
-                setPlan((before) => before.map((was, index) => (index === at ? chosen : was)));
-              }}
-            >
-              {house.models.map((option) => (
-                <option key={option} value={option}>
-                  {option === "rules" ? "The odds alone (no model)" : option}
-                </option>
-              ))}
-            </select>
-          </label>
-        ))}
       {most > 0 && (
         <button type="button" className="pk-pill pk-pill--ink" disabled={busy} data-busy={busy || undefined} onClick={() => onAdd(plan.slice(0, count))}>
-          <Bot size={16} /> {house.seating ? `Seating house seat ${house.seating}…` : count === 1 ? "Seat a house seat" : `Seat ${count} house seats`}
+          <Bot size={16} /> {house.seating ? `Seating house seat ${house.seating}…` : count === 1 ? "Seat an AI from the house" : `Seat ${count} AIs from the house`}
         </button>
       )}
-      <p className="pk-fine">
-        A house seat is one of this server&apos;s accounts: it stakes its own NEAR (nothing at a free table), its model bets for it, and it sees only its own two cards.
-      </p>
+      <details className="pk-more">
+        <summary>
+          <span>
+            <b>House seats</b>
+            <small>{most > 0 ? `${count} · ${plan.slice(0, count).map(modelName).join(", ")}` : "none free"}</small>
+          </span>
+        </summary>
+        <div className="pk-more__body">
+          {most > 1 && (
+            <div className="pt-house__head">
+              <b>How many</b>
+              <span className="pt-house__count" role="radiogroup" aria-label="How many house seats">
+                {Array.from({ length: most }, (_, at) => at + 1).map((n) => (
+                  <button key={n} type="button" role="radio" aria-checked={count === n} disabled={busy} onClick={() => setCount(n)}>
+                    {n}
+                  </button>
+                ))}
+              </span>
+            </div>
+          )}
+          {most > 0 &&
+            plan.slice(0, count).map((model, at) => (
+              <label key={at} className="pt-house__seat">
+                <span>House {house.seats.length + at + 1}</span>
+                <select
+                  value={model}
+                  disabled={busy}
+                  onChange={(event) => {
+                    const chosen = event.target.value;
+                    setPlan((before) => before.map((was, index) => (index === at ? chosen : was)));
+                  }}
+                >
+                  {house.models.map((option) => (
+                    <option key={option} value={option}>
+                      {modelName(option)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          <p className="pk-fine">
+            A house seat is one of this server&apos;s accounts: it stakes its own NEAR (nothing at a free table), its model bets for it, and it sees only its own two cards.
+          </p>
+        </div>
+      </details>
     </div>
   );
 }
@@ -603,41 +622,59 @@ function ActionStub({
         {noStake ? "Sit down for free" : `Sit down for ${asNear(view.deposit)}`}
       </button>
     ) : null;
+    if (on.back)
+      body = (
+        <>
+          {body}
+          <div className="pk-acts">
+            <button type="button" className="pk-pill" onClick={on.back}>
+              <span aria-hidden="true">←</span> Back to the tables
+            </button>
+          </div>
+        </>
+      );
   } else if (inLobby) {
     title = isHost ? "Your table" : canStart ? "A free table" : "Waiting for the host";
     line = canStart
       ? filled >= 2
         ? "Start now with the seats taken, or wait for more."
-        : "Send the link, or add a house seat to have an opponent."
+        : "Invite a friend, or seat an AI from the house below."
       : "The table starts when it is full, or when its host starts it.";
+    // One gold action: start once two sit, otherwise bring people in. The link is shared by the phone's own sheet.
+    const invite = (
+      <button
+        type="button"
+        className={canStart && filled >= 2 ? "pk-pill" : "pk-go"}
+        onClick={() => {
+          const copy = () => void navigator.clipboard?.writeText(link).then(() => setCopied(true));
+          if (typeof navigator.share === "function" && window.matchMedia("(pointer: coarse)").matches)
+            navigator.share({ title: "Deedlords Poker", text: "Sit at my poker table", url: link }).catch((error) => error?.name !== "AbortError" && copy());
+          else copy();
+        }}
+      >
+        <Copy size={16} /> {copied ? "Link copied: send it to a friend" : "Invite friends"}
+      </button>
+    );
     body = (
       <>
-        <div className="pk-link">
-          <output aria-label="The link to this table">{link}</output>
-          <button
-            type="button"
-            className="pk-pill pk-pill--ink"
-            onClick={() => {
-              void navigator.clipboard?.writeText(link).then(() => setCopied(true));
-            }}
-          >
-            <Copy size={16} /> {copied ? "Copied" : "Copy"}
-          </button>
-        </div>
-        {canStart && (
+        {canStart && filled >= 2 && (
           <button
             type="button"
             className="pk-go"
-            disabled={locked || filled < 2}
+            disabled={locked}
             data-busy={pressed?.key === "start" || undefined}
             onClick={() => {
               press({ key: "start" });
               on.start();
             }}
           >
-            {filled < 2 ? "Start: needs a second seat" : `Start with ${filled} seats`}
+            Start with {filled} seats
           </button>
         )}
+        <div className="pk-acts">{invite}</div>
+        <p className="pk-invite" title={link}>
+          {link}
+        </p>
       </>
     );
   } else if (toAct && options) {

@@ -4,15 +4,17 @@
 // itself (its shuffles with their proofs, its decryption shares) and asks the player for the bets only. How it looks
 // is in TableView.tsx, Cards.tsx and app/poker/poker.css; this file reads the match and sends the calls.
 
-import Link from "next/link";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import goldFoil from "@/assets/plates/gold-foil.webp";
 import paper from "@/assets/plates/strip-paper.png";
-import { Chain, Copy, Seat, User } from "@/components/landing/icons";
+import { Copy, Seat, User } from "@/components/landing/icons";
+import { HallBar, type HallAccount } from "@/components/hall/HallBar";
+import { SignIn } from "@/components/hall/SignIn";
 import type { Session } from "@/lib/chain/client";
 import { CHAIN } from "@/lib/chain/config";
 import { useCharacters } from "../../chibi/useChibi";
-import { signInAsGuest } from "../../co-ty-phu/chain/keySession";
+import { usePlayer, type Player } from "../../co-ty-phu/chain/usePlayer";
+import { makePokerAccount } from "../pokerAccount";
 import {
   POKER_CONTRACT,
   STAKE,
@@ -58,7 +60,7 @@ const SENT: Record<string, (view: MatchView) => string> = {
 };
 
 /** The page: the red hall, the top row, and the two plates the stylesheet paints with. */
-export function Shell({ children }: { children: ReactNode }) {
+export function Shell({ children, account }: { children: ReactNode; account?: HallAccount | null }) {
   return (
     <main
       className="pk"
@@ -69,29 +71,19 @@ export function Shell({ children }: { children: ReactNode }) {
         } as CSSProperties
       }
     >
-      <header className="pk-top">
-        <Link className="pk-mark" href="/" aria-label="Deedlords Club, home">
-          Deedlords <small>Club</small>
-        </Link>
-        <nav aria-label="Deedlords">
-          <Link href="/play">Deedlords</Link>
-          <Link href="/poker/tables">Poker</Link>
-          <Link href="/arena">Arena</Link>
-          <Link href="/character">Character</Link>
-          <Link href="/agents">Agents</Link>
-        </nav>
-        <span className="pk-net">
-          <Chain size={16} /> NEAR {CHAIN.network}
-          <small>{POKER_CONTRACT}</small>
-        </span>
-      </header>
+      <HallBar current="poker" account={account} />
       {children}
     </main>
   );
 }
 
 export function PokerScreen() {
+  // Who is signed in to the club: the same account on every page, asked for once.
+  const state = usePlayer();
+  const { player } = state;
   const [ready, setReady] = useState(false);
+  // The account poker is played as (pokerAccount.ts): the club's game account, or one kept for poker beside a NEAR
+  // wallet or Google account, which cannot sign a hand.
   const [session, setSession] = useState<Session | null>(null);
   const [table, setTable] = useState<{
     id: string;
@@ -102,30 +94,36 @@ export function PokerScreen() {
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
-    setSession(pokerSession());
     setDemo(query.get("demo"));
     const id = query.get("m");
     if (id) setTable({ id, seq: 0 });
     setReady(true);
   }, []);
+  useEffect(() => setSession(player ? pokerSession() : null), [player]);
 
   const show = (next: { id: string; seq: number; note?: string } | null) => {
     window.history.replaceState(null, "", next ? `/poker?m=${next.id}` : "/poker");
     setTable(next);
   };
-  const signIn = () => {
-    signInAsGuest();
+  const makeAccount = () => {
+    makePokerAccount();
     setSession(pokerSession());
   };
+  const account = player === undefined ? undefined : player && { accountId: player.accountId, balance: state.balance };
 
   return (
-    <Shell>
+    <Shell account={demo !== null ? null : account}>
       {!ready ? null : demo !== null ? (
         <DemoTable start={demo} />
+      ) : player === undefined ? null : player === null ? (
+        <div className="si-page">
+          <h1 className="si-page__line">{table ? "Check in to take a seat." : "Check in, then pick a table."}</h1>
+          <SignIn state={state} />
+        </div>
       ) : table && session ? (
         <Table key={table.id} id={table.id} firstSeq={table.seq} firstNote={table.note} session={session} onBack={() => show(null)} />
       ) : (
-        <LiveLobby session={session} invited={table?.id ?? null} onSignIn={signIn} onSeated={(id, seq, note) => show({ id, seq, note })} />
+        <LiveLobby session={session} club={player} invited={table?.id ?? null} onSignIn={makeAccount} onSeated={(id, seq, note) => show({ id, seq, note })} />
       )}
     </Shell>
   );
@@ -167,6 +165,8 @@ const STEPS: { step: string; by: string; check: string; time: string }[] = [
 
 type LobbyProps = {
   session: Session | null;
+  /** Who is signed in to the club, when that account cannot sign a hand. */
+  club?: Player | null;
   invited: string | null;
   onSignIn: () => void;
   onSeated: (id: string, seq: number, note?: string) => void;
@@ -179,7 +179,7 @@ function LiveLobby(props: LobbyProps) {
   return <Lobby {...props} wall={wall} house={house} />;
 }
 
-export function Lobby({ session, invited, onSignIn, onSeated, wall, house }: LobbyProps & { wall: Tables; house: string | null | undefined }) {
+export function Lobby({ session, club = null, invited, onSignIn, onSeated, wall, house }: LobbyProps & { wall: Tables; house: string | null | undefined }) {
   const [balance, setBalance] = useState<bigint | null | undefined>(undefined);
   /** What is under way: opening a table (`table`), or opening one and asking the house to sit (`house`). */
   const [busy, setBusy] = useState<"" | "table" | "house">("");
@@ -349,10 +349,16 @@ export function Lobby({ session, invited, onSignIn, onSeated, wall, house }: Lob
             </>
           ) : (
             <>
-              <p className="pk-small">A game account is a key kept in this browser. It signs every step of a hand, so you are never stopped by a wallet prompt.</p>
+              <p className="pk-small">
+                Poker signs every step of a hand with a key kept in this browser, so that no wallet prompt stops a hand.{" "}
+                {club
+                  ? `${club.via === "wallet" ? "A NEAR wallet account keeps its key in the wallet" : "A Google account keeps here a key for the board game only"}, so ${club.accountId.length > 24 ? `${club.accountId.slice(0, 8)}…` : club.accountId} cannot sit here yet.`
+                  : ""}
+              </p>
               <button type="button" className="pk-go" onClick={onSignIn}>
-                Make a guest game account
+                Make my poker game account
               </button>
+              <p className="pk-fine">One tap, nothing to install. You stay signed in to the club for Deedlords; this account&apos;s key stays in this browser.</p>
             </>
           )}
         </section>
@@ -361,7 +367,7 @@ export function Lobby({ session, invited, onSignIn, onSeated, wall, house }: Lob
           <h2 className="pk-stub__title">
             Table <Seat size={22} />
           </h2>
-          {invited && !session && <p className="pk-small">You were sent table {invited}. Make a game account and it opens.</p>}
+          {invited && !session && <p className="pk-small">You were sent table {invited}. Make your poker game account and it opens.</p>}
           <dl className="pk-terms">
             <div>
               <dt>A seat</dt>

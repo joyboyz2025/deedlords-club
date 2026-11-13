@@ -4,6 +4,7 @@ import { alfaSlab, beVietnam } from "@/lib/fonts";
 import "../co-ty-phu/co-ty-phu.css";
 import "./play.css";
 import "./desk.css";
+import "./pregame.css";
 import "./chibi.css";
 
 export const metadata: Metadata = {

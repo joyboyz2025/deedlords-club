@@ -7,7 +7,7 @@ import { CHAIN } from "@/lib/chain/config";
 import { parseSecretKey } from "@/lib/chain/keys";
 import { type FunctionCall, jsonArgs } from "@/lib/chain/transaction";
 import { readStored, writeStored } from "@/lib/storage";
-import { exportGameKey, openKeySession } from "../co-ty-phu/chain/keySession";
+import { pokerAccount } from "./pokerAccount";
 import { POKER_CHAIN, POKER_CONTRACT, RECORD_FEE, STAKE, gasFor } from "./contract";
 import { type Keys, keyProof, keysFromSecret, newKeys, secretText } from "./crypto";
 import { type Call, type MatchView, type SeatStore, fromBase64, toBase64 } from "./seat";
@@ -20,11 +20,10 @@ export type Result = { id: string; stake: string; players: string[]; chips: [num
 export const TURN_SECONDS = 300;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** This browser's game account as a signer for the Poker contract, or `null` when there is none. */
+/** The account this browser plays poker as (pokerAccount.ts), as a signer for the Poker contract, or `null` when there is none. */
 export function pokerSession(): Session | null {
-  const account = openKeySession();
-  const key = exportGameKey();
-  return account && key ? pokerClient.session(account.accountId, parseSecretKey(key)) : null;
+  const account = pokerAccount();
+  return account ? pokerClient.session(account.accountId, parseSecretKey(account.secretKey)) : null;
 }
 
 export const viewResult = (id: string) => pokerClient.view<Result | null>("get_result", { id });

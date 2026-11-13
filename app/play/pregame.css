@@ -1,0 +1,330 @@
+/*
+ * Before a game: the desk at /play and the gate of one match, cut down to one gold action per screen.
+ * The ways to play are three big choices; every other setting has a default and folds under one line
+ * (a native <details>). See docs/design/pregame-ux.md.
+ */
+
+/* A stub that is one line: who plays, or the agent switch. */
+.fd-stub.fd-stub--thin {
+  gap: 6px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.fd-who--thin {
+  gap: 10px;
+}
+
+.fd-who--thin .fd-stamp {
+  width: 40px;
+  height: 40px;
+  font-size: 15px;
+  outline-offset: -5px;
+}
+
+.fd-who--thin p:first-of-type strong {
+  font-size: 16px;
+}
+
+.fd-who--thin small {
+  overflow: hidden;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The balance is the way to the wallet: deposit, withdraw, other chains and sign out are on the account page. */
+.fd-balance--link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  min-height: 44px;
+  padding: 6px 4px 6px 12px;
+  border-radius: 999px;
+  color: var(--ink);
+  transition: background 0.2s;
+}
+
+.fd-balance--link strong {
+  font-size: 22px;
+}
+
+.fd-balance--link svg {
+  align-self: center;
+  color: var(--red);
+}
+
+.fd-balance--link:hover {
+  background: rgb(42 18 8 / 6%);
+}
+
+/* How to play: three big choices, like the mode buttons of a casual game. */
+.fd-modes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.fd-modes button {
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  min-height: 60px;
+  padding: 8px 6px;
+  border: 1.5px solid rgb(42 18 8 / 30%);
+  border-radius: 16px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    color 0.2s,
+    border-color 0.2s;
+}
+
+.fd-modes b {
+  font-size: 15.5px;
+  line-height: 1.2;
+}
+
+.fd-modes small {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.fd-modes button:hover {
+  border-color: var(--ink);
+}
+
+.fd-modes button[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--cream);
+}
+
+.fd-modes button[aria-pressed="true"] small {
+  color: var(--soft);
+}
+
+/* Options with a default: one line that says what they are, opened on demand. */
+.fd-more {
+  border-top: 1.5px solid rgb(42 18 8 / 14%);
+}
+
+.fd-stub--thin > .fd-more {
+  border-top: 0;
+}
+
+.fd-more > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  padding: 4px 0;
+  list-style: none;
+  cursor: pointer;
+}
+
+.fd-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.fd-more > summary::after {
+  content: "";
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-right: 4px;
+  border-right: 2px solid var(--red);
+  border-bottom: 2px solid var(--red);
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 0.2s;
+}
+
+.fd-more[open] > summary::after {
+  transform: translateY(2px) rotate(-135deg);
+}
+
+.fd-more > summary b,
+.fd-more > summary small {
+  display: block;
+}
+
+.fd-more > summary b {
+  font-size: 14.5px;
+}
+
+.fd-more > summary small {
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fd-more > summary:focus-visible {
+  outline: 3px solid var(--red);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+.fd-more__body {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 6px;
+}
+
+.fd-ways--all {
+  padding-bottom: 8px;
+}
+
+/* The agent that can play the visitor's seat: a switch, its name, the way to the agents' page. */
+.fd-copilot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.fd-copilot .fd-switch {
+  flex: 1 1 auto;
+}
+
+.fd-copilot .fd-switch small {
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+
+.fd-copilot select {
+  min-height: 40px;
+  max-width: 11em;
+  padding: 0 10px;
+  border: 1.5px solid rgb(42 18 8 / 30%);
+  border-radius: 10px;
+  background-color: #fffaf0;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.fd-copilot__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 14px;
+}
+
+.fd-copilot__name svg,
+.fd-copilot__edit svg {
+  color: var(--red);
+}
+
+.fd-copilot__edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: rgb(42 18 8 / 30%);
+  text-underline-offset: 3px;
+}
+
+.fd-copilot__edit:hover {
+  background: rgb(42 18 8 / 6%);
+}
+
+/* The gate's invitation: the link itself, small, under the one button that shares it. */
+.fd-invite {
+  contain: inline-size;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A long board folds on a phone: the first rows, then one button for the rest. */
+.fd-board__more {
+  display: none;
+}
+
+@media (max-width: 1099px) {
+  .fd-row[data-folded] {
+    display: none;
+  }
+
+  .fd-board__more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 48px;
+    margin: 10px 0 4px;
+    border: 1.5px solid rgb(248 201 63 / 55%);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--gold);
+    font-size: 14.5px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .fd-board__more:hover {
+    background: rgb(255 247 230 / 6%);
+  }
+}
+
+@media (max-width: 420px) {
+  .fd-modes {
+    gap: 6px;
+  }
+
+  .fd-modes b {
+    font-size: 14.5px;
+  }
+
+  .fd-pick--stake .fd-segments button {
+    min-width: 44px;
+    padding: 0 10px;
+  }
+}
+
+.fd-acts > p {
+  flex-basis: 100%;
+}
+
+/* Somebody looking on without an account: one line, and the way back to the sign-in step. */
+.fd-watch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fd-watch strong,
+.fd-watch small {
+  display: block;
+}
+
+.fd-watch small {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+/* The way out of a finished match: the lobby is the big button, the rest follow. */
+.tp-row--exit {
+  margin-bottom: 8px;
+}
+
+.tp-more__exit {
+  padding-top: 10px;
+  border-top: 1.5px solid rgb(255 247 230 / 16%);
+}

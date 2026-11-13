@@ -9,12 +9,16 @@ import Link from "next/link";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import goldFoil from "@/assets/plates/gold-foil.webp";
 import paper from "@/assets/plates/strip-paper.png";
-import { Arrow, Chain, Copy, Seat, User } from "@/components/landing/icons";
+import { Arrow, Chain, Copy, Seat } from "@/components/landing/icons";
+import { HallBar, type HallAccount } from "@/components/hall/HallBar";
+import { SignIn } from "@/components/hall/SignIn";
 import type { Session } from "@/lib/chain/client";
 import { CHAIN } from "@/lib/chain/config";
 import { useCharacters } from "../../../chibi/useChibi";
 import { near, ownStake } from "../../../co-ty-phu/chain/calls";
-import { signInAsGuest } from "../../../co-ty-phu/chain/keySession";
+import { usePlayer, type Player } from "../../../co-ty-phu/chain/usePlayer";
+import { TopUp } from "../../../co-ty-phu/components/TopUp";
+import { makePokerAccount, pokerAccount } from "../../pokerAccount";
 import { Flap, Ledger, type LogLine } from "../../components/TableView";
 import {
   MAX_SEATS,
@@ -72,70 +76,79 @@ const SENT: Record<string, (view: TableView) => string> = {
 };
 
 /** The page: the red hall, the top row, and the two plates the stylesheet paints with. */
-export function TablesShell({ children }: { children: ReactNode }) {
+export function TablesShell({ children, account }: { children: ReactNode; account?: HallAccount | null }) {
   return (
     <main className="pk" style={{ "--pk-paper": `url(${paper.src})`, "--pk-foil": `url(${goldFoil.src})` } as CSSProperties}>
-      <header className="pk-top">
-        <Link className="pk-mark" href="/">
-          Deedlords
-        </Link>
-        <nav aria-label="Deedlords">
-          <Link href="/play">Board game</Link>
-          <Link href="/arena">Arena</Link>
-          {/* The heads-up table is on testnet only: mainnet's one poker contract is this one. */}
-          {CHAIN.network !== "mainnet" && <Link href="/poker">Heads-up</Link>}
-          <Link href={ROUTE} aria-current="page">
-            Tables
-          </Link>
-        </nav>
-        <span className="pk-net">
-          <Chain size={16} /> NEAR {CHAIN.network}
-          <small>{TABLE_CONTRACT}</small>
-        </span>
-      </header>
+      <HallBar current="poker" account={account} />
       {children}
     </main>
   );
 }
 
 export function TablesScreen() {
+  // Who is signed in to the club: the same account on every page, asked for once.
+  const state = usePlayer();
+  const { player } = state;
   const [ready, setReady] = useState(false);
+  // The account poker is played as (pokerAccount.ts): the club's game account, or one kept for poker beside a NEAR
+  // wallet or Google account, which cannot sign a hand.
   const [session, setSession] = useState<Session | null>(null);
   const [table, setTable] = useState<{ id: string; seq: number } | null>(null);
   const [demo, setDemo] = useState<string | null>(null);
+  // A table can be looked at without an account.
+  const [watching, setWatching] = useState(false);
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
-    setSession(tableSession());
     setDemo(query.get("demo"));
     const id = query.get("t");
     if (id) setTable({ id, seq: 0 });
     setReady(true);
   }, []);
+  useEffect(() => setSession(player ? tableSession() : null), [player]);
 
   const show = (next: { id: string; seq: number } | null) => {
     window.history.replaceState(null, "", next ? `${ROUTE}?t=${next.id}` : ROUTE);
     setTable(next);
   };
-  const signIn = () => {
-    signInAsGuest();
+  const makeAccount = () => {
+    makePokerAccount();
     setSession(tableSession());
   };
+  const account = player === undefined ? undefined : player && { accountId: player.accountId, balance: state.balance };
 
   return (
-    <TablesShell>
+    <TablesShell account={demo !== null ? null : account}>
       {!ready ? null : demo !== null ? (
         <TablesDemo start={demo} />
+      ) : player === undefined ? null : player === null && !(table && watching) ? (
+        <div className="si-page">
+          <h1 className="si-page__line">{table ? "Check in to take a seat." : "Check in, then pick a table."}</h1>
+          <SignIn state={state} onWatch={table ? () => setWatching(true) : undefined} />
+        </div>
       ) : table ? (
-        <LiveTable key={table.id} id={table.id} firstSeq={table.seq} session={session} onSignIn={signIn} onBack={() => show(null)} />
+        <LiveTable
+          key={table.id}
+          id={table.id}
+          firstSeq={table.seq}
+          session={player ? session : null}
+          // Somebody looking on goes back to the sign-in step; a wallet or Google account gets its poker account.
+          onSignIn={player ? makeAccount : () => setWatching(false)}
+          onBack={() => show(null)}
+        />
       ) : (
-        <LiveLobby session={session} onSignIn={signIn} onOpen={(id, seq) => show({ id, seq })} />
+        <LiveLobby session={session} player={player} onSignIn={makeAccount} onOpen={(id, seq) => show({ id, seq })} />
       )}
     </TablesShell>
   );
 }
 
-type LobbyProps = { session: Session | null; onSignIn: () => void; onOpen: (id: string, seq: number) => void };
+type LobbyProps = {
+  session: Session | null;
+  /** Who is signed in to the club, when that is not the account poker is played as. */ player?: Player | null;
+  /** Makes the game account poker is played with, for a club account that cannot sign a hand. */ onSignIn: () => void;
+  onOpen: (id: string, seq: number) => void;
+};
 
 function LiveLobby(props: LobbyProps) {
   const wall = useTables();
@@ -143,8 +156,17 @@ function LiveLobby(props: LobbyProps) {
   return <TablesLobby {...props} wall={wall} houses={house.accounts ?? []} free={house.free} models={house.models} />;
 }
 
+/** How a table is played: heads-up against the house, a free room for friends, or for a stake. */
+type Mode = "house" | "friends" | "stake";
+const MODES: Record<Mode, { name: string; line: string }> = {
+  house: { name: "vs House", line: "Free" },
+  friends: { name: "Friends", line: "Free room" },
+  stake: { name: "Stake", line: "Win NEAR" },
+};
+
 export function TablesLobby({
   session,
+  player = null,
   onSignIn,
   onOpen,
   wall,
@@ -158,31 +180,37 @@ export function TablesLobby({
   /** The models its seat may bet by. */ models?: string[];
 }) {
   const [balance, setBalance] = useState<bigint | null | undefined>(undefined);
-  // The stake of each seat at the table opened here: a chip (0 is a free table, where the server hosts them), or an
-  // amount typed in NEAR (which stands while filled in). Until one is picked, a free table where there is one.
+  // How to play: the first choice stands until another is picked. Without a host for free tables, only a stake.
+  const modes: Mode[] = free ? ["house", "friends", "stake"] : ["stake"];
+  const [pickedMode, setMode] = useState<Mode | null>(null);
+  const mode = pickedMode !== null && modes.includes(pickedMode) ? pickedMode : modes[0];
+  const gratis = mode !== "stake";
+  // The stake of each seat at a table opened for a stake: a chip, or an amount typed in NEAR (which stands while filled in).
   const [picked, setPicked] = useState<number | null>(null);
-  const chips = [...(free ? [0] : []), ...STAKE_CHIPS];
-  const chip = picked !== null && chips.includes(picked) ? picked : chips[0];
+  const chip = picked !== null && STAKE_CHIPS.includes(picked) ? picked : STAKE_CHIPS[0];
   const [typed, setTyped] = useState("");
-  const gratis = chip === 0 && !typed.trim();
-  // A free table is the house's seat and yours unless more are asked for.
+  const [typing, setTyping] = useState(false);
+  const ownTyped = typing && typed.trim() !== "";
+  // Seats: heads-up against the house, a room of six for friends or for a stake, unless more or fewer are asked for.
   const [seatsPicked, setSeats] = useState<number | null>(null);
-  const seats = seatsPicked ?? (gratis ? 2 : 6);
+  const seatChoices = Array.from({ length: MAX_SEATS - 1 }, (_, at) => at + 2).filter((count) => mode !== "friends" || count > 2);
+  const seats = mode === "house" ? 2 : seatsPicked !== null && seatChoices.includes(seatsPicked) ? seatsPicked : 6;
   const [model, setModel] = useState("");
   const own = ownStake(typed, LARGEST_STAKE, STAKE_CHIPS[0]);
-  const typedProblem = typed.trim() && "problem" in own ? own.problem : null;
-  const stake = near(typed.trim() && "amount" in own ? own.amount : chip || STAKE_CHIPS[0]);
+  const typedProblem = !gratis && ownTyped && "problem" in own ? own.problem : null;
+  const stake = near(ownTyped && "amount" in own ? own.amount : chip);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
-  const [copied, setCopied] = useState(false);
 
+  const readBalance = useCallback(() => {
+    if (session) void tableClient.balance(session.accountId).then(setBalance, () => undefined);
+  }, [session]);
   useEffect(() => {
     if (!session) return;
-    const read = () => tableClient.balance(session.accountId).then(setBalance, () => undefined);
-    void read();
-    const timer = setInterval(read, 6_000);
+    readBalance();
+    const timer = setInterval(readBalance, 6_000);
     return () => clearInterval(timer);
-  }, [session]);
+  }, [session, readBalance]);
 
   const open = async () => {
     if (!session) return;
@@ -196,9 +224,29 @@ export function TablesLobby({
       setBusy(false);
     }
   };
-
-  /** Below this one seat cannot be taken and its shuffle proof still be checked (that call reserves 0.26 NEAR). */
-  const short = balance !== undefined && (balance === null || balance < (4n * NEAR) / 10n);
+  /**
+   * What a seat with a stake needs on the account: the stake, the record fee, and about half a NEAR that the call
+   * checking the seat's shuffle proof must be able to reserve (260 Tgas; nearly all of it comes back).
+   */
+  const needed = stake + RECORD_FEE + NEAR / 2n;
+  const short = !gratis && balance !== undefined && (balance === null || balance < needed);
+  // Poker is played as the club's game account, or as one kept for poker beside a wallet or Google account.
+  const apart = session ? Boolean(pokerAccount()?.apart) : false;
+  // Who brings the missing NEAR: the club account when poker is played as it (an EVM wallet then pays through 1Click).
+  const payer: Player | null = !session
+    ? null
+    : !apart && player?.via === "key" && player.accountId === session.accountId
+      ? player
+      : { via: "key", accountId: session.accountId, session, source: "guest", evmAddress: null, label: null };
+  const label = busy
+    ? "Opening the table…"
+    : mode === "house"
+      ? "Play vs the House"
+      : mode === "friends"
+        ? `Open a room of ${seats}`
+        : `Open a table of ${seats} · ${asNear(stake).replace(/\.?0+ NEAR$/, "")} NEAR`;
+  const houseModel = model ? (model === "rules" ? "the odds alone" : model) : "its usual model";
+  const options = mode === "house" ? `House bets by ${houseModel}` : mode === "friends" ? `${seats} seats · house bets by ${houseModel}` : `${seats} seats`;
 
   return (
     <div className="pk-hall">
@@ -207,8 +255,8 @@ export function TablesLobby({
           <h1 className="pk-line">Poker for two to nine.</h1>
           <div className="pk-wallhead__lede">
             <p className="pk-lede">
-              Texas Hold&apos;em at tables of up to nine seats on NEAR {CHAIN.network}, with no dealer. Every seat dealt in shuffles the deck once with its own key, and the
-              contract takes each deck only with a zero-knowledge proof that it is an honest shuffle. A card turns only when every seat has given its share of it.
+              Texas Hold&apos;em for up to nine on NEAR {CHAIN.network}, with no dealer: every seat shuffles the deck with its own key, and the contract takes a deck only with a
+              zero-knowledge proof that the shuffle is honest.
             </p>
           </div>
         </div>
@@ -232,174 +280,208 @@ export function TablesLobby({
       </div>
 
       <div className="pk-ticket">
-        <section className="pk-stub" aria-label="Your game account">
-          <h2 className="pk-stub__title">
-            Passenger <User size={22} />
-          </h2>
-          {session ? (
-            <>
-              <div className="pk-who">
-                <span className="pk-stamp" aria-hidden="true">
-                  {session.accountId.replace(/[^a-z0-9]/gi, "").slice(0, 2)}
-                </span>
-                <p>
-                  <strong title={session.accountId}>{session.accountId}</strong>
-                  <small>game account kept in this browser</small>
-                </p>
-                <p className="pk-balance" data-low={short || undefined}>
-                  {balance === undefined ? (
-                    <small>reading…</small>
-                  ) : balance === null ? (
-                    <small>not on chain yet</small>
-                  ) : (
-                    <>
-                      <strong>{asNear(balance).replace(" NEAR", "")}</strong>
-                      <small>NEAR</small>
-                    </>
-                  )}
-                </p>
-              </div>
-              {short && (
-                <>
-                  <p className="pk-fine">
-                    {free
-                      ? "A free table needs no NEAR. For a table with a stake, keep about 0.6 NEAR on this account for a seat."
-                      : "This account holds too little to play. Keep about 0.6 NEAR on it for a seat."}{" "}
-                    Send it {CHAIN.network === "mainnet" ? "NEAR" : `test NEAR on ${CHAIN.network}`} and this page shows the balance.{" "}
-                    {CHAIN.network === "testnet" && (
-                      <a href="https://docs.near.org/getting-started/faucet" target="_blank" rel="noreferrer noopener">
-                        Ask a testnet faucet
-                      </a>
-                    )}
-                  </p>
-                  <div className="pk-acts">
-                    <button type="button" className="pk-pill" onClick={() => void navigator.clipboard?.writeText(session.accountId).then(() => setCopied(true))}>
-                      <Copy size={16} /> {copied ? "Address copied" : "Copy the address"}
-                    </button>
-                  </div>
-                </>
-              )}
-            </>
-          ) : (
-            <>
-              <p className="pk-small">A game account is a key kept in this browser. It signs every step of a hand, so you are never stopped by a wallet prompt.</p>
-              <button type="button" className="pk-go" onClick={onSignIn}>
-                Make a guest game account
-              </button>
-            </>
-          )}
-        </section>
+        {session && (
+          <section className="pk-stub pk-stub--thin" aria-label="Your game account">
+            <div className="pk-who">
+              <span className="pk-stamp" aria-hidden="true">
+                {session.accountId.replace(/[^a-z0-9]/gi, "").slice(0, 2)}
+              </span>
+              <p>
+                <strong title={session.accountId}>{shortAccount(session.accountId)}</strong>
+                <small>{apart && player ? `your poker game account, beside ${shortAccount(player.accountId)}` : "your game account, its key kept in this browser"}</small>
+              </p>
+              <p className="pk-balance" data-low={short || undefined}>
+                {balance === undefined ? (
+                  <small>reading…</small>
+                ) : balance === null ? (
+                  <small>{free ? "no NEAR needed" : "not on chain yet"}</small>
+                ) : (
+                  <>
+                    <strong>{asNear(balance).replace(" NEAR", "")}</strong>
+                    <small>NEAR</small>
+                  </>
+                )}
+              </p>
+            </div>
+          </section>
+        )}
 
-        <section className="pk-stub" aria-label="Open a table">
+        {!session && player && (
+          <section className="pk-stub" aria-label="A game account for poker">
+            <h2 className="pk-stub__title">
+              One more step <Seat size={22} />
+            </h2>
+            <p className="pk-small">
+              Poker signs every step of a hand (the shuffle and its proof, the shares of each card, the bets) with a key kept in this browser, so that no wallet prompt stops a
+              hand. {player.via === "wallet" ? "A NEAR wallet account keeps its key in the wallet" : "A Google account keeps here a key for the board game only"}, so{" "}
+              <b title={player.accountId}>{shortAccount(player.accountId)}</b> cannot sit at these tables yet.
+            </p>
+            <button type="button" className="pk-go" onClick={onSignIn}>
+              Make my poker game account
+            </button>
+            <p className="pk-fine">
+              One tap, nothing to install: a game account for the poker tables, its key kept in this browser. You stay signed in as {shortAccount(player.accountId)} for Deedlords.
+              Free tables need no NEAR.
+            </p>
+          </section>
+        )}
+
+        <section className="pk-stub" aria-label="Open a table" hidden={!session}>
           <h2 className="pk-stub__title">
-            Open a table <Seat size={22} />
+            New table <Seat size={22} />
           </h2>
-          <div className="pt-picker" role="radiogroup" aria-label="Seats at the table">
-            {Array.from({ length: MAX_SEATS - 1 }, (_, at) => at + 2).map((count) => (
-              <button key={count} type="button" role="radio" aria-checked={seats === count} className="pt-picker__seat" onClick={() => setSeats(count)}>
-                {count}
-              </button>
-            ))}
-          </div>
-          <div className="pt-stake">
-            <span id="pt-stake">Stake a seat</span>
-            <div className="pt-picker pt-picker--stake" role="group" aria-labelledby="pt-stake">
-              {chips.map((amount) => (
-                <button
-                  key={amount}
-                  type="button"
-                  aria-pressed={!typed.trim() && amount === chip}
-                  className="pt-picker__seat"
-                  onClick={() => {
-                    setPicked(amount);
-                    setTyped("");
-                  }}
-                >
-                  {amount === 0 ? "Free" : amount}
+          {modes.length > 1 && (
+            <div className="pk-modes" role="group" aria-label="How to play">
+              {modes.map((entry) => (
+                <button key={entry} type="button" aria-pressed={entry === mode} onClick={() => setMode(entry)}>
+                  <b>{MODES[entry].name}</b>
+                  <small>{MODES[entry].line}</small>
                 </button>
               ))}
             </div>
-            <label className="pt-stake__own">
-              <span>Or your own</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                placeholder={`${STAKE_CHIPS[0]} to ${LARGEST_STAKE}`}
-                value={typed}
-                aria-invalid={typedProblem ? true : undefined}
-                onChange={(event) => setTyped(event.target.value.replace(",", "."))}
-              />
-              <b aria-hidden="true">NEAR</b>
-            </label>
-            {typedProblem && (
-              <p className="pk-problem" role="alert">
-                {typedProblem}
-              </p>
-            )}
-          </div>
-          {gratis && models.length > 1 && (
-            <label className="pt-stake__own pt-stake__model">
-              <span>The house bets by</span>
-              <select value={model} onChange={(event) => setModel(event.target.value)}>
-                <option value="">its usual model</option>
-                {models.map((name) => (
-                  <option key={name} value={name}>
-                    {name === "rules" ? "the odds alone" : name}
-                  </option>
-                ))}
-              </select>
-            </label>
           )}
-          <dl className="pk-terms">
-            <div>
-              <dt>A seat</dt>
-              <dd>
-                {gratis ? (
-                  <>
-                    <b>Free</b>: 100 chips that are only chips. No NEAR is needed, and none is won
-                  </>
-                ) : (
-                  <>
-                    <b>{asNear(stake).replace(" NEAR", "")}</b> NEAR for 100 chips, and a record fee of {asNear(RECORD_FEE)}
-                  </>
-                )}
-              </dd>
+          {!gratis && (
+            <div className="pt-stake">
+              <span id="pt-stake">A seat costs, in NEAR</span>
+              <div className="pt-picker pt-picker--stake" role="group" aria-labelledby="pt-stake">
+                {STAKE_CHIPS.map((amount) => (
+                  <button
+                    key={amount}
+                    type="button"
+                    aria-pressed={!ownTyped && amount === chip}
+                    className="pt-picker__seat"
+                    onClick={() => {
+                      setPicked(amount);
+                      setTyping(false);
+                    }}
+                  >
+                    {amount}
+                  </button>
+                ))}
+                <button type="button" aria-pressed={ownTyped} aria-expanded={typing} className="pt-picker__seat pt-picker__other" onClick={() => setTyping(!typing)}>
+                  Other
+                </button>
+              </div>
+              {typing && (
+                <label className="pt-stake__own">
+                  <span>Your own</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    autoFocus
+                    placeholder={`${STAKE_CHIPS[0]} to ${LARGEST_STAKE}`}
+                    value={typed}
+                    aria-invalid={typedProblem ? true : undefined}
+                    onChange={(event) => setTyped(event.target.value.replace(",", "."))}
+                  />
+                  <b aria-hidden="true">NEAR</b>
+                </label>
+              )}
+              {typedProblem && (
+                <p className="pk-problem" role="alert">
+                  {typedProblem}
+                </p>
+              )}
             </div>
-            <div>
-              <dt>Blinds</dt>
-              <dd>
-                <b>1</b> and <b>2</b>
-              </dd>
-            </div>
-            <div>
-              <dt>Clock</dt>
-              <dd>{gratis ? 2 : TURN_SECONDS / 60} minutes a step</dd>
-            </div>
-            <div>
-              <dt>Starts</dt>
-              <dd>when full, or when you start it with two or more</dd>
-            </div>
-          </dl>
-          <button type="button" className="pk-go" disabled={!session || busy || Boolean(typedProblem)} onClick={open}>
-            {busy ? "Opening the table…" : gratis ? `Open a free table of ${seats}` : `Open a table of ${seats}`}
+          )}
+          <button type="button" className="pk-go" disabled={!session || busy || short || Boolean(typedProblem)} onClick={() => void open()}>
+            {label}
           </button>
           {note && (
             <p className="pk-problem" role="alert">
               {note}
             </p>
           )}
-          {gratis ? (
+          <details className="pk-more">
+            <summary>
+              <span>
+                <b>Table options</b>
+                <small>{options}</small>
+              </span>
+            </summary>
+            <div className="pk-more__body">
+              {mode !== "house" && (
+                <div className="pt-stake">
+                  <span id="pt-seats">Seats</span>
+                  <div className="pt-picker" role="radiogroup" aria-labelledby="pt-seats">
+                    {seatChoices.map((count) => (
+                      <button key={count} type="button" role="radio" aria-checked={seats === count} className="pt-picker__seat" onClick={() => setSeats(count)}>
+                        {count}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {gratis && models.length > 1 && (
+                <label className="pt-stake__own pt-stake__model">
+                  <span>The house bets by</span>
+                  <select value={model} onChange={(event) => setModel(event.target.value)}>
+                    <option value="">its usual model</option>
+                    {models.map((name) => (
+                      <option key={name} value={name}>
+                        {name === "rules" ? "the odds alone" : name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <dl className="pk-terms">
+                <div>
+                  <dt>A seat</dt>
+                  <dd>
+                    {gratis ? (
+                      <>
+                        <b>Free</b>: 100 chips that are only chips. No NEAR is needed, and none is won
+                      </>
+                    ) : (
+                      <>
+                        <b>{asNear(stake).replace(" NEAR", "")}</b> NEAR for 100 chips, and a record fee of {asNear(RECORD_FEE)}
+                      </>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Blinds</dt>
+                  <dd>
+                    <b>1</b> and <b>2</b>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Clock</dt>
+                  <dd>{gratis ? 2 : TURN_SECONDS / 60} minutes a step</dd>
+                </div>
+                <div>
+                  <dt>Starts</dt>
+                  <dd>when full, or when you start it with two or more</dd>
+                </div>
+              </dl>
+            </div>
+          </details>
+          {mode === "house" ? (
             <p className="pk-fine">
-              The house opens the table, holds seat 1 and plays it for {FREE_TABLE_HANDS} hands; you take seat 2. Every step you make is signed by your game account and sent by the
-              house, which pays its gas. With more than two seats, send the link to friends and start when you like.
+              The house opens the table, holds seat 1 and plays it for {FREE_TABLE_HANDS} hands; you take seat 2. Your game account signs each step and the house pays the gas.
             </p>
-          ) : (
+          ) : mode === "friends" ? (
+            <p className="pk-fine">The house opens the table, holds seat 1 and pays the gas. Send the link to friends, then start when you like.</p>
+          ) : short ? null : (
             <p className="pk-fine">
               You take seat 1. Send the link, or fill seats with the house{houses.length ? ` (up to ${houses.length} of its accounts)` : ""} from the table. Keep about 0.6 NEAR in
-              the account: nearly all the gas of a hand goes to checking your shuffle proof, and that call must be able to reserve 0.26 NEAR. Your chips come back when you leave;
-              the record fee does not.
+              the account: nearly all the gas of a hand goes to checking your shuffle proof, which must be able to reserve 0.26 NEAR. Your chips come back when you leave; the
+              record fee does not.
             </p>
+          )}
+          {/* Too little on the account for this stake: the way to the missing NEAR, right under it. */}
+          {short && payer && !typedProblem && (
+            <div className="pk-topup">
+              <TopUp
+                player={payer}
+                balance={balance}
+                needed={needed}
+                onArrived={readBalance}
+                made="the stake for 100 chips, a small record fee, and about half a NEAR that the check of your shuffle proof must be able to reserve; the chips you leave with and nearly all of the reserve come back"
+              />
+            </div>
           )}
         </section>
       </div>
@@ -706,20 +788,20 @@ function LiveTable({ id, firstSeq, session, onSignIn, onBack }: { id: string; fi
     setSeating(null);
   };
   const agent = useSeatAgent(id, view, mySeat, myCards, locked, agentBet, accountId);
+  // Signed out, "Sit down" makes a guest game account first and sits once it is there.
+  const [sitting, setSitting] = useState(false);
+  useEffect(() => {
+    if (sitting && session && view) {
+      setSitting(false);
+      void click("Took a seat", undefined, () => takeSeat(session, id, BigInt(view.stake)));
+    }
+  });
 
   if (view === null) return <TableSettled id={id} result={result} log={log} you={accountId} houses={house.accounts ?? []} onBack={onBack} />;
 
   const shown = view ?? UNREAD;
   return (
     <>
-      {!session && view && (
-        <p className="pk-demo pt-signin">
-          <strong>Watching.</strong> <em>Make a guest game account to take a free seat at this table.</em>
-          <button type="button" onClick={onSignIn}>
-            Make a guest game account
-          </button>
-        </p>
-      )}
       <RoundTable
         id={id}
         view={shown}
@@ -750,7 +832,12 @@ function LiveTable({ id, firstSeq, session, onSignIn, onBack }: { id: string; fi
         on={{
           act: (action, amount, line) => void bet(action, amount ?? undefined, line),
           sit: () => {
-            if (!session || !view) return;
+            if (!session) {
+              setSitting(true);
+              onSignIn();
+              return;
+            }
+            if (!view) return;
             void click("Took a seat", undefined, () => takeSeat(session, id, BigInt(view.stake)));
           },
           // A free table is hosted by the server: it is asked to start it. Any other is started by its host's own call.
@@ -758,11 +845,15 @@ function LiveTable({ id, firstSeq, session, onSignIn, onBack }: { id: string; fi
             session &&
             view &&
             void click("Started the table", undefined, () => (isFreeStake(view) && view.host !== session.accountId ? startFreeTable(id) : startTable(session, id))),
-          leave: () =>
-            session &&
-            void click(mySeat !== null && view?.dealt.includes(mySeat) ? "Asked to leave after this hand" : "Left the table and cashed out", mySeat ?? undefined, () =>
-              leaveTable(session, id),
-            ),
+          // Off a table between hands the seat is cashed out at once, and the page goes back to the tables.
+          leave: () => {
+            if (!session) return;
+            const inHand = mySeat !== null && Boolean(view?.dealt.includes(mySeat));
+            void click(inHand ? "Asked to leave after this hand" : "Left the table and cashed out", mySeat ?? undefined, () => leaveTable(session, id)).then(
+              (left) => left && !inHand && onBack(),
+            );
+          },
+          back: onBack,
           callTime: () => session && void click("Called time on the late seats", undefined, () => callTime(session, id)),
           addHouse: (models) => {
             setRefused("");

@@ -15,7 +15,7 @@ import { useChainRoom } from "../chain/useChainRoom";
 import { isFreeTable, seatCaller, takeFreeSeat } from "../chain/free";
 import { useFreeSponsor, useHouseAgent, useHouseModels } from "../chain/useFree";
 import { approvesInWindow, sendStake, usePlayer, type PlayerState } from "../chain/usePlayer";
-import { AgentStub, Flap, Hall, PassengerStub } from "./Desk";
+import { AgentStub, CheckIn, Flap, Hall, PassengerStub } from "./Desk";
 import { Ledger } from "./Ledger";
 import { useCharacters, useLookPictures } from "../../chibi/useChibi";
 import { lookFromSeat } from "../../ma-soi/look";
@@ -33,6 +33,10 @@ const FIGURE_PX = 560;
 export function ChainScreen({ id }: { id: string }) {
   const state = usePlayer();
   const helper = useDevConfig();
+  const [watching, setWatching] = useState(false);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("as") === "") setWatching(true);
+  }, []);
 
   if (state.player === undefined) {
     return (
@@ -43,10 +47,22 @@ export function ChainScreen({ id }: { id: string }) {
       </main>
     );
   }
-  return <Table id={id} state={state} helper={helper} />;
+  // Nobody signed in: the club's one sign-in step comes first. A match can also be looked at without an account
+  // (and a link with `?as=` asks for just that).
+  if (state.player === null && !watching) {
+    return (
+      <Hall page="gate" account={null}>
+        <div className="si-page">
+          <h1 className="si-page__line">Check in to board this flight.</h1>
+          <CheckIn state={state} helper={helper} onWatch={() => setWatching(true)} />
+        </div>
+      </Hall>
+    );
+  }
+  return <Table id={id} state={state} helper={helper} onSignIn={() => setWatching(false)} />;
 }
 
-function Table({ id, state, helper }: { id: string; state: PlayerState; helper: DevConfig | null }) {
+function Table({ id, state, helper, onSignIn }: { id: string; state: PlayerState; helper: DevConfig | null; onSignIn: () => void }) {
   const player = state.player ?? null;
   const room = useChainRoom(id, player?.session ?? null);
   const { view, match, result, seat, link, error, busy, notice, sent, send, playTurn, retry, refresh } = room;
@@ -78,7 +94,10 @@ function Table({ id, state, helper }: { id: string; state: PlayerState; helper: 
             </button>
           )}
           <Link className="tp-btn tp-btn--main" href="/play">
-            All matches
+            Back to the lobby
+          </Link>
+          <Link className="tp-btn" href="/">
+            Club menu
           </Link>
         </div>
       </Notice>
@@ -118,7 +137,7 @@ function Table({ id, state, helper }: { id: string; state: PlayerState; helper: 
     );
   }
 
-  if (match.meta.status === "lobby") return <Lobby match={match} state={state} helper={helper} sponsor={sponsor ?? null} onJoined={refresh} />;
+  if (match.meta.status === "lobby") return <Lobby match={match} state={state} helper={helper} sponsor={sponsor ?? null} onJoined={refresh} onSignIn={onSignIn} />;
 
   const names = seatNames(match.meta);
   // A seat an agent played this round or the one before: its tag stays on the card. Older notes are history.
@@ -155,6 +174,7 @@ function Table({ id, state, helper }: { id: string; state: PlayerState; helper: 
           ledger,
           // Giving up is a move like any other: the contract takes it on anybody's turn and settles what is left.
           resign: seat === null ? undefined : () => send({ t: "resign" }),
+          exit: { lobby: "/play", menu: "/" },
           result: (onClose) =>
             result ? (
               <div className="tp-result" role="dialog" aria-label="Result of the match">
@@ -164,6 +184,11 @@ function Table({ id, state, helper }: { id: string; state: PlayerState; helper: 
               <div className="tp-result" role="status">
                 <p className="tp-result__title">Game over</p>
                 <p>The contract is paying out…</p>
+                <div className="tp-row">
+                  <Link className="tp-btn" href="/play">
+                    Back to the lobby
+                  </Link>
+                </div>
               </div>
             ),
         }}
@@ -198,6 +223,7 @@ function Lobby({
   helper,
   sponsor,
   onJoined,
+  onSignIn,
 }: {
   match: ChainMatch;
   state: PlayerState;
@@ -205,6 +231,8 @@ function Lobby({
   /** The account that pays for free tables here, `null` when nobody does. */
   sponsor: string | null;
   onJoined: () => Promise<void>;
+  /** For somebody looking on without an account: back to the club's sign-in step. */
+  onSignIn: () => void;
 }) {
   const { meta } = match;
   const player = state.player ?? null;
@@ -272,17 +300,29 @@ function Lobby({
     }
     setJoining(false);
   };
-  const share = async () => {
+  const invitation = (() => {
+    if (typeof window === "undefined") return "";
     const here = new URL(window.location.href);
     here.search = "";
+    return here.toString();
+  })();
+  // On a phone the system's share sheet sends the link to a chat; elsewhere it is copied.
+  const share = async () => {
+    if (typeof navigator.share === "function" && window.matchMedia("(pointer: coarse)").matches) {
+      try {
+        await navigator.share({ title: "Deedlords", text: "Sit at my Deedlords table", url: invitation });
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+      }
+    }
     try {
-      await navigator.clipboard.writeText(here.toString());
+      await navigator.clipboard.writeText(invitation);
       setCopied(true);
     } catch {
       setCopied(false);
     }
   };
-
   // A hosted room: the seats fill as people come, and nothing starts until its host says so.
   const host = meta.host ?? null;
   const isHost = host !== null && host === accountId;
@@ -408,8 +448,7 @@ function Lobby({
             )}
             {unstaked ? (
               <p className="fd-fine">
-                A free table: nothing is staked, so nothing is paid out. The contract still rolls the dice and keeps the board
-                {sponsored ? ", and the house pays the gas of every move: a game account needs no NEAR to sit here." : "."}
+                Nothing is staked, so nothing is paid out; the contract still rolls the dice{sponsored ? ", and the house pays the gas: no NEAR needed to sit here." : "."}
               </p>
             ) : (
               <>
@@ -439,7 +478,12 @@ function Lobby({
                 {!joining && <Arrow size={20} />}
               </button>
             )}
-            {free && !player && <p className="fd-small">Check in below to take the open seat.</p>}
+            {free && !player && (
+              <button type="button" className="fd-go" onClick={onSignIn}>
+                Sign in to take seat {free.seat + 1}
+                <Arrow size={20} />
+              </button>
+            )}
             {short && free && mayJoin && (
               <p className="fd-fine">
                 Your game account needs {formatNear(needed.toString(), 2)} NEAR to sit here: the {formatNear(meta.stake)} stake and about{" "}
@@ -463,16 +507,15 @@ function Lobby({
               </button>
             )}
             {host && !isHost && open === 0 && <p className="fd-small">Everybody is in. The host starts the game.</p>}
-            {host && open > 0 && seated && (
-              <p className="fd-small">
-                {isHost ? "You host this room: the game starts when you say so, once every seat is taken." : "The host starts the game once every seat is taken."}
-              </p>
-            )}
             {seated && open > 0 && (
               <div className="fd-acts">
                 <button type="button" className="fd-go" onClick={share}>
-                  <Copy size={18} /> {copied ? "Link copied" : "Copy the invitation link"}
+                  <Copy size={18} /> {copied ? "Link copied: send it to a friend" : open === 1 ? "Invite a friend" : "Invite friends"}
                 </button>
+                <p className="fd-invite" title={invitation}>
+                  {invitation}
+                </p>
+                {host && <p className="fd-fine">{isHost ? "You start the game once every seat is taken." : "The host starts the game once every seat is taken."}</p>}
                 {helper?.agent && meta.solo_player === null && (
                   <button type="button" className="fd-pill" disabled={inviting} onClick={inviteAgent}>
                     <Bot size={16} /> {inviting ? "The AI is taking its seat…" : "Play against the AI"}
@@ -489,8 +532,8 @@ function Lobby({
               </p>
             )}
           </section>
-          <PassengerStub state={state} helper={helper} freePlay={Boolean(sponsor)} />
-          <AgentStub desk={desk} signedIn={Boolean(player)} />
+          <PassengerStub state={state} helper={helper} freePlay={Boolean(sponsor)} compact onSignIn={onSignIn} />
+          <AgentStub desk={desk} signedIn={Boolean(player)} compact />
         </aside>
       </div>
     </Hall>
@@ -539,9 +582,14 @@ function Payout({
         {result.forfeited !== "0" && ` The house seat's ${formatNear(result.forfeited)} NEAR stays in the contract.`}
         {result.deed && ` Deed of this match minted to ${accountLabel(result.deed)}.`}
       </p>
+      <div className="tp-row tp-row--exit">
+        <Link className="tp-btn tp-btn--main tp-btn--big" href="/play">
+          Back to the lobby
+        </Link>
+      </div>
       <div className="tp-row">
-        <Link className="tp-btn tp-btn--main" href="/play">
-          All matches
+        <Link className="tp-btn" href="/">
+          Club menu
         </Link>
         {ledger && (
           <button type="button" className="tp-btn" onClick={() => setListing(true)}>

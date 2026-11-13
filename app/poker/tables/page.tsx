@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { TablesScreen } from "@/games/poker/table/components/TablesScreen";
+import "../../play/desk.css";
 import "./tables.css";
+import "./pregame.css";
 
 export const metadata: Metadata = {
   title: "Deedlords Poker: tables of two to nine",
