@@ -12,6 +12,12 @@ export const dynamic = "force-dynamic";
 const MATCH_ID = /^[A-Za-z0-9_-]{1,32}$/;
 const FRESH_MS = 4_000;
 const MAX_KNOWN = 5_000;
+/**
+ * How long one listing may turn to the archival nodes for transactions the ordinary nodes no longer hold: an old match
+ * can be a hundred of them, and an archive answers slowly. After that a forgotten transaction is left for the next
+ * listing (what was read is remembered), so the list fills in over a few of them instead of timing out.
+ */
+const ARCHIVE_BUDGET_MS = 6_000;
 
 const shelf = globalThis as { deedlordsLedger?: { known: LedgerSources["known"]; lists: Map<string, { at: number; rows: Promise<MoveTx[]> }> } };
 const cache = (shelf.deedlordsLedger ??= { known: new Map(), lists: new Map() });
@@ -33,7 +39,7 @@ export async function GET(request: Request): Promise<Response> {
         indexerUrl: CHAIN.indexerUrl,
         contractId: CHAIN.contractId,
         known: cache.known,
-        readTx: (hash, signer) => readTransaction(CHAIN, hash, signer, { timeoutMs: 10_000 }),
+        readTx: (hash, signer) => readTransaction(Date.now() - now < ARCHIVE_BUDGET_MS ? CHAIN : { rpcUrl: CHAIN.rpcUrl, archiveUrl: null }, hash, signer, { timeoutMs: 10_000 }),
       }),
     };
     cache.lists.set(id, list);

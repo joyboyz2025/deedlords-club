@@ -33,6 +33,12 @@ export const maxDuration = 60;
 const ACCOUNT_ID = /^(?:[0-9a-f]{64}|(?=.{2,64}$)[a-z0-9]+(?:[-_.][a-z0-9]+)*)$/;
 /** The contract lets anyone abandon a lobby 15 minutes after it was created; a little longer, for clocks that differ. */
 const ABANDON_GAS = 30_000_000_000_000n;
+/**
+ * How long whoever asked for a table waits while older tables are tidied. The sponsor's key sends one transaction at a
+ * time, a couple of seconds each, so seven of them ahead of a new table once ran the request past its time limit (a
+ * gateway's 504 instead of a table). What is left is tidied for the next visitor.
+ */
+const TIDY_BUDGET_MS = 6_000;
 const text = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /** Whether every call of `batch` shows on the table: it was created, and each seat it joins is the sponsor's. */
@@ -81,12 +87,15 @@ export async function POST(request: Request): Promise<Response> {
     // Tables people left hold the sponsor's deposit and a place each: lobbies are abandoned, and at tables under way
     // the house gives up its seats, which ends them. A few at a time, while somebody waits for a table.
     const { abandon, resign, open } = tidyFreeTables(tables, paying.accountId, Date.now());
-    await Promise.allSettled([
-      ...abandon.slice(0, 4).map((id) => paying.session.call("abandon", { id }, ABANDON_GAS)),
-      ...resign.slice(0, 3).map(async ({ id, seats }) => {
-        for (const seat of seats) await paying.session.call("play", { id, seat, actions: ["Resign"] }, MOVE_GAS);
-      }),
-    ]);
+    const tidying: (() => Promise<unknown>)[] = [
+      ...abandon.slice(0, 4).map((id) => () => paying.session.call("abandon", { id }, ABANDON_GAS)),
+      ...resign.slice(0, 3).flatMap(({ id, seats }) => seats.map((seat) => () => paying.session.call("play", { id, seat, actions: ["Resign"] }, MOVE_GAS))),
+    ];
+    const until = Date.now() + TIDY_BUDGET_MS;
+    for (const tidy of tidying) {
+      if (Date.now() >= until) break;
+      await tidy().catch(() => undefined);
+    }
     if (open >= MAX_FREE_TABLES) return jsonAnswer(429, { error: "every free table is taken right now: join one from the board, or try again in a few minutes" });
   } catch {
     return jsonAnswer(502, { error: `cannot reach ${CHAIN.network}` });

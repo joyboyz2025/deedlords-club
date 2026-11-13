@@ -90,13 +90,17 @@ export async function relay(session: Session, calls: FunctionCall[]): Promise<Ou
  * asked for: one per model in `agents` (models the server offers, or "rules"), each in a seat of its own.
  */
 export async function requestFreeTable(rounds: number, opponent: FreeOpponent, room: { host: string; seats: number } | null = null, agents?: string[]): Promise<string> {
-  return (
-    await post<{ id: string }>(
-      "/api/free",
-      { rounds, opponent, ...(opponent === "friend" && room ? room : {}), ...(opponent === "agent" && agents?.length ? { agents } : {}) },
-      65_000,
-    )
-  ).id;
+  const ask = () =>
+    post<{ id: string }>("/api/free", { rounds, opponent, ...(opponent === "friend" && room ? room : {}), ...(opponent === "agent" && agents?.length ? { agents } : {}) }, 65_000);
+  try {
+    return (await ask()).id;
+  } catch (error) {
+    // A gateway that gave up on a server just waking (HTTP 502, 503, 504 with no answer of the route's own) says
+    // nothing about a table: ask once more. A table the first request did open after all is one nobody sits at, and
+    // the sponsor abandons those.
+    if (!(error instanceof Error && /^the server answered 50[234]$/.test(error.message))) throw error;
+    return (await ask()).id;
+  }
 }
 
 /** The sponsor opens a free table and this game account takes its first seat. Resolves to the match's id. */
