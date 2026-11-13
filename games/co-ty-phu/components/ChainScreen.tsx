@@ -13,7 +13,7 @@ import type { ChainMatch, ChainResult } from "../chain/types";
 import { armAgent, useAgent } from "../chain/useAgent";
 import { useAgentNotes, useAutopilot } from "../chain/useAutopilot";
 import { useChainRoom } from "../chain/useChainRoom";
-import { isFreeTable, seatCaller, takeFreeSeat } from "../chain/free";
+import { isFreeTable, seatCaller, seatHouseAgent, takeFreeSeat } from "../chain/free";
 import { useFreeSponsor, useHouseAgent, useHouseModels } from "../chain/useFree";
 import { approvesInWindow, sendStake, usePlayer, type PlayerState } from "../chain/usePlayer";
 import { AgentStub, CheckIn, Flap, Hall, PassengerStub } from "./Desk";
@@ -264,6 +264,8 @@ function Lobby({
   const [copied, setCopied] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const seated = accountId !== null && meta.seats.some((seat) => seat.backer === accountId);
   // In a match against the house the last free seat is the solo player's.
   const mayJoin = player !== null && !seated && (meta.solo_player === null || meta.solo_player === accountId);
@@ -350,6 +352,36 @@ function Lobby({
         : mayJoin
           ? "A seat is open. Sit down."
           : "Boarding now.";
+  // A free room whose friends do not come: the house's agent takes a seat when asked, up to three of them.
+  const mayAddAgent = sponsored && seated && open > 0 && meta.seats.filter((seat) => seat.backer === sponsor).length < 3;
+  const addAgent = async () => {
+    setAdding(true);
+    setFailed(null);
+    try {
+      await seatHouseAgent(meta.id);
+      await onJoined();
+    } catch (error) {
+      setFailed(problemText(error));
+    }
+    setAdding(false);
+  };
+  // Out of the room before it starts: the seat is free again and a stake comes back. A room nobody starts is closed
+  // by the contract's own rule, fifteen minutes after it was opened, with every stake returned.
+  const leave = async () => {
+    if (!player) return;
+    const mine = meta.seats.find((seat) => seat.backer === accountId);
+    if (!mine) return;
+    setLeaving(true);
+    setFailed(null);
+    try {
+      await seatCaller(player.session).call("leave", { id: meta.id, seat: mine.seat }, { stake: meta.stake, creator: meta.creator });
+      void state.refreshBalance();
+      window.location.assign("/play");
+    } catch (error) {
+      setFailed(problemText(error));
+      setLeaving(false);
+    }
+  };
   const start = async () => {
     if (!player) return;
     setStarting(true);
@@ -526,6 +558,11 @@ function Lobby({
                 <p className="fd-invite" title={invitation}>
                   {invitation}
                 </p>
+                {mayAddAgent && (
+                  <button type="button" className="fd-pill" disabled={adding} onClick={addAgent}>
+                    <Bot size={16} /> {adding ? "The AI is taking a seat…" : "Add an AI to a free seat"}
+                  </button>
+                )}
                 {host && <p className="fd-fine">{isHost ? "You start the game once every seat is taken." : "The host starts the game once every seat is taken."}</p>}
                 {helper?.agent && meta.solo_player === null && (
                   <button type="button" className="fd-pill" disabled={inviting} onClick={inviteAgent}>
@@ -541,6 +578,17 @@ function Lobby({
               <p className="fd-problem" role="alert">
                 {failed}
               </p>
+            )}
+            {seated && player?.via !== "helper" && (
+              <>
+                <button type="button" className="fd-pill" disabled={leaving} onClick={leave}>
+                  {leaving ? "Leaving…" : isHost ? "Leave and close the room" : "Leave the room"}
+                </button>
+                <p className="fd-fine">
+                  {unstaked ? "Your seat is free again." : "Your stake comes back and your seat is free again."}{" "}
+                  {isHost ? "Nobody else can start this room: the contract closes it 15 minutes after it was opened and returns every stake." : ""}
+                </p>
+              </>
             )}
           </section>
           <PassengerStub state={state} helper={helper} freePlay={Boolean(sponsor)} compact onSignIn={onSignIn} />

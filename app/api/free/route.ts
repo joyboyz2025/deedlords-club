@@ -3,13 +3,15 @@
 // sponsor also sits in every other seat and its agents play them (/api/free/move), one to three of them, each with
 // the model named in `agents` (a model this server offers, or "rules"); otherwise the seat waits for whoever gets the
 // link. With `host` (and up to four `seats`) that table is a room: it starts when its host says so.
+// POST { seatAgentAt: <id> }: the sponsor's agent takes a free seat of a free room that is still boarding, for whoever
+// is waiting there for friends who do not come. It plays by the server's house model.
 //
 // The sponsor pays a table's storage deposit and gets it back when the match is settled, or when a lobby nobody
 // joined is abandoned, which this route does for its own old lobbies before it opens another.
 
 import { clientKey } from "@/games/co-ty-phu/agent/rateLimit";
 import { RULES_MODEL, llmModels } from "@/games/co-ty-phu/agent/llm";
-import { freeTableCalls, inTransactions, newMatchId, ROUND_CHOICES, SEAT_COUNTS, TURN_SECONDS } from "@/games/co-ty-phu/chain/calls";
+import { freeTableCalls, inTransactions, joinCalls, newMatchId, ROUND_CHOICES, SEAT_COUNTS, TURN_SECONDS } from "@/games/co-ty-phu/chain/calls";
 import {
   MAX_FREE_TABLES,
   MAX_HOUSE_AGENTS,
@@ -63,6 +65,7 @@ export async function POST(request: Request): Promise<Response> {
   } catch {
     // No body: the defaults.
   }
+  if (body.seatAgentAt !== undefined) return seatAgent(paying, body.seatAgentAt, request);
   const rounds = body.rounds === undefined ? 6 : body.rounds;
   if (typeof rounds !== "number" || !ROUND_CHOICES.includes(rounds)) return jsonAnswer(400, { error: `rounds: one of ${ROUND_CHOICES.join(", ")}` });
   if (body.opponent !== undefined && body.opponent !== "agent" && body.opponent !== "friend") return jsonAnswer(400, { error: "opponent: agent or friend" });
@@ -123,5 +126,34 @@ export async function POST(request: Request): Promise<Response> {
     return jsonAnswer(200, { id, opponent: withAgent ? "agent" : "friend", sponsor: paying.accountId, hash, agents: models });
   } catch (error) {
     return jsonAnswer(502, { error: `the sponsor could not open a table: ${text(error)}` });
+  }
+}
+
+const MATCH_ID = /^[A-Za-z0-9_-]{1,32}$/;
+
+/** The sponsor's agent takes the first free seat of a free room of the sponsor's that has not started. */
+async function seatAgent(paying: NonNullable<ReturnType<typeof sponsor>>, id: unknown, request: Request): Promise<Response> {
+  if (typeof id !== "string" || !MATCH_ID.test(id)) return jsonAnswer(400, { error: "seatAgentAt: a match id" });
+  if (!limits.tablePerIp.allow(clientKey(request)) || !limits.tableGlobal.allow("*")) return jsonAnswer(429, { error: "too many seats asked for from here: wait a few minutes" });
+  let match: ChainMatch | null;
+  try {
+    match = await chainClient.view<ChainMatch | null>("get_match", { id });
+  } catch {
+    return jsonAnswer(502, { error: `cannot reach ${CHAIN.network}` });
+  }
+  if (!match || match.meta.stake !== "0" || match.meta.creator !== paying.accountId) return jsonAnswer(403, { error: `${id} is not a free table of this server` });
+  if (match.meta.status !== "lobby") return jsonAnswer(409, { error: "the game has started" });
+  const { seats } = match.meta;
+  const free = seats.find((seat) => seat.backer === null);
+  if (!free) return jsonAnswer(409, { error: "every seat is taken" });
+  // The house keeps people company: it does not sit at a table nobody is at, nor take more seats than a table against it has.
+  if (!seats.some((seat) => seat.backer !== null && seat.backer !== paying.accountId)) return jsonAnswer(409, { error: "the house sits down with players, not alone" });
+  if (seats.filter((seat) => seat.backer === paying.accountId).length >= MAX_HOUSE_AGENTS) return jsonAnswer(409, { error: `the house plays at most ${MAX_HOUSE_AGENTS} seats of a table` });
+  try {
+    const outcome = await paying.session.transact(joinCalls(id, free.seat, 0n));
+    rememberSponsored(id, paying);
+    return jsonAnswer(200, { id, seat: free.seat, hash: outcome.hash });
+  } catch (error) {
+    return jsonAnswer(502, { error: `the house could not take the seat: ${text(error)}` });
   }
 }

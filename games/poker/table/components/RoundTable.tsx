@@ -802,7 +802,7 @@ function ActionStub({
   }
 
   // A seat dealt into the hand, folded or not, is paid when the hand is over.
-  const leaveWords = !mine ? null : view.leaving[mySeat] ? null : inHand ? "Leave after this hand" : "Leave and cash out";
+  const leaveWords = !mine ? null : view.leaving[mySeat] ? null : inHand ? "Leave after this hand" : view.phase === "lobby" || BigInt(view.stake) === 0n ? "Leave the table" : "Leave and cash out";
   const extras = !reading && (late || (mine && leaveWords));
   const showPlanner = Boolean(house && (house.canAdd || house.seating) && !reading);
   const showAgent = Boolean(agent && mine && !inLobby && !reading);

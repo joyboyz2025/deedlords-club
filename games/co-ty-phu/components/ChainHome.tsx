@@ -57,7 +57,9 @@ export function ChainHome() {
       chainClient.view<ChainListed[]>("list_matches", { from_index: 0, limit: 50 }).then(
         (listed) => {
           if (stopped) return;
-          setMatches(listed);
+          // A room everybody has left (or one only the house's agents sit in) is nobody's game: not listed. The
+          // contract closes it 15 minutes after it was opened.
+          setMatches(listed.filter((match) => match.status !== "lobby" || match.seats.some((seat) => seat.backer !== null && seat.backer !== match.creator) || match.seats.some((seat) => seat.backer === match.creator && match.stake !== "0")));
           setOffline(false);
         },
         () => !stopped && setOffline(true),

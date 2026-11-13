@@ -25,7 +25,9 @@ export function Departures() {
         (listed) => {
           if (stopped) return;
           const now = BigInt(Date.now()) * 1_000_000n;
-          setMatches(listed.filter((match) => match.status === "lobby" || (match.status === "playing" && now - BigInt(match.last_activity) < LIVE_NS)));
+          // A room nobody sits in any more is not a departure.
+          const peopled = (match: ChainListed) => match.seats.some((seat) => seat.backer !== null && (seat.backer !== match.creator || match.stake !== "0"));
+          setMatches(listed.filter((match) => (match.status === "lobby" && peopled(match)) || (match.status === "playing" && now - BigInt(match.last_activity) < LIVE_NS)));
           setFailed(false);
         },
         () => !stopped && setFailed(true),

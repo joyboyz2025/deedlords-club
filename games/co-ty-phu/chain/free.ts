@@ -103,6 +103,11 @@ export async function requestFreeTable(rounds: number, opponent: FreeOpponent, r
   }
 }
 
+/** Asks the sponsor's agent to take a free seat of free room `id` that is still boarding. Resolves to the seat it took. */
+export async function seatHouseAgent(id: string): Promise<number> {
+  return (await post<{ seat: number }>("/api/free", { seatAgentAt: id }, 65_000)).seat;
+}
+
 /** The sponsor opens a free table and this game account takes its first seat. Resolves to the match's id. */
 export async function openFreeTable(session: Session, rounds: number, opponent: FreeOpponent, seats = 2, agents?: string[]): Promise<string> {
   // A new guest's account is opened while the table is: two transactions of the sponsor's, side by side.
