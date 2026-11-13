@@ -304,3 +304,32 @@ test("at a free poker table the sponsor sends a seat's calls, the shuffle and it
   assert.throws(() => relayable(delegate({ actions: [call("shuffle").actions[0]] }), CONTRACT), Refused);
   assert.throws(() => relayable(delegate({ receiverId: TABLE }), TABLE, POKER_RULES), Refused);
 });
+
+test("tables people left do not hold every free place: old lobbies are abandoned, the house resigns where a game was left", async () => {
+  const { tidyFreeTables, ABANDON_AFTER_MS, LEFT_AFTER_MS } = await import("../games/co-ty-phu/chain/freeDesk.ts");
+  const now = 10_000_000_000;
+  const at = (ms: number) => String(BigInt(now - ms) * 1_000_000n);
+  const table = (id: string, status: "lobby" | "playing", createdAgo: number, idleFor: number, backers: (string | null)[]) =>
+    ({
+      id,
+      status,
+      created_at: at(createdAgo),
+      last_activity: at(idleFor),
+      seats: backers.map((backer, seat) => ({ seat, player: `s${seat}`, backer, driver: null, house: false })),
+    }) as never;
+  const HOUSE = "free.deedlords.near";
+  const tidy = tidyFreeTables(
+    [
+      table("new-lobby", "lobby", 60_000, 60_000, [HOUSE, null]),
+      table("old-lobby", "lobby", ABANDON_AFTER_MS + 1, ABANDON_AFTER_MS + 1, [HOUSE, null]),
+      table("playing", "playing", 3_600_000, 20_000, ["guest", HOUSE]),
+      table("left-vs-ai", "playing", 9_000_000, LEFT_AFTER_MS + 1, ["guest", HOUSE, HOUSE, null]),
+      table("left-friends", "playing", 9_000_000, LEFT_AFTER_MS + 1, ["guest", "friend"]),
+    ],
+    HOUSE,
+    now,
+  );
+  assert.deepEqual(tidy.abandon, ["old-lobby"]);
+  assert.deepEqual(tidy.resign, [{ id: "left-vs-ai", seats: [1, 2] }], "every house seat gives up; a room of friends has none");
+  assert.equal(tidy.open, 2, "only the new lobby and the table being played still hold a place");
+});

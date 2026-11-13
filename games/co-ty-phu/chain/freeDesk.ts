@@ -123,3 +123,28 @@ export async function sponsoredTables(sponsor: Sponsor): Promise<ChainMeta[]> {
   }
   return mine;
 }
+
+/** A lobby nobody else came to is abandoned (the contract allows it 15 minutes after it was opened). */
+export const ABANDON_AFTER_MS = 16 * 60_000;
+/**
+ * A free table under way where nothing has moved for this long has been left: while somebody has it open, the page
+ * throws the dice within seconds and the house plays its turns, so a quiet table is one whose players closed it.
+ */
+export const LEFT_AFTER_MS = 20 * 60_000;
+
+/**
+ * What the sponsor does about its tables before it opens another, so that tables people left do not hold every place
+ * for ever: lobbies nobody came to are abandoned (`abandon`), and at tables under way that were left the house's seats
+ * give up (`resign`: the seats it backs), which ends a table where only one other seat is left, and returns the
+ * sponsor's storage deposit. `open`: the tables that still count against `MAX_FREE_TABLES`; a left table with no house
+ * seat to give up (a room of friends) no longer does.
+ */
+export function tidyFreeTables(tables: ChainMeta[], sponsorId: string, now: number): { abandon: string[]; resign: { id: string; seats: number[] }[]; open: number } {
+  const ms = (nanos: string) => Number(BigInt(nanos) / 1_000_000n);
+  const abandon = tables.filter((meta) => meta.status === "lobby" && ms(meta.created_at) + ABANDON_AFTER_MS < now).map((meta) => meta.id);
+  const left = tables.filter((meta) => meta.status === "playing" && ms(meta.last_activity) + LEFT_AFTER_MS < now);
+  const resign = left
+    .map((meta) => ({ id: meta.id, seats: meta.seats.filter((seat) => seat.backer === sponsorId).map((seat) => seat.seat) }))
+    .filter((table) => table.seats.length > 0);
+  return { abandon, resign, open: tables.length - abandon.length - left.length };
+}

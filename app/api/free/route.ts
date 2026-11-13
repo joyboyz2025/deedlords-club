@@ -10,8 +10,18 @@
 import { clientKey } from "@/games/co-ty-phu/agent/rateLimit";
 import { RULES_MODEL, llmModels } from "@/games/co-ty-phu/agent/llm";
 import { freeTableCalls, inTransactions, newMatchId, ROUND_CHOICES, SEAT_COUNTS, TURN_SECONDS } from "@/games/co-ty-phu/chain/calls";
-import { MAX_FREE_TABLES, MAX_HOUSE_AGENTS, idWithHouseSeats, jsonAnswer, limits, rememberHouseSeats, rememberSponsored, sponsoredTables } from "@/games/co-ty-phu/chain/freeDesk";
-import { CHAIN } from "@/lib/chain/config";
+import {
+  MAX_FREE_TABLES,
+  MAX_HOUSE_AGENTS,
+  idWithHouseSeats,
+  jsonAnswer,
+  limits,
+  rememberHouseSeats,
+  rememberSponsored,
+  sponsoredTables,
+  tidyFreeTables,
+} from "@/games/co-ty-phu/chain/freeDesk";
+import { CHAIN, MOVE_GAS } from "@/lib/chain/config";
 import { chainClient } from "@/lib/chain/shared";
 import type { ChainMatch } from "@/games/co-ty-phu/chain/types";
 import { sponsor } from "@/lib/chain/sponsor";
@@ -22,7 +32,6 @@ export const maxDuration = 60;
 
 const ACCOUNT_ID = /^(?:[0-9a-f]{64}|(?=.{2,64}$)[a-z0-9]+(?:[-_.][a-z0-9]+)*)$/;
 /** The contract lets anyone abandon a lobby 15 minutes after it was created; a little longer, for clocks that differ. */
-const ABANDON_AFTER_MS = 16 * 60_000;
 const ABANDON_GAS = 30_000_000_000_000n;
 const text = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -69,9 +78,15 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const tables = await sponsoredTables(paying);
-    const stale = tables.filter((meta) => meta.status === "lobby" && Number(BigInt(meta.created_at) / 1_000_000n) + ABANDON_AFTER_MS < Date.now());
-    const closed = await Promise.allSettled(stale.slice(0, 4).map((meta) => paying.session.call("abandon", { id: meta.id }, ABANDON_GAS)));
-    const open = tables.length - closed.filter((result) => result.status === "fulfilled").length;
+    // Tables people left hold the sponsor's deposit and a place each: lobbies are abandoned, and at tables under way
+    // the house gives up its seats, which ends them. A few at a time, while somebody waits for a table.
+    const { abandon, resign, open } = tidyFreeTables(tables, paying.accountId, Date.now());
+    await Promise.allSettled([
+      ...abandon.slice(0, 4).map((id) => paying.session.call("abandon", { id }, ABANDON_GAS)),
+      ...resign.slice(0, 3).map(async ({ id, seats }) => {
+        for (const seat of seats) await paying.session.call("play", { id, seat, actions: ["Resign"] }, MOVE_GAS);
+      }),
+    ]);
     if (open >= MAX_FREE_TABLES) return jsonAnswer(429, { error: "every free table is taken right now: join one from the board, or try again in a few minutes" });
   } catch {
     return jsonAnswer(502, { error: `cannot reach ${CHAIN.network}` });
