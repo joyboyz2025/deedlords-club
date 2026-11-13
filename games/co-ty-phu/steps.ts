@@ -5,13 +5,16 @@
 // threw 5+6 and the piece walked nineteen squares. From the rolls the contract logged (`trail`) the steps in between
 // are rebuilt: for each roll its own dice and the square they lead to, and, when the piece did not stay where the last
 // dice put it (a card, Customs), that square first and the real state after it (`step` 1: the same roll, a second
-// leg). The screen shows them one at a time (TycoonScreen `useRollPace`). Whatever cannot be rebuilt with certainty
-// is left as it came: the last state is always the chain's own.
+// leg). A card drawn where the dice led is shown there, as the viewer's own cards are: without it an agent that drew
+// "Advance to Departure" simply ran a lap of the board, and nobody could tell why. The screen shows the steps one at a
+// time (TycoonScreen `useRollPace`). Whatever cannot be rebuilt with certainty is left as it came: the last state is
+// always the chain's own.
 
-import { BOARD_SIZE } from "./board.ts";
+import { BOARD_SIZE, CARDS, type Deck } from "./board.ts";
 import type { View } from "./view.ts";
 
-export type RollNote = { player: string; dice: [number, number] };
+/** One roll the contract logged, and the cards drawn on the squares it led to, in the order they were drawn. */
+export type RollNote = { player: string; dice: [number, number]; cards?: { deck: Deck; index: number }[] };
 /** A view with what the pacing needs: the rolls the chain has logged, oldest first, and which leg of a roll this is. */
 export type PacedView = View & { trail?: RollNote[]; step?: number };
 
@@ -31,7 +34,13 @@ export function rollSteps(from: PacedView, to: PacedView): PacedView[] {
   const thrown = new Map<string, number>();
   const steps: PacedView[] = [];
   let players = from.players;
-  for (const [i, { player, dice }] of rolls.entries()) {
+  const cardOf = (note: RollNote): View["card"] => {
+    const drawn = note.cards?.[0];
+    const text = drawn && CARDS[drawn.deck]?.[drawn.index]?.text;
+    return drawn && text ? { deck: drawn.deck, text } : null;
+  };
+  for (const [i, note] of rolls.entries()) {
+    const { player, dice } = note;
     const before = from.players.find((one) => one.id === player);
     // The viewer's own rolls come one transaction each and are shown as they are. Somebody in Customs may not move at all.
     if (!before || player === to.you.id || before.jail !== null || before.bankrupt || before.color === null) return [to];
@@ -39,7 +48,7 @@ export function rollSteps(from: PacedView, to: PacedView): PacedView[] {
     at.set(player, landing);
     thrown.set(player, (thrown.get(player) ?? 0) + 1);
     players = players.map((one) => (one.id === player ? { ...one, position: landing } : one));
-    steps.push({ ...from, players, dice, rolls: from.rolls + i + 1, current: player, card: null, autoInMs: null, step: 0 });
+    steps.push({ ...from, players, dice, rolls: from.rolls + i + 1, current: player, card: cardOf(note), autoInMs: null, step: 0 });
   }
   // Where the dice alone lead against where the chain says each thrower is.
   const elsewhere = (id: string) => {
@@ -51,6 +60,8 @@ export function rollSteps(from: PacedView, to: PacedView): PacedView[] {
     // Sent on between two rolls of its own, or while somebody else threw after it: the squares in between are unknown.
     if (elsewhere(id) && (times > 1 || id !== last)) return [to];
   }
-  if (!elsewhere(last)) return [...steps.slice(0, -1), to];
+  // The last roll as the chain gives it, unless something is to be seen where its dice led first: a card, or a
+  // square the piece did not stay on.
+  if (!elsewhere(last) && !cardOf(rolls[made - 1])) return [...steps.slice(0, -1), to];
   return [...steps, { ...to, step: 1 }];
 }

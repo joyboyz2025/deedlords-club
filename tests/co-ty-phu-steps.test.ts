@@ -92,3 +92,43 @@ test("what cannot be rebuilt for certain is left as the chain gave it", () => {
   const same = view(3, { s0: 0, s1: 2 }, { trail: [] });
   assert.deepEqual(rollSteps(from, same), [same]);
 });
+
+test("a card an agent drew is shown on the square the dice led to, before the piece goes where it sends it", async () => {
+  const { CARDS } = await import("../games/co-ty-phu/board.ts");
+  const { rollTrail } = await import("../games/co-ty-phu/chain/room.ts");
+  // As the contract logged it on testnet, 2026-11-13: 1+6 from Departure onto Travel Alert, the card "advance to Departure", the salary.
+  const trail = rollTrail([
+    { kind: "roll", player: "s0", dice: [1, 3] },
+    { kind: "tax", player: "s0", square: 4, amount: 200 },
+    { kind: "roll", player: "s1", dice: [1, 6] },
+    { kind: "card", player: "s1", deck: "chance", index: 0 },
+    { kind: "salary", player: "s1", amount: 200 },
+  ]);
+  assert.deepEqual(trail, [
+    { player: "s0", dice: [1, 3] },
+    { player: "s1", dice: [1, 6], cards: [{ deck: "chance", index: 0 }] },
+  ]);
+  const from = view(1, { s0: 4, s1: 0 });
+  const to = view(2, { s0: 4, s1: 0 }, { dice: [1, 6], trail });
+  const steps = rollSteps(from, to);
+  assert.deepEqual(
+    steps.map((step) => [beatOf(step), where(step, "s1"), step.card?.text ?? null, step.current]),
+    [
+      ["2:0", 7, CARDS.chance[0].text, "s1"],
+      ["2:1", 0, null, "s0"],
+    ],
+  );
+});
+
+test("a card that moves nobody is still shown where it was drawn", () => {
+  const from = view(3, { s0: 0, s1: 0 });
+  const to = view(4, { s0: 0, s1: 7 }, { dice: [3, 4], trail: [{ player: "s1", dice: [3, 4], cards: [{ deck: "chance", index: 5 }] }] });
+  const steps = rollSteps(from, to);
+  assert.deepEqual(
+    steps.map((step) => [beatOf(step), where(step, "s1"), Boolean(step.card)]),
+    [
+      ["4:0", 7, true],
+      ["4:1", 7, false],
+    ],
+  );
+});

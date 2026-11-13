@@ -11,7 +11,7 @@ import type { TeeProof } from "../../../lib/teeProof.ts";
 import { canBuild, currentPlayer, type Game } from "../engine.ts";
 import type { Plan } from "../agent/plan.ts";
 import type { ClientMessage } from "../protocol.ts";
-import type { PacedView } from "../steps.ts";
+import type { PacedView, RollNote } from "../steps.ts";
 import type { View } from "../view.ts";
 import { applyAction, chainView, deadlineMs, diceAllowed, needsDice, seatOf, settledGame, toAction, toGame } from "./adapt.ts";
 import { describeCall, type MoveTx } from "./ledger.ts";
@@ -79,6 +79,16 @@ const OFFLINE_AFTER = 2;
  */
 export const MOVE_TIMEOUT_MS = 40_000;
 export const SLOW_NODE = "The node did not answer in time. The move may still land: the board is read again.";
+/** The rolls in the contract's log, oldest first, each with the cards its player drew before rolling again. */
+export function rollTrail(log: ChainMatch["log"]): RollNote[] {
+  const trail: RollNote[] = [];
+  for (const event of log) {
+    if (event.kind === "roll") trail.push({ player: event.player, dice: event.dice });
+    else if (event.kind === "card" && trail.at(-1)?.player === event.player) (trail.at(-1)!.cards ??= []).push({ deck: event.deck, index: event.index });
+  }
+  return trail;
+}
+
 /** With `autoPlay`: a turn with nothing left to decide is ended this long after the chain shows it, so the landing is seen first. */
 export const AUTO_END_AFTER_MS = 1_800;
 /** With `autoPlay`: the dice are thrown for a viewer who has not thrown them after this long. */
@@ -504,7 +514,7 @@ export class ChainRoom {
       // With the rolls the contract logged, so that a turn made of several is shown roll by roll (steps.ts).
       const paced: PacedView = {
         ...chainView(game, match.meta, this.accountId, now, sameTurn ? (deadline !== null && own !== null ? Math.min(deadline, own) : (own ?? deadline)) : null),
-        trail: match.log.flatMap((event) => (event.kind === "roll" ? [{ player: event.player, dice: event.dice }] : [])),
+        trail: rollTrail(match.log),
       };
       view = paced;
     }

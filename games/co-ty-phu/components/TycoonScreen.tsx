@@ -224,7 +224,9 @@ function useRollPace(live: PacedView, enabled: boolean): { view: View; holding: 
     if (beatOf(next) !== beatOf(shown)) {
       // The roll on the board is still playing: `arrived` (or the limit below) comes back here.
       if (shown.dice !== null && shown.rolls !== settled) return;
-      const wait = settledAt.current + (ahead >= HURRY_AT ? 0 : DWELL_MS) - Date.now();
+      // A card drawn where the piece has just arrived is read before the piece goes where the card sends it.
+      const dwell = next.step && shown.card ? CARD_MS : ahead >= HURRY_AT ? 0 : DWELL_MS;
+      const wait = settledAt.current + dwell - Date.now();
       if (wait > 0) {
         const timer = setTimeout(() => setTick((n) => n + 1), wait);
         return () => clearTimeout(timer);
@@ -260,6 +262,8 @@ function useRollPace(live: PacedView, enabled: boolean): { view: View; holding: 
 const HOLD_LIMIT_MS = 12_000;
 /** After a piece has arrived, what happened there stays on screen this long before the next roll is thrown. */
 const DWELL_MS = 700;
+/** How long a card drawn by somebody else stays up before the piece moves on. */
+const CARD_MS = 2_800;
 /** What a piece sent on by a card is given to get there before the next roll. */
 const LEG_MS = 1_600;
 /** This many rolls waiting to be shown: the board is falling behind the chain, so the dwell is dropped. */
