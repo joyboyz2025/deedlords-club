@@ -34,6 +34,13 @@ export const FREE_TABLE_HANDS = 10;
  * the clock it was opened with.
  */
 export const TURN_SECONDS = 30;
+/**
+ * The clock at a free table. There every seat's step is sent by one account, the sponsor (it relays the guests' calls
+ * and plays the house's seat), one transaction at a time: a step can wait its turn behind others, and on 2026-11-13 a
+ * guest's shares took more than half a minute to go through and the guest was ruled late. A minute leaves room for
+ * that. At a table with a stake each seat sends its own transactions, and half a minute holds.
+ */
+export const FREE_TURN_SECONDS = 60;
 export const MAX_SEATS = 9;
 const TGAS = 1_000_000_000_000n;
 /** A decryption share with its proof, in bytes. */

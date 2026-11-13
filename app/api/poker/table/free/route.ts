@@ -5,7 +5,7 @@
 // closes, and a hand costs it the gas of every seat's calls, a shuffle most of all: hence the limits.
 
 import { clientKey, intEnv, rateLimiter } from "@/games/co-ty-phu/agent/rateLimit";
-import { MAX_SEATS, TURN_SECONDS } from "@/games/poker/table/contract";
+import { FREE_TURN_SECONDS, MAX_SEATS } from "@/games/poker/table/contract";
 import { freeHost, houseModels, openFreeTable, startFreeTable } from "@/games/poker/table/house";
 
 export const dynamic = "force-dynamic";
@@ -48,7 +48,7 @@ export async function POST(request: Request): Promise<Response> {
     return answer(400, { error: `model: one of ${houseModels().join(", ")}` });
   if (!tablesPerIp.allow(clientKey(request)) || !tablesInAll.allow("*")) return answer(429, { error: "too many free tables opened from here: wait a few minutes" });
   try {
-    return answer(200, await openFreeTable(seats, body.model as string | undefined, TURN_SECONDS));
+    return answer(200, await openFreeTable(seats, body.model as string | undefined, FREE_TURN_SECONDS));
   } catch (error) {
     const why = text(error);
     const told = /every free table is taken|out of NEAR for free tables/.test(why);
