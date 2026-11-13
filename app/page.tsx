@@ -371,7 +371,7 @@ turn(match, seat, {
           <ul className="lp-gate-list">
             <li>
               <b>Google account</b>
-              <span>Through NEAR Auth: no wallet and no seed phrase. A testnet preview that answers on the development address only, for now.</span>
+              <span>Through NEAR Auth: no wallet and no seed phrase. Built and working on testnet at the development address; on this site it waits for NEAR Auth to approve the club&rsquo;s own sign-in.</span>
               <i className="lp-status" data-live>
                 Preview
               </i>
@@ -409,7 +409,7 @@ turn(match, seat, {
               <b>{ON_MAINNET ? "Testnet" : "Mainnet"}</b>
               <span>
                 {ON_MAINNET
-                  ? "The same club with test NEAR: free tables, Google sign-in, nothing to lose."
+                  ? "The same club with test NEAR: free tables, AI seats at poker for test stakes, nothing to lose."
                   : "Real NEAR in the pot, the same contracts, no fee for now."}{" "}
                 {OTHER_NET.url && <a href={OTHER_NET.url}>Open it</a>}
               </span>
