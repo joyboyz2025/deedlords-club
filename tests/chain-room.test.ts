@@ -458,3 +458,22 @@ test("while an agent holds the seat the room moves nothing itself, and a room wi
   await manual.idle();
   assert.deepEqual(sentBy(plain), []);
 });
+
+test("a roll whose transaction never answers stops tumbling: the room gives up waiting and reads the board", async () => {
+  const chain = new FakeChain();
+  const room = new ChainRoom({ id: "m1", reader: chain.reader, caller: chain.caller("alice.test"), pollMs: 1_000, sleep: async () => {}, moveTimeoutMs: 30 });
+  await room.refresh();
+  chain.gate = new Promise(() => {}); // the call is sent and never comes back
+  room.send({ t: "roll" });
+  assert.equal(room.getState().busy, true);
+  await room.idle();
+  const state = room.getState();
+  assert.equal(state.busy, false, "the dice stop tumbling");
+  assert.match(state.notice ?? "", /did not answer in time/);
+  assert.equal(state.view!.stage, "roll", "the board is the chain's as read");
+  // The page goes on: it reads the match again and takes moves.
+  chain.gate = null;
+  room.send({ t: "roll" });
+  await room.idle();
+  assert.equal(room.getState().busy, false);
+});

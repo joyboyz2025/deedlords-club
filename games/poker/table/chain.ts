@@ -121,7 +121,7 @@ export async function openTable(session: Session, seats: number, stake: bigint =
  * `model`, and takes a seat at it. Returns the table id. The account needs no NEAR, only to be a game account.
  */
 export async function openFreeTable(session: Session, seats: number, model?: string): Promise<string> {
-  const { id } = await post<{ id: string }>("/api/poker/table/free", { seats, ...(model ? { model } : {}) });
+  const { id } = await post<{ id: string }>("/api/poker/table/free", { seats, ...(model ? { model } : {}) }, 65_000);
   freeTables.add(id);
   // The node that answers may not have seen the table yet: the seat is asked for again for a few seconds.
   for (let tries = 0; ; tries++) {

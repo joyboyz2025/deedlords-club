@@ -951,6 +951,8 @@ function Dice({ view, busy = false }: { view: View; busy?: boolean }) {
     return () => {
       clearInterval(shake);
       clearTimeout(stop);
+      // A second roll within the 450 ms cancels this one's stop: without this the faces kept turning until a third.
+      setRolling(false);
     };
   }, [view.rolls]);
 

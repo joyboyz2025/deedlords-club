@@ -58,6 +58,8 @@ export type RoomOptions = {
   isVisible?: () => boolean;
   /** Moves for the viewer when they do not: the dice after a few seconds, the end of a turn (see `autoMove`). */
   autoPlay?: boolean;
+  /** How long a transaction is waited for before the room reads the match instead (`MOVE_TIMEOUT_MS`). */
+  moveTimeoutMs?: number;
 };
 
 /** `play` takes at most this many actions. */
@@ -69,6 +71,13 @@ const RESYNC_WAIT_MS = 200;
 const TIMEOUT_GRACE_MS = 1_500;
 const TIMEOUT_RETRY_MS = 1_200;
 const OFFLINE_AFTER = 2;
+/**
+ * A transaction is waited for this long at most. Past it the room stops waiting and reads the match: the move may
+ * have landed, or may land later, and the next poll shows it. Without it a call that never answers (a phone that lost
+ * the network mid-request) kept the dice tumbling, and the board unread, until the page was reloaded.
+ */
+export const MOVE_TIMEOUT_MS = 40_000;
+export const SLOW_NODE = "The node did not answer in time. The move may still land: the board is read again.";
 /** With `autoPlay`: a turn with nothing left to decide is ended this long after the chain shows it, so the landing is seen first. */
 export const AUTO_END_AFTER_MS = 1_800;
 /** With `autoPlay`: the dice are thrown for a viewer who has not thrown them after this long. */
@@ -98,6 +107,15 @@ export function autoMove(game: Game, playerId: string): { after: number; send: C
   return null;
 }
 
+/** `promise`, or a rejection with `SLOW_NODE` once `ms` have passed without an answer. */
+function withinTime<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(SLOW_NODE)), ms);
+  });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
+
 const text = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 export class ChainRoom {
@@ -110,6 +128,7 @@ export class ChainRoom {
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly isVisible: () => boolean;
   private readonly autoPlay: boolean;
+  private readonly moveTimeoutMs: number;
 
   private chain: ChainMatch | null = null;
   private chainJson = "";
@@ -149,6 +168,7 @@ export class ChainRoom {
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.isVisible = options.isVisible ?? (() => true);
     this.autoPlay = options.autoPlay ?? false;
+    this.moveTimeoutMs = options.moveTimeoutMs ?? MOVE_TIMEOUT_MS;
     this.state = { match: null, view: null, result: null, seat: null, link: "connecting", error: null, busy: false, notice: null, sent: [], at: this.now() };
   }
 
@@ -307,7 +327,7 @@ export class ChainRoom {
   /** Calls the contract as the viewer and notes the transaction for the match's list of them. */
   private async transact(caller: Caller, method: string, args: unknown): Promise<{ value: unknown }> {
     const meta = this.chain?.meta;
-    const outcome = await caller.call(method, args, meta && { stake: meta.stake, creator: meta.creator });
+    const outcome = await withinTime(caller.call(method, args, meta && { stake: meta.stake, creator: meta.creator }), this.moveTimeoutMs);
     if (outcome.hash) this.sent = [...this.sent, { hash: outcome.hash, signer: caller.accountId, method, what: describeCall(method, args), atMs: this.now(), ok: true }];
     return outcome;
   }

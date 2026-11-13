@@ -35,8 +35,19 @@ export function freeSponsor(): Promise<string | null> {
   return asked;
 }
 
-export async function post<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(path, { ...JSON_POST, body: JSON.stringify(body) });
+/**
+ * A server route, waited for at most `timeoutMs`: a phone that loses the network, or goes to sleep, mid-request may
+ * otherwise never hear back, and whatever waits for the answer (a roll, a seat) would wait for ever.
+ */
+export async function post<T>(path: string, body: unknown, timeoutMs = 30_000): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(path, { ...JSON_POST, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs) });
+  } catch (error) {
+    if (error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError"))
+      throw new Error("The server did not answer in time. The move may still land: the page reads the table again.");
+    throw error;
+  }
   const answer = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
   if (!response.ok || !answer) throw new Error(answer?.error ?? `the server answered ${response.status}`);
   return answer;
@@ -79,7 +90,13 @@ export async function relay(session: Session, calls: FunctionCall[]): Promise<Ou
  * asked for: one per model in `agents` (models the server offers, or "rules"), each in a seat of its own.
  */
 export async function requestFreeTable(rounds: number, opponent: FreeOpponent, room: { host: string; seats: number } | null = null, agents?: string[]): Promise<string> {
-  return (await post<{ id: string }>("/api/free", { rounds, opponent, ...(opponent === "friend" && room ? room : {}), ...(opponent === "agent" && agents?.length ? { agents } : {}) })).id;
+  return (
+    await post<{ id: string }>(
+      "/api/free",
+      { rounds, opponent, ...(opponent === "friend" && room ? room : {}), ...(opponent === "agent" && agents?.length ? { agents } : {}) },
+      65_000,
+    )
+  ).id;
 }
 
 /** The sponsor opens a free table and this game account takes its first seat. Resolves to the match's id. */
