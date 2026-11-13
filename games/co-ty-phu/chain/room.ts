@@ -11,6 +11,7 @@ import type { TeeProof } from "../../../lib/teeProof.ts";
 import { canBuild, currentPlayer, type Game } from "../engine.ts";
 import type { Plan } from "../agent/plan.ts";
 import type { ClientMessage } from "../protocol.ts";
+import type { PacedView } from "../steps.ts";
 import type { View } from "../view.ts";
 import { applyAction, chainView, deadlineMs, diceAllowed, needsDice, seatOf, settledGame, toAction, toGame } from "./adapt.ts";
 import { describeCall, type MoveTx } from "./ledger.ts";
@@ -489,7 +490,12 @@ export class ChainRoom {
       const sameTurn = !this.final && currentPlayer(game)?.id === currentPlayer(base)?.id;
       // The countdown shown is the chain's clock, or the room's own wait for the viewer when that ends sooner.
       const [deadline, own] = [deadlineMs(match.meta), this.idleTurn ? this.idleTurn.since + this.idleTurn.after : null];
-      view = chainView(game, match.meta, this.accountId, now, sameTurn ? (deadline !== null && own !== null ? Math.min(deadline, own) : (own ?? deadline)) : null);
+      // With the rolls the contract logged, so that a turn made of several is shown roll by roll (steps.ts).
+      const paced: PacedView = {
+        ...chainView(game, match.meta, this.accountId, now, sameTurn ? (deadline !== null && own !== null ? Math.min(deadline, own) : (own ?? deadline)) : null),
+        trail: match.log.flatMap((event) => (event.kind === "roll" ? [{ player: event.player, dice: event.dice }] : [])),
+      };
+      view = paced;
     }
     this.state = {
       match,

@@ -193,6 +193,9 @@ function FlightStub({
     if (!pickedModels && offered.length > 0) setAgentModels((now) => now.map((_, i) => offered[i % offered.length]));
   }, [offered, pickedModels]);
   const setAgentCount = (count: number) => setAgentModels((now) => Array.from({ length: count }, (_, i) => now[i] ?? (offered.length ? offered[i % offered.length] : RULES_MODEL)));
+  // A free room of friends may seat the house's agents too: the host, at least one seat for a friend, agents in the rest.
+  const [roomBots, setRoomBots] = useState<string[]>([]);
+  const setRoomBotCount = (count: number) => setRoomBots((now) => Array.from({ length: count }, (_, i) => now[i] ?? (offered.length ? offered[i % offered.length] : RULES_MODEL)));
   const [opening, setOpening] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -223,6 +226,7 @@ function FlightStub({
   // hosts it, the seats fill as people come, and the game starts when the host says so.
   const room = mode !== "ai";
   const seats = room ? seatCount : 1 + agentModels.length;
+  const bots = mode === "friends" ? roomBots.slice(0, Math.max(0, seatCount - 2)) : [];
   const terms = {
     stake: near(stake),
     maxRounds: rounds,
@@ -240,7 +244,7 @@ function FlightStub({
     run(async () => {
       if (free) {
         // The sponsor opens the table. A game account sits through the sponsor too; a wallet account signs its own seat.
-        const agents = opponent === "agent" ? agentModels : undefined;
+        const agents = opponent === "agent" ? agentModels : bots.length ? bots : undefined;
         if (player!.via === "key") return openFreeTable(player!.session, rounds, opponent, seats, agents);
         const id = await requestFreeTable(rounds, opponent, { host: player!.accountId, seats }, agents);
         await sendStake(player!, joinCalls(id, FREE_GUEST_SEAT, 0n));
@@ -293,7 +297,7 @@ function FlightStub({
       : mode === "friends"
         ? `Open a room of ${seats}`
         : `Open for ${formatNear(cost.toString())} NEAR`;
-  const options = mode === "ai" ? `${agentModels.length} ${agentModels.length === 1 ? "AI" : "AIs"} · ${roundsWords(rounds)}` : `${seats} seats · ${roundsWords(rounds)}`;
+  const options = mode === "ai" ? `${agentModels.length} ${agentModels.length === 1 ? "AI" : "AIs"} · ${roundsWords(rounds)}` : `${seats} seats${bots.length ? ` · ${bots.length} ${bots.length === 1 ? "AI" : "AIs"}` : ""} · ${roundsWords(rounds)}`;
 
   return (
     <section className="fd-stub" aria-label="Start a game">
@@ -406,6 +410,32 @@ function FlightStub({
                       setAgentModels((now) => now.map((old, j) => (j === i ? event.target.value : old)));
                     }}
                   >
+                    {pickable.map((name) => (
+                      <option key={name} value={name}>
+                        {name === RULES_MODEL ? "No model: house numbers" : name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </>
+          )}
+          {mode === "friends" && free && (
+            <>
+              <div className="fd-pick">
+                <span id="fd-bots">AI seats</span>
+                <div className="fd-segments" role="group" aria-labelledby="fd-bots">
+                  {Array.from({ length: seatCount - 1 }, (_, count) => (
+                    <button key={count} type="button" aria-pressed={count === bots.length} onClick={() => setRoomBotCount(count)}>
+                      {count}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {bots.map((model, i) => (
+                <label key={i} className="fd-field">
+                  <span>AI {i + 1} plays by</span>
+                  <select value={pickable.includes(model) ? model : RULES_MODEL} onChange={(event) => setRoomBots((now) => now.map((old, j) => (j === i ? event.target.value : old)))}>
                     {pickable.map((name) => (
                       <option key={name} value={name}>
                         {name === RULES_MODEL ? "No model: house numbers" : name}

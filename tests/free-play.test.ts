@@ -333,3 +333,20 @@ test("tables people left do not hold every free place: old lobbies are abandoned
   assert.deepEqual(tidy.resign, [{ id: "left-vs-ai", seats: [1, 2] }], "every house seat gives up; a room of friends has none");
   assert.equal(tidy.open, 2, "only the new lobby and the table being played still hold a place");
 });
+
+test("a free room of friends seats the house's agents after the host, and keeps the rest for friends", () => {
+  const args = (call: FunctionCall) => JSON.parse(new TextDecoder().decode(call.args));
+  const host = "a".repeat(64);
+  const room = freeTableCalls("f-room", 6, 60, false, { host, seats: 4 }, 2);
+  assert.deepEqual(
+    room.map((call) => [call.method, args(call).seat ?? null]),
+    [
+      ["create_match", null],
+      ["join", 1],
+      ["join", 2],
+    ],
+  );
+  assert.deepEqual([args(room[0]).seats, args(room[0]).host], [4, host]);
+  // No agent asked for: the room is the friends' alone, as before.
+  assert.equal(freeTableCalls("f-room", 6, 60, false, { host, seats: 4 }, 0).length, 1);
+});

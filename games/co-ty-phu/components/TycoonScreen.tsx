@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { PinForm } from "@/components/PinForm";
 import { RoomAccessPanel } from "@/components/RoomAccessPanel";
 import { SoundToggle } from "@/components/SoundToggle";
@@ -19,6 +19,7 @@ import { AUTO_CHOICES, CASH_CHOICES, LIMIT_CHOICES, SALARY_CHOICES, type ErrorCo
 import { sound } from "../sound";
 import { savedLook } from "../../ma-soi/components/Wardrobe";
 import { hostKeyStorage, useRoom, type Send } from "../useRoom";
+import { type PacedView, beatOf, rollSteps } from "../steps";
 import type { PublicPlayer, View } from "../view";
 import { DECK_ART, TROPHY_ART } from "../scene/art";
 import type { CameraMode } from "../scene/tycoon";
@@ -186,12 +187,14 @@ const isActive = (player: PublicPlayer | undefined) => !!player && player.color 
  * roll (a purchase, the end of a turn) are shown as they come. `behind`: something is still waiting or playing, so the
  * viewer has not seen the present yet: nothing should be thrown for them. Bàn 2D không giữ.
  */
-function useRollPace(live: View, enabled: boolean): { view: View; holding: boolean; behind: boolean; arrived: (rolls: number) => void } {
-  const [shown, setShown] = useState(live);
+function useRollPace(live: PacedView, enabled: boolean): { view: View; holding: boolean; behind: boolean; arrived: (rolls: number) => void } {
+  const [shown, setShown] = useState<PacedView>(live);
   // Lượt đổ mà quân đã đi tới nơi. Giữ khi lượt đổ đang hiện khác lượt đó, tính ngay lúc vẽ nên không lộ tiền hay nút dù một khung hình.
   const [settled, setSettled] = useState(live.rolls);
   const settledAt = useRef(0);
-  const waiting = useRef<View[]>([]);
+  const waiting = useRef<PacedView[]>([]);
+  /** The state queued last: the next one is cut into its rolls from there (steps.ts). */
+  const tail = useRef<PacedView>(live);
   const [tick, setTick] = useState(0);
   const arrived = useCallback((rolls: number) => {
     settledAt.current = Date.now();
@@ -199,7 +202,8 @@ function useRollPace(live: View, enabled: boolean): { view: View; holding: boole
   }, []);
 
   useEffect(() => {
-    waiting.current.push(live);
+    waiting.current.push(...rollSteps(tail.current, live));
+    tail.current = live;
     setTick((n) => n + 1);
   }, [live]);
 
@@ -207,7 +211,7 @@ function useRollPace(live: View, enabled: boolean): { view: View; holding: boole
     const queue = waiting.current;
     if (!queue.length) return;
     const latest = queue[queue.length - 1];
-    const ahead = new Set(queue.filter((view) => view.rolls !== shown.rolls).map((view) => view.rolls)).size;
+    const ahead = new Set(queue.filter((view) => beatOf(view) !== beatOf(shown)).map(beatOf)).size;
     // No 3D board to wait for, a tab nobody is looking at (it draws nothing, so nothing would ever arrive), or too far
     // behind to catch up roll by roll: straight to the present.
     if (!enabled || document.visibilityState === "hidden" || ahead > SKIP_AT) {
@@ -217,7 +221,7 @@ function useRollPace(live: View, enabled: boolean): { view: View; holding: boole
       return;
     }
     const next = queue[0];
-    if (next.rolls !== shown.rolls) {
+    if (beatOf(next) !== beatOf(shown)) {
       // The roll on the board is still playing: `arrived` (or the limit below) comes back here.
       if (shown.dice !== null && shown.rolls !== settled) return;
       const wait = settledAt.current + (ahead >= HURRY_AT ? 0 : DWELL_MS) - Date.now();
@@ -227,6 +231,9 @@ function useRollPace(live: View, enabled: boolean): { view: View; holding: boole
       }
     }
     queue.shift();
+    // The second leg of a roll (a card sent the piece on) throws no dice, so the board reports no arrival for it:
+    // the roll after it is given the time of a walk instead.
+    if (next.step) settledAt.current = Date.now() + LEG_MS;
     if (next !== shown) setShown(next);
     else setTick((n) => n + 1);
   }, [enabled, shown, settled, tick]);
@@ -239,13 +246,22 @@ function useRollPace(live: View, enabled: boolean): { view: View; holding: boole
   }, [shown.rolls, settled, arrived]);
 
   const holding = enabled && shown.dice !== null && shown.rolls !== settled;
-  return { view: shown, holding, behind: enabled && (holding || waiting.current.length > 0), arrived };
+  // Behind: a roll is playing, or one the chain has made is waiting its turn. A newer state of the roll on the board
+  // (the room makes one every time its countdown changes) is shown within the same moment and does not count: taken
+  // for "behind", it stopped and restarted the viewer's five seconds at every tick, and the number on the dice button
+  // jumped back to 5 again and again.
+  const behind = enabled && (holding || waiting.current.some((view) => beatOf(view) !== beatOf(shown)));
+  // The clock is the present's, never a waiting state's: a state shown late would count from where it was when made.
+  const view = useMemo(() => (shown.autoInMs === (behind ? null : live.autoInMs) ? shown : { ...shown, autoInMs: behind ? null : live.autoInMs }), [shown, behind, live.autoInMs]);
+  return { view, holding, behind, arrived };
 }
 
 /** Bàn 3D không báo quân tới nơi sau chừng này thì thôi giữ. */
 const HOLD_LIMIT_MS = 12_000;
 /** After a piece has arrived, what happened there stays on screen this long before the next roll is thrown. */
 const DWELL_MS = 700;
+/** What a piece sent on by a card is given to get there before the next roll. */
+const LEG_MS = 1_600;
 /** This many rolls waiting to be shown: the board is falling behind the chain, so the dwell is dropped. */
 const HURRY_AT = 3;
 /** More than this many: the present is shown at once. */
@@ -312,6 +328,15 @@ export function Stage({ view: live, offline, send, chain }: { view: View; offlin
     onBehind?.(behind);
     return () => onBehind?.(false);
   }, [onBehind, behind]);
+  // The dice stay in the air from the moment a roll is sent until its numbers are on the board, not only until the
+  // chain has answered: the answer waits its turn above (`useRollPace`), and dice set down in between and thrown in
+  // again from the side was the jolt seen when a result came. A roll that was refused brings no new numbers: down.
+  const sending = chain?.busy ?? false;
+  const [lifted, setLifted] = useState(false);
+  useEffect(() => {
+    if (sending) setLifted(true);
+    else if (live.rolls === view.rolls) setLifted(false);
+  }, [sending, live.rolls, view.rolls]);
   useStageEffects(view, holding);
   // Người đang chơi giữ màn hình sáng: máy tự tắt màn hình đúng lượt mình là cả bàn phải chờ.
   useWakeLock(view.phase === "playing" && isActive(me(view)));
@@ -339,7 +364,7 @@ export function Stage({ view: live, offline, send, chain }: { view: View; offlin
       {view.phase === "lobby" ? (
         <Lobby view={view} send={send} />
       ) : (
-        <Game view={view} send={send} chain={chain} has3D={has3D} holding={holding} behind={behind} onArrive={arrived} onBroken={() => setHas3D(false)} />
+        <Game view={view} send={send} chain={chain} has3D={has3D} holding={holding} rolling={sending || lifted} onArrive={arrived} onBroken={() => setHas3D(false)} />
       )}
     </main>
   );
@@ -575,7 +600,7 @@ function Game({
   chain,
   has3D,
   holding,
-  behind,
+  rolling,
   onArrive,
   onBroken,
 }: {
@@ -584,8 +609,8 @@ function Game({
   chain?: ChainStage;
   has3D: boolean;
   holding: boolean;
-  /** The board is still playing an earlier roll: the dice of a roll on its way are not lifted yet. */
-  behind: boolean;
+  /** A roll of the viewer's is on its way, or its numbers have not reached the board yet: the dice are in the air. */
+  rolling: boolean;
   onArrive: (rolls: number) => void;
   onBroken: () => void;
 }) {
@@ -657,7 +682,7 @@ function Game({
             mode={camera}
             insets={insets}
             focus={selling ? offers : null}
-            rolling={(chain?.busy ?? false) && !behind}
+            rolling={rolling}
             onTile={tap}
             onArrive={onArrive}
             onBroken={onBroken}

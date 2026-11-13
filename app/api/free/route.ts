@@ -70,15 +70,18 @@ export async function POST(request: Request): Promise<Response> {
   // Against the house: one agent per model asked for (one with the house model when none is), each in its own seat.
   const offered = new Set([RULES_MODEL, ...llmModels(process.env)]);
   const houseModel = process.env.DEEDLORDS_HOUSE_MODEL?.trim() || RULES_MODEL;
-  const agents = body.agents === undefined ? [houseModel] : body.agents;
-  if (withAgent && (!Array.isArray(agents) || agents.length < 1 || agents.length > MAX_HOUSE_AGENTS || agents.some((model) => typeof model !== "string" || !offered.has(model))))
-    return jsonAnswer(400, { error: `agents: 1 to ${MAX_HOUSE_AGENTS} of ${[...offered].join(", ")}` });
+  // In a room of friends the house plays no seat unless asked to: `agents` names the model of each seat it takes.
+  const agents = body.agents === undefined ? (withAgent ? [houseModel] : []) : body.agents;
+  if (!Array.isArray(agents) || agents.length < (withAgent ? 1 : 0) || agents.length > MAX_HOUSE_AGENTS || agents.some((model) => typeof model !== "string" || !offered.has(model)))
+    return jsonAnswer(400, { error: `agents: ${withAgent ? 1 : 0} to ${MAX_HOUSE_AGENTS} of ${[...offered].join(", ")}` });
   // A table for friends is a room: whoever asked for it hosts it, and it may seat up to four.
   const seats = withAgent ? 1 + (agents as string[]).length : body.seats === undefined ? 2 : body.seats;
   if (typeof seats !== "number" || !SEAT_COUNTS.includes(seats)) return jsonAnswer(400, { error: "seats: 2, 3 or 4" });
   if (body.host !== undefined && (typeof body.host !== "string" || !ACCOUNT_ID.test(body.host))) return jsonAnswer(400, { error: "host: a NEAR account" });
   const room = !withAgent && typeof body.host === "string" ? { host: body.host, seats } : null;
   if (!withAgent && seats !== 2 && !room) return jsonAnswer(400, { error: "a table of more than two seats needs a host" });
+  // A room keeps a seat for its host and one for a friend: with every other seat an agent's, it is a table against the house.
+  if (!withAgent && agents.length > 0 && (!room || agents.length > seats - 2)) return jsonAnswer(400, { error: "agents in a room: its host, at least one free seat, and the rest" });
   if (!limits.tablePerIp.allow(clientKey(request)) || !limits.tableGlobal.allow("*"))
     return jsonAnswer(429, { error: "too many free tables opened from here: wait a few minutes" });
 
@@ -101,7 +104,7 @@ export async function POST(request: Request): Promise<Response> {
     return jsonAnswer(502, { error: `cannot reach ${CHAIN.network}` });
   }
 
-  const models = withAgent ? (agents as string[]) : [];
+  const models = agents as string[];
   const id = idWithHouseSeats(`f${newMatchId().slice(1)}`, models, [...offered]);
   try {
     // Three agents' seats and the table do not fit the gas of one transaction: they go in turn.
@@ -116,7 +119,7 @@ export async function POST(request: Request): Promise<Response> {
       }
     }
     rememberSponsored(id, paying);
-    if (withAgent) rememberHouseSeats(id, Object.fromEntries(models.map((model, i) => [1 + i, model])));
+    if (models.length) rememberHouseSeats(id, Object.fromEntries(models.map((model, i) => [1 + i, model])));
     return jsonAnswer(200, { id, opponent: withAgent ? "agent" : "friend", sponsor: paying.accountId, hash, agents: models });
   } catch (error) {
     return jsonAnswer(502, { error: `the sponsor could not open a table: ${text(error)}` });

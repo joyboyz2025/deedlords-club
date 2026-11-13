@@ -95,9 +95,11 @@ export function freeTableCalls(
 ): FunctionCall[] {
   const seats = withAgent ? 1 + agents : room?.seats;
   const create = createDuelCall(id, { stake: 0n, maxRounds, turnSeconds, seats, host: room?.host });
-  if (!withAgent) return [create];
-  // The house's agents take every seat but the visitor's: the last seat taken, the visitor's, starts the game.
-  return [create, ...Array.from({ length: agents }, (_, i) => joinCalls(id, FREE_AGENT_SEAT + i, 0n)).flat()];
+  // Against the house, its agents take every seat but the visitor's: the last seat taken, the visitor's, starts the
+  // game. In a room of friends they take the seats after the host's (`agents` of them, none unless asked for), the
+  // friends take the rest, and the host starts it.
+  const taken = withAgent ? agents : room ? Math.min(agents, room.seats - 1) : 0;
+  return [create, ...Array.from({ length: taken }, (_, i) => joinCalls(id, FREE_AGENT_SEAT + i, 0n)).flat()];
 }
 
 /** The most gas one transaction may carry. */

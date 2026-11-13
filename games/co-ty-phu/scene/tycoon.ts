@@ -56,6 +56,8 @@ const SKY = "#c4e6f7";
 const GROUND = "#d3e9df";
 /** Tall enough to pick out at once on the whole board, where a square is under 50 pixels across. */
 const CHIBI_SCALE = 1.46;
+/** The part of a throw over which dice that were tumbling in the air turn from their own spin into the throw's. */
+const BLEND_IN = 0.3;
 /** How strongly a square takes its owner's colour (the whole square, so that it is told from the band of its group). */
 const DEED_TINT = 0.4;
 /** The disc under the piece whose turn it is breathes by this much, so the eye finds it without reading a name. */
@@ -131,7 +133,8 @@ type Built = {
 type Floater = { sprite: THREE.Sprite; player: string; start: number; aspect: number };
 
 /** Đường bay của một con xúc xắc: từ phía người đổ vào chỗ nằm, lăn quanh `axis`, nằm yên theo `rest`. */
-type Flight = { from: THREE.Vector3; to: THREE.Vector3; rest: THREE.Quaternion; axis: THREE.Vector3; turns: number };
+/** `turning`: how the die was turned when the throw began, for one that was tumbling in the air; `null` for one thrown in from the side. */
+type Flight = { from: THREE.Vector3; to: THREE.Vector3; rest: THREE.Quaternion; axis: THREE.Vector3; turns: number; turning: THREE.Quaternion | null };
 
 const approach = (from: number, to: number, rate: number, dt: number) => from + (to - from) * (1 - Math.exp(-rate * dt));
 /** Vượt quá đích một chút rồi lùi về, như nhà vừa mọc còn nhún. */
@@ -556,6 +559,9 @@ export class TycoonScene {
     const values = view.dice;
     // Tumbling in the air while the roll was on its way: they fall from where they are instead of flying in.
     const midair = this.shaking && !first && values !== null ? this.dice.map((die) => die.position.clone()) : null;
+    // And they keep turning the way they were: the throw's own spin is blended in from there (`poseDice`), or the
+    // dice would snap to another face-up the instant the numbers came.
+    const turning = midair ? this.dice.map((die) => die.quaternion.clone()) : null;
     this.shaking = false;
     for (const mesh of [...this.dice, ...this.diceShadows]) mesh.visible = values !== null;
     if (!values) return;
@@ -583,6 +589,7 @@ export class TycoonScene {
         rest: restQuaternion(value, yaw + jitter(0.3)),
         axis: across.clone().applyAxisAngle(UP, jitter(0.7)),
         turns: 1.6 + Math.random() * 1.2,
+        turning: turning ? turning[i] : null,
       };
     });
     const now = performance.now();
@@ -609,6 +616,7 @@ export class TycoonScene {
       die.position.lerpVectors(flight.from, flight.to, slide);
       die.position.y += lift;
       die.quaternion.setFromAxisAngle(flight.axis, spin * flight.turns).multiply(flight.rest);
+      if (flight.turning && t < BLEND_IN) die.quaternion.copy(flight.turning.clone().slerp(die.quaternion, easeOut(t / BLEND_IN)));
       // Bóng trên mặt nỉ: xúc xắc càng cao bóng càng nhỏ, nhìn là biết đang nảy. Còn bay ngoài mâm thì chưa có bóng.
       const shadow = this.diceShadows[i];
       shadow.visible = Math.hypot(die.position.x, die.position.z) < TRAY_RADIUS;

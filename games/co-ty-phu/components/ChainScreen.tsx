@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { Arrow, Bot, Copy, Seat } from "@/components/landing/icons";
 import { CHAIN } from "@/lib/chain/config";
+import { PLAYBOOK_DRIVER } from "../agent/advise";
 import { TOKEN_COLORS } from "../board";
 import { accountLabel, formatBps, formatNear, playerName, seatNames } from "../chain/adapt";
 import { MOVE_HOLD, joinCalls, near, roundsLabel, startCall, upfront } from "../chain/calls";
@@ -143,14 +144,20 @@ function Table({ id, state, helper, onSignIn }: { id: string; state: PlayerState
   if (match.meta.status === "lobby") return <Lobby match={match} state={state} helper={helper} sponsor={sponsor ?? null} onJoined={refresh} onSignIn={onSignIn} />;
 
   const names = seatNames(match.meta);
-  // A seat an agent played this round or the one before: its tag stays on the card. Older notes are history.
+  // A seat an agent played this round or the one before: what its model said stays on the card. Older notes are
+  // history. A turn played by the playbook's arithmetic says the same rule every time ("Keep 150 back; buy what
+  // leaves that much"): that is not shown, it only covered the board, most of all on a phone.
   const agents: Record<string, AgentTag> = {};
+  const said = (note: { driver: string }) => note.driver !== PLAYBOOK_DRIVER;
   for (const note of notes) {
     const playerId = match.meta.seats[note.seat]?.player;
-    if (playerId && note.round >= match.game.round - 1) agents[playerId] = { driver: note.driver, reason: note.reason, fallback: note.fallback };
+    if (playerId && note.round >= match.game.round - 1) {
+      if (said(note)) agents[playerId] = { driver: note.driver, reason: note.reason, fallback: note.fallback };
+      else delete agents[playerId];
+    }
   }
   const own = seat === null ? null : match.meta.seats[seat].player;
-  if (own && autopilot?.on && autopilot.last) agents[own] = { driver: autopilot.last.driver, reason: autopilot.last.reason, fallback: autopilot.last.fallback };
+  if (own && autopilot?.on && autopilot.last && said(autopilot.last)) agents[own] = { driver: autopilot.last.driver, reason: autopilot.last.reason, fallback: autopilot.last.fallback };
   else if (own && !autopilot?.on) delete agents[own];
   const nameOf = (account: string) => {
     const at = match.meta.seats.find((s) => s.backer === account || s.driver === account);

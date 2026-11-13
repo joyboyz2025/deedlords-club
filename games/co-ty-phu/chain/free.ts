@@ -91,7 +91,7 @@ export async function relay(session: Session, calls: FunctionCall[]): Promise<Ou
  */
 export async function requestFreeTable(rounds: number, opponent: FreeOpponent, room: { host: string; seats: number } | null = null, agents?: string[]): Promise<string> {
   const ask = () =>
-    post<{ id: string }>("/api/free", { rounds, opponent, ...(opponent === "friend" && room ? room : {}), ...(opponent === "agent" && agents?.length ? { agents } : {}) }, 65_000);
+    post<{ id: string }>("/api/free", { rounds, opponent, ...(opponent === "friend" && room ? room : {}), ...(agents?.length ? { agents } : {}) }, 65_000);
   try {
     return (await ask()).id;
   } catch (error) {
