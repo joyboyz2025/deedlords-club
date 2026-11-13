@@ -17,6 +17,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit && tsc --noEmit -p worker && tsc --noEmit -p server",
     "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./server/register.mjs --test tests/*.test.ts",
+    "check:live": "node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./server/register.mjs scripts/check-live.ts",
     "loadtest:co-ty-phu": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/co-ty-phu-bots.ts test",
     "bots:co-ty-phu": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/co-ty-phu-bots.ts join",
     "diff:gen": "node --experimental-strip-types --disable-warning=ExperimentalWarning tools/diff/gen.ts",
