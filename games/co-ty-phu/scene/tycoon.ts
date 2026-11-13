@@ -55,7 +55,11 @@ export type TycoonEvents = {
 const SKY = "#c4e6f7";
 const GROUND = "#d3e9df";
 /** Tall enough to pick out at once on the whole board, where a square is under 50 pixels across. */
-const CHIBI_SCALE = 1.12;
+const CHIBI_SCALE = 1.46;
+/** How strongly a square takes its owner's colour (the whole square, so that it is told from the band of its group). */
+const DEED_TINT = 0.4;
+/** The disc under the piece whose turn it is breathes by this much, so the eye finds it without reading a name. */
+const TURN_PULSE = 0.1;
 /**
  * The camera looks down on the board from high above (`BOARD_PITCH`), so a token standing straight shows little but
  * the top of its head. Tokens lean back by this much, from the feet, head away from the camera, so that face and body
@@ -65,7 +69,7 @@ const CHIBI_SCALE = 1.12;
 const LEAN = -0.72;
 /** How far the dark outline around a token stands out from it, in its own units (before `CHIBI_SCALE`). */
 const OUTLINE = 0.022;
-const LABEL_PX = 15;
+const LABEL_PX = 16;
 /** Đứng yên cả thì 20 hình mỗi giây là đủ, đỡ nóng máy. */
 const IDLE_FRAME_MS = 50;
 /** Quân đi nhanh gấp chừng này lần nhân vật trong đình: mỗi ô chừng một phần tư giây, một lượt đổ 12 ô chỉ mất khoảng ba giây. */
@@ -155,6 +159,8 @@ export class TycoonScene {
   private buildingsMoving = false;
   private propsSeen = false;
   private plaques: THREE.InstancedMesh;
+  /** A wash of the owner's colour over the whole of an owned square. */
+  private deeds: THREE.InstancedMesh;
   private liens: THREE.InstancedMesh;
   private highlight: THREE.Mesh;
   /** Đang bán nhà, cầm cố: ô không bán được thì tối đi, ô bán được thì sáng vàng nhấp nháy, kèm số tiền nhận nổi trên ô. */
@@ -183,7 +189,6 @@ export class TycoonScene {
   private held = false;
   /** Đang chờ quân của người vừa đổ đi tới nơi để báo `onArrive`. */
   private arrivalPending = false;
-  private mover: string | null = null;
 
   private you: string | null = null;
   private current: string | null = null;
@@ -245,7 +250,12 @@ export class TycoonScene {
       room[TIER_OF_GROUP[square.group] * 2 + 1] += 1;
     }
     this.buildings = room.map((count, i) => new THREE.InstancedMesh(this.own(buildingGeometry(Math.floor(i / 2), i % 2 === 1)), solid, count));
-    this.plaques = new THREE.InstancedMesh(this.own(new THREE.BoxGeometry(TILE * 0.8, 0.06, 0.18)), this.own(new THREE.MeshLambertMaterial()), 28);
+    this.plaques = new THREE.InstancedMesh(this.own(new THREE.BoxGeometry(TILE * 0.92, 0.07, 0.3)), this.own(new THREE.MeshLambertMaterial()), 28);
+    this.deeds = new THREE.InstancedMesh(
+      this.own(new THREE.PlaneGeometry(TILE * 0.98, CORNER * 0.98).rotateX(-Math.PI / 2)),
+      this.own(new THREE.MeshBasicMaterial({ transparent: true, opacity: DEED_TINT, depthWrite: false })),
+      28,
+    );
     this.liens = new THREE.InstancedMesh(
       this.own(new THREE.PlaneGeometry(TILE * 0.96, CORNER * 0.96).rotateX(-Math.PI / 2)),
       this.own(new THREE.MeshBasicMaterial({ color: "#1b0f08", transparent: true, opacity: 0.45, depthWrite: false })),
@@ -335,7 +345,7 @@ export class TycoonScene {
     const plain = new THREE.Mesh(this.own(city.plain), solid);
     scene.add(towers, plain);
 
-    for (const mesh of [...this.buildings, this.plaques, this.liens, this.shades, this.glows]) {
+    for (const mesh of [...this.buildings, this.deeds, this.plaques, this.liens, this.shades, this.glows]) {
       mesh.count = 0;
       mesh.frustumCulled = false;
       scene.add(mesh);
@@ -549,8 +559,16 @@ export class TycoonScene {
     this.shaking = false;
     for (const mesh of [...this.dice, ...this.diceShadows]) mesh.visible = values !== null;
     if (!values) return;
+    // Who threw: the one whose piece this state moves. On chain an agent's whole turn is one transaction, so by the
+    // time its roll is seen `view.current` is already the next player: taking that one for the thrower flew the dice
+    // in from the wrong side and, worse, called the roll "arrived" while the agent's piece was still walking.
+    const moved = view.players.find((player) => {
+      const token = this.tokens.get(player.id);
+      return token !== undefined && (token.at !== player.position || token.jailed !== (player.jail !== null));
+    });
+    const mover = moved?.id ?? view.current;
     // Bay vào từ cạnh bàn người đổ đang đứng, nằm lại thành hàng ngang trước mặt người đó.
-    const thrower = view.current ? this.tokens.get(view.current) : undefined;
+    const thrower = mover ? this.tokens.get(mover) : undefined;
     const yaw = sideYaw(sideOf(thrower?.at ?? 0)) + (Math.random() - 0.5) * 0.6;
     const toward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
     const across = new THREE.Vector3(toward.z, 0, -toward.x);
@@ -572,7 +590,6 @@ export class TycoonScene {
     this.hits = first ? HITS.length : 0;
     this.holdUntil = first ? 0 : now + THROW_MS + SETTLE_MS;
     this.arrivalPending = !first;
-    this.mover = view.current;
     this.diceResting = false;
   }
 
@@ -635,14 +652,19 @@ export class TycoonScene {
       }
       // Tấm biển màu ở mép trước của ô, cạnh giá đất, cho biết đất của ai.
       const owner = view.players.find((p) => p.id === owned.owner);
-      set(this.plaques, plaques, inTile(index, 0, -CORNER / 2 + 0.16), yaw, 0.03);
-      this.plaques.setColorAt(plaques++, color.set(TOKEN_COLORS[owner?.color ?? 0]));
+      color.set(TOKEN_COLORS[owner?.color ?? 0]);
+      // The whole square in the owner's colour, under the plaque: who owns what is read from across the board.
+      set(this.deeds, plaques, tileCenter(index), yaw, 0.011);
+      this.deeds.setColorAt(plaques, color);
+      set(this.plaques, plaques, inTile(index, 0, -CORNER / 2 + 0.2), yaw, 0.035);
+      this.plaques.setColorAt(plaques++, color);
       if (owned.mortgaged) set(this.liens, liens++, tileCenter(index), yaw, 0.015);
     }
     this.plaques.count = plaques;
+    this.deeds.count = plaques;
     this.liens.count = liens;
-    for (const mesh of [this.plaques, this.liens]) mesh.instanceMatrix.needsUpdate = true;
-    if (this.plaques.instanceColor) this.plaques.instanceColor.needsUpdate = true;
+    for (const mesh of [this.plaques, this.deeds, this.liens]) mesh.instanceMatrix.needsUpdate = true;
+    for (const mesh of [this.plaques, this.deeds]) if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
 
     // Nhà mới xây thì mọc từ dưới đất lên; nhà bán đi thì lún xuống. Đang lún mà xây lại thì mọc lên từ chỗ đang lún.
     let grew = false;
@@ -872,6 +894,8 @@ export class TycoonScene {
       }
       chibi.tick(dt * (walking ? token.speed : 1), time, this.calm, pxToScale, LABEL_PX / CHIBI_SCALE, 0);
       token.base.position.set(chibi.position.x, 0, chibi.position.z);
+      const pulse = this.playing && token.actor.id === this.current && !this.calm ? 1 + TURN_PULSE * (Math.sin(time * 4) + 1) : 1;
+      token.base.scale.setScalar(CHIBI_SCALE * pulse);
       anyMoving ||= chibi.moving || path.length > 0;
     }
     // Mũi tên lơ lửng ngay trên bảng tên người đang tới lượt, nhấp nhô nhẹ.
@@ -900,12 +924,10 @@ export class TycoonScene {
       return true;
     });
     // Xúc xắc đã dừng và quân người vừa đổ đã đứng yên ở ô cuối: báo cho giao diện, đúng một lần mỗi lượt đổ.
-    if (this.arrivalPending && !holding) {
-      const mover = this.mover ? this.tokens.get(this.mover) : undefined;
-      if (!mover || (mover.path.length === 0 && !mover.chibi.moving)) {
-        this.arrivalPending = false;
-        this.events.onArrive(this.rolls ?? 0);
-      }
+    // Every piece, not only the thrower's: a card or a trip to Customs may move another one.
+    if (this.arrivalPending && !holding && !anyMoving) {
+      this.arrivalPending = false;
+      this.events.onArrive(this.rolls ?? 0);
     }
     const rolling = this.poseDice(now) || this.poseShake(now);
     const growing = this.poseBuildings(now);
@@ -1027,7 +1049,7 @@ export class TycoonScene {
     this.boardMaterial.map?.dispose();
     this.kit.dispose();
     for (const thing of this.owned) thing.dispose();
-    for (const mesh of [...this.buildings, this.plaques, this.liens, this.shades, this.glows]) mesh.dispose();
+    for (const mesh of [...this.buildings, this.deeds, this.plaques, this.liens, this.shades, this.glows]) mesh.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
   }

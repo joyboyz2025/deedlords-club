@@ -210,6 +210,8 @@ function drawCorner(ctx: CanvasRenderingContext2D, index: number, fonts: { text:
 }
 
 /** Khu phố giữa bàn: ảnh công viên và hai con đường cắt nhau, mâm xúc xắc đặt trên vòng xuyến ở giữa. Chưa có ảnh thì vẽ bãi cỏ và đường. */
+const CENTRE_VEIL = "rgb(240 247 243 / 46%)";
+
 function drawCenter(ctx: CanvasRenderingContext2D, art: BoardArt | null): void {
   const u = K;
   const inner = (HALF - CORNER) * u;
@@ -217,6 +219,10 @@ function drawCenter(ctx: CanvasRenderingContext2D, art: BoardArt | null): void {
   if (art) {
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(art.centre, mid - inner, mid - inner, inner * 2, inner * 2);
+    // The middle is scenery: at full strength its parks and roads were the loudest thing on the table and the pieces
+    // and the owners' colours were lost against them. A pale veil sets it back, so the ring of squares reads first.
+    ctx.fillStyle = CENTRE_VEIL;
+    ctx.fillRect(mid - inner, mid - inner, inner * 2, inner * 2);
     return;
   }
   ctx.fillStyle = PAVEMENT;

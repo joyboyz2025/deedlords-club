@@ -174,24 +174,82 @@ const me = (view: View) => view.players.find((p) => p.id === view.you.id)!;
 const isActive = (player: PublicPlayer | undefined) => !!player && player.color !== null && !player.bankrupt;
 
 /**
+ * One roll at a time, in the order they were thrown.
+ *
  * Bàn 3D tung xúc xắc vào mâm rồi quân mới đi: trong lúc đó giữ nguyên tiền, diễn biến, thẻ và các nút. Bàn 3D báo quân
- * đã tới nơi (`arrived`) thì mới đổi, kẻo thấy trừ tiền hay nút mua đất trước khi quân tới ô, kể cả trên máy vẽ chậm. Bàn 2D không giữ.
+ * đã tới nơi (`arrived`) thì mới đổi, kẻo thấy trừ tiền hay nút mua đất trước khi quân tới ô, kể cả trên máy vẽ chậm.
+ *
+ * On chain the states come faster than the board plays them: an agent's whole turn is one transaction, three agents
+ * answer one after the other, and the dice are thrown for somebody who is slow. Given to the board as they came, the
+ * next dice were in the air while the last piece was still walking. So states wait in line here: one that brings a
+ * new roll is shown only once the roll before has arrived and stayed for a moment (`DWELL_MS`); states of the same
+ * roll (a purchase, the end of a turn) are shown as they come. `behind`: something is still waiting or playing, so the
+ * viewer has not seen the present yet: nothing should be thrown for them. Bàn 2D không giữ.
  */
-function useRollHold(view: View, enabled: boolean): { holding: boolean; arrived: (rolls: number) => void } {
-  // Lượt đổ mà quân đã đi tới nơi. Giữ khi lượt đổ hiện tại khác lượt đó, tính ngay lúc vẽ nên không lộ tiền hay nút dù một khung hình.
-  const [settled, setSettled] = useState(view.rolls);
-  const arrived = useCallback((rolls: number) => setSettled(rolls), []);
+function useRollPace(live: View, enabled: boolean): { view: View; holding: boolean; behind: boolean; arrived: (rolls: number) => void } {
+  const [shown, setShown] = useState(live);
+  // Lượt đổ mà quân đã đi tới nơi. Giữ khi lượt đổ đang hiện khác lượt đó, tính ngay lúc vẽ nên không lộ tiền hay nút dù một khung hình.
+  const [settled, setSettled] = useState(live.rolls);
+  const settledAt = useRef(0);
+  const waiting = useRef<View[]>([]);
+  const [tick, setTick] = useState(0);
+  const arrived = useCallback((rolls: number) => {
+    settledAt.current = Date.now();
+    setSettled(rolls);
+  }, []);
+
   useEffect(() => {
-    if (view.rolls === settled) return;
-    // Bàn 3D báo lúc quân tới nơi; đồng hồ này chỉ phòng khi bàn 3D không vẽ (tab bị ẩn, máy treo cảnh).
-    const timer = setTimeout(() => setSettled(view.rolls), HOLD_LIMIT_MS);
+    waiting.current.push(live);
+    setTick((n) => n + 1);
+  }, [live]);
+
+  useEffect(() => {
+    const queue = waiting.current;
+    if (!queue.length) return;
+    const latest = queue[queue.length - 1];
+    const ahead = new Set(queue.filter((view) => view.rolls !== shown.rolls).map((view) => view.rolls)).size;
+    // No 3D board to wait for, a tab nobody is looking at (it draws nothing, so nothing would ever arrive), or too far
+    // behind to catch up roll by roll: straight to the present.
+    if (!enabled || document.visibilityState === "hidden" || ahead > SKIP_AT) {
+      waiting.current = [];
+      if (latest !== shown) setShown(latest);
+      if (!enabled) setSettled(latest.rolls);
+      return;
+    }
+    const next = queue[0];
+    if (next.rolls !== shown.rolls) {
+      // The roll on the board is still playing: `arrived` (or the limit below) comes back here.
+      if (shown.dice !== null && shown.rolls !== settled) return;
+      const wait = settledAt.current + (ahead >= HURRY_AT ? 0 : DWELL_MS) - Date.now();
+      if (wait > 0) {
+        const timer = setTimeout(() => setTick((n) => n + 1), wait);
+        return () => clearTimeout(timer);
+      }
+    }
+    queue.shift();
+    if (next !== shown) setShown(next);
+    else setTick((n) => n + 1);
+  }, [enabled, shown, settled, tick]);
+
+  useEffect(() => {
+    if (shown.rolls === settled) return;
+    // Bàn 3D báo lúc quân tới nơi; đồng hồ này chỉ phòng khi bàn 3D không vẽ (máy treo cảnh).
+    const timer = setTimeout(() => arrived(shown.rolls), HOLD_LIMIT_MS);
     return () => clearTimeout(timer);
-  }, [view.rolls, settled]);
-  return { holding: enabled && view.dice !== null && view.rolls !== settled, arrived };
+  }, [shown.rolls, settled, arrived]);
+
+  const holding = enabled && shown.dice !== null && shown.rolls !== settled;
+  return { view: shown, holding, behind: enabled && (holding || waiting.current.length > 0), arrived };
 }
 
 /** Bàn 3D không báo quân tới nơi sau chừng này thì thôi giữ. */
-const HOLD_LIMIT_MS = 20_000;
+const HOLD_LIMIT_MS = 12_000;
+/** After a piece has arrived, what happened there stays on screen this long before the next roll is thrown. */
+const DWELL_MS = 700;
+/** This many rolls waiting to be shown: the board is falling behind the chain, so the dwell is dropped. */
+const HURRY_AT = 3;
+/** More than this many: the present is shown at once. */
+const SKIP_AT = 8;
 
 /** Tiếng rút thẻ, tới lượt mình và hết ván; rung nhẹ khi tới lượt. Thẻ kêu lúc hiện ra, tức sau khi quân tới nơi. */
 function useStageEffects(view: View, holding: boolean) {
@@ -226,6 +284,8 @@ export type ChainStage = {
   label: string;
   /** A roll is on its way to the chain: the turn buttons rest until it lands. */
   busy: boolean;
+  /** Told `true` while the board is still playing rolls the chain has already made, `false` once it shows the present. */
+  onBehind?: (behind: boolean) => void;
   /** The payout card of a settled match, shown in place of the room server's result card. */
   result: (onClose: () => void) => ReactNode;
   /** Seats an agent plays, by player id: who drives and the sentence it gave for its last plan. */
@@ -242,10 +302,16 @@ export type ChainStage = {
 
 export type AgentTag = { driver: string; reason: string; fallback: boolean };
 
-export function Stage({ view, offline, send, chain }: { view: View; offline: boolean; send: Send; chain?: ChainStage }) {
+export function Stage({ view: live, offline, send, chain }: { view: View; offline: boolean; send: Send; chain?: ChainStage }) {
   // Máy không vẽ được 3D thì dùng bàn cờ 2D.
   const [has3D, setHas3D] = useState(true);
-  const { holding, arrived } = useRollHold(view, has3D);
+  const { view, holding, behind, arrived } = useRollPace(live, has3D);
+  // Whoever runs the match is told while the board is still catching up: nothing is thrown for the viewer meanwhile.
+  const onBehind = chain?.onBehind;
+  useEffect(() => {
+    onBehind?.(behind);
+    return () => onBehind?.(false);
+  }, [onBehind, behind]);
   useStageEffects(view, holding);
   // Người đang chơi giữ màn hình sáng: máy tự tắt màn hình đúng lượt mình là cả bàn phải chờ.
   useWakeLock(view.phase === "playing" && isActive(me(view)));
@@ -273,7 +339,7 @@ export function Stage({ view, offline, send, chain }: { view: View; offline: boo
       {view.phase === "lobby" ? (
         <Lobby view={view} send={send} />
       ) : (
-        <Game view={view} send={send} chain={chain} has3D={has3D} holding={holding} onArrive={arrived} onBroken={() => setHas3D(false)} />
+        <Game view={view} send={send} chain={chain} has3D={has3D} holding={holding} behind={behind} onArrive={arrived} onBroken={() => setHas3D(false)} />
       )}
     </main>
   );
@@ -509,6 +575,7 @@ function Game({
   chain,
   has3D,
   holding,
+  behind,
   onArrive,
   onBroken,
 }: {
@@ -517,6 +584,8 @@ function Game({
   chain?: ChainStage;
   has3D: boolean;
   holding: boolean;
+  /** The board is still playing an earlier roll: the dice of a roll on its way are not lifted yet. */
+  behind: boolean;
   onArrive: (rolls: number) => void;
   onBroken: () => void;
 }) {
@@ -588,7 +657,7 @@ function Game({
             mode={camera}
             insets={insets}
             focus={selling ? offers : null}
-            rolling={chain?.busy ?? false}
+            rolling={(chain?.busy ?? false) && !behind}
             onTile={tap}
             onArrive={onArrive}
             onBroken={onBroken}
