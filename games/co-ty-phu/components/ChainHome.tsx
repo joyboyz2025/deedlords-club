@@ -31,6 +31,7 @@ import { useFreeSponsor } from "../chain/useFree";
 import { approvesInWindow, sendStake, usePlayer, type Player } from "../chain/usePlayer";
 import { Arrow } from "@/components/landing/icons";
 import { AgentStub, DeparturesBoard, Hall, PassengerStub } from "./Desk";
+import { TopUp } from "./TopUp";
 
 const REFRESH_MS = 3_000;
 /** What a seat may cost in a match opened here, in NEAR; the contract's own cap cuts the list. */
@@ -100,7 +101,15 @@ export function ChainHome() {
         <aside className="fd-ticket" aria-label="Your ticket">
           <PassengerStub state={state} helper={helper} freePlay={Boolean(sponsor)} />
           <AgentStub desk={desk} signedIn={Boolean(player)} />
-          <FlightStub player={player ?? null} balance={state.balance} helper={helper} limits={limits} linkTo={linkTo} sponsor={sponsor ?? null} />
+          <FlightStub
+            player={player ?? null}
+            balance={state.balance}
+            helper={helper}
+            limits={limits}
+            linkTo={linkTo}
+            sponsor={sponsor ?? null}
+            onFunded={() => void state.refreshBalance()}
+          />
         </aside>
       </div>
     </Hall>
@@ -134,9 +143,12 @@ function FlightStub({
   limits,
   linkTo,
   sponsor,
+  onFunded,
 }: {
   player: Player | null;
   balance: bigint | null | undefined;
+  /** NEAR was brought to the account: read its balance again. */
+  onFunded: () => void;
   helper: DevConfig | null;
   limits: Limits | null;
   linkTo: (id: string) => string;
@@ -406,11 +418,11 @@ function FlightStub({
             : "The house opens the table and pays the gas. You host the room: send its link, and start the game when everybody is in. Nothing is staked, so nothing is won."}
         </p>
       )}
-      {player && !free && (
+      {/* Too little on the account for this stake: the way to the missing NEAR, right here. */}
+      {player && !free && short && !typedProblem && <TopUp player={player} balance={balance} needed={needed} onArrived={onFunded} />}
+      {player && !free && !short && (
         <p className="fd-fine">
-          {short
-            ? `Your game account needs ${formatNear(needed.toString(), 2)} NEAR: the ${formatNear(near(stake).toString())} stake, a ${formatNear(STORAGE_DEPOSIT.toString())} storage deposit and about ${formatNear((needed - cost).toString(), 2)} the network holds for gas while you play. The deposit and the hold come back.`
-            : `Your stake and a ${formatNear(STORAGE_DEPOSIT.toString())} NEAR storage deposit, which comes back when the match is settled, less about 0.012. ${approvesInWindow(player) ? "You approve the stake in the sign-in window. " : ""}You host the room: send its link, and start the game when everybody is in.`}
+          {`Your stake and a ${formatNear(STORAGE_DEPOSIT.toString())} NEAR storage deposit, which comes back when the match is settled, less about 0.012. ${approvesInWindow(player) ? "You approve the stake in the sign-in window. " : ""}You host the room: send its link, and start the game when everybody is in.`}
         </p>
       )}
       {problem && (

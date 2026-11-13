@@ -1876,3 +1876,114 @@ a.fd-row:hover .fd-row__go {
 .fd-own__problem {
   margin: 0;
 }
+
+/* Too little NEAR for the stake picked: the way to the rest, under the stake (TopUp.tsx). */
+.fd-topup {
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+  padding: 14px;
+  border: 1.5px dashed rgb(42 18 8 / 35%);
+  border-radius: 14px;
+  background: rgb(255 250 240 / 55%);
+}
+
+.fd-topup__lead {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.fd-topup__lead b {
+  display: block;
+  font-size: 16px;
+}
+
+.fd-topup__pay,
+.fd-topup__follow {
+  display: grid;
+  gap: 10px;
+}
+
+.fd-topup__price {
+  min-height: 1.5em;
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.fd-topup__price b {
+  font-variant-numeric: tabular-nums;
+}
+
+.fd-topup__steps {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+
+.fd-topup__steps li {
+  position: relative;
+  padding-left: 30px;
+  color: var(--ink-soft);
+  counter-increment: step;
+}
+
+.fd-topup__steps li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  border: 1.5px solid rgb(42 18 8 / 35%);
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.fd-topup__steps li[data-done] {
+  color: var(--ink);
+}
+
+.fd-topup__steps li[data-done]::before {
+  content: "✓";
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fffaf0;
+}
+
+.fd-topup__steps li[data-now] {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.fd-topup__more > summary {
+  min-height: 44px;
+  padding: 10px 0;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fd-topup .fd-funds__address {
+  word-break: break-all;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .fd-topup__steps li[data-now]::before {
+    animation: fd-topup-wait 1.2s ease-in-out infinite;
+  }
+}
+
+@keyframes fd-topup-wait {
+  50% {
+    opacity: 0.35;
+  }
+}
