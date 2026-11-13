@@ -19,7 +19,12 @@ import { type Call, type SeatStore, type TableResult, type TableView, fromBase64
 export { MAX_SEATS, STAKE, TABLE_CONTRACT };
 export const tableClient = new ChainClient(TABLE_CHAIN);
 
-export const TURN_SECONDS = 300;
+/**
+ * The clock of each step at a table opened from the page, in seconds: a shuffle and its proof take a phone a few
+ * seconds and a transaction, a bet is a minute's thought. Past it a seat at the table calls time (the page does, by
+ * itself), and the late seat is folded or given up as the contract rules.
+ */
+export const TURN_SECONDS = 90;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** The account this browser plays poker as (pokerAccount.ts), as a signer for the table contract, or `null` when there is none. */

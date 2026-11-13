@@ -7,7 +7,7 @@
 
 import { clientKey, rateLimiter } from "@/games/co-ty-phu/agent/rateLimit";
 import { STAKE } from "@/games/poker/table/contract";
-import { freeHost, houseModels, houseStep, houses, modelsAt, seats as houseSeats, watch } from "@/games/poker/table/house";
+import { freeHost, houseModels, houseStep, houses, lookAround, modelsAt, seats as houseSeats, watch } from "@/games/poker/table/house";
 
 export const dynamic = "force-dynamic";
 /** Room for a house seat's shuffle and its proof, on a host that limits how long a request may run. */
@@ -19,8 +19,11 @@ const joinsPerIp = rateLimiter(12, 10 * 60_000);
 const joinsInAll = rateLimiter(90, 60 * 60_000);
 const fresh = { "cache-control": "no-store" };
 
-export function GET(request: Request): Response {
+export async function GET(request: Request): Promise<Response> {
   watch();
+  // Nothing runs between requests on a host like this one: every visit to a poker page is also a look at the tables
+  // people left, bounded so that the page is not kept waiting.
+  await Promise.race([lookAround(), new Promise((resolve) => setTimeout(resolve, 3_500))]);
   // `houses`: every account the server plays seats with. `staking`: those that sit at tables with a stake (the free
   // tables' host does not). `free`: the account that opens free tables here, `null` when nobody does.
   const accounts = houseSeats().map((one) => one.accountId);

@@ -451,3 +451,20 @@ export async function isFreeTableOfOurs(id: string): Promise<boolean> {
   return true;
 }
 const freeKnown = new Map<string, number>();
+
+/**
+ * One look at every table, for a server that keeps no process running: time is called on tables everybody left
+ * (`sweep`), and at a few of the tables the house sits at, late ones first, the house does what is waited for from it.
+ * Asked whenever somebody opens a poker page; resolves to how many tables it moved. Never throws.
+ */
+export async function lookAround(): Promise<number> {
+  try {
+    const all = await everyTable();
+    const swept = await sweep(all);
+    const housed = all.filter((table) => table.phase !== "lobby" && table.players.some(isHouse) && late(table)).slice(0, 3);
+    const stepped = await Promise.all(housed.map((table) => houseStep(table.id)));
+    return swept + stepped.filter((one) => one.played).length;
+  } catch {
+    return 0;
+  }
+}

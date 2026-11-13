@@ -507,7 +507,7 @@ export function TablesLobby({
                 </div>
                 <div>
                   <dt>Clock</dt>
-                  <dd>{gratis ? 2 : TURN_SECONDS / 60} minutes a step</dd>
+                  <dd>{TURN_SECONDS} seconds a step; a seat that is late is folded or given up</dd>
                 </div>
                 <div>
                   <dt>Starts</dt>
@@ -912,6 +912,22 @@ function LiveTable({
     }
   });
 
+  // Past its deadline the table waits for nobody: a seated page calls time on the late seats by itself, so that one
+  // player who walked away does not hold the others. Tried again every few seconds while the table stays late (the
+  // chain's clock may be a little behind this one's, and somebody else's call may have been quicker).
+  const calledTime = useRef<{ seq: number; at: number } | null>(null);
+  useEffect(() => {
+    if (!session || !view || mySeat === null || view.phase === "lobby" || !view.awaited.some((seat) => seat !== mySeat)) return;
+    if (now < Number(view.deadline) / 1_000_000 + TIME_GRACE_MS) return;
+    const last = calledTime.current;
+    if (last && last.seq === view.seq && now - last.at < TIME_RETRY_MS) return;
+    calledTime.current = { seq: view.seq, at: now };
+    callTime(session, id).then(
+      (outcome) => say("Time was called on the late seats", outcome.hash),
+      () => undefined,
+    );
+  }, [now, view, mySeat, session, id, say]);
+
   // The NEAR for a seat that was asked for has arrived: the seat is taken.
   useEffect(() => {
     if (!wantSeat || !session || !view || mySeat !== null || holds < seatNeeds) return;
@@ -1049,6 +1065,9 @@ function LiveTable({
   );
 }
 
+/** A seated page calls time this long after a step's deadline, and again this often while the table stays late. */
+const TIME_GRACE_MS = 4_000;
+const TIME_RETRY_MS = 12_000;
 /** Below this a seat at a table with a stake cannot send its shuffle: the call must be able to reserve 0.26 NEAR. */
 const PLAY_RESERVE = (27n * NEAR) / 100n;
 /** What a seat that ran low is brought back up to. */
@@ -1135,7 +1154,8 @@ export function TableSettled({
       </div>
     );
   }
-  const who = (account: string) => (account === you ? "You" : houses.includes(account) ? `House ${houses.indexOf(account) + 1}` : account);
+  // A long account id is cut short here as at the table; the whole of it is in the title of each line.
+  const who = (account: string) => (account === you ? "You" : houses.includes(account) ? `House ${houses.indexOf(account) + 1}` : shortAccount(account));
   const fees = result.cashed.reduce((sum, seat) => sum + BigInt(seat.fee), 0n);
   return (
     <div className="pk-hall">

@@ -384,6 +384,12 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
 
           <p className="pk-say" role="status">
             <span>{say}</span>
+            {/* The step's clock, where the eye is: past it a seat's page calls time by itself. */}
+            {!inLobby && !reading && view.awaited.length > 0 && (
+              <b className="pk-say__clock" data-low={left < 20 || undefined} title="Time left for this step">
+                {left >= 0 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : "time is up"}
+              </b>
+            )}
           </p>
         </section>
 

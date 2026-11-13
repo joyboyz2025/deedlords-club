@@ -218,3 +218,18 @@
   display: block;
   font-size: 16px;
 }
+
+/* The step's clock, beside what the table is waiting for. */
+.pk-say__clock {
+  margin-left: 10px;
+  padding: 2px 9px;
+  border: 1.5px solid currentcolor;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pk-say__clock[data-low] {
+  color: #ffb39f;
+}
