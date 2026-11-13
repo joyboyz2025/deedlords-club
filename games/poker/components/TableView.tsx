@@ -761,7 +761,7 @@ function ActionStub({
             )}
             {(house?.last || agent?.last) && (
               <div className="pk-voices">
-                {house?.last && <Voice who="The house" what={done(house.last.what)} reason={house.last.reason} driver={house.last.driver} seat={house.seat ?? 1} paper />}
+                {house?.last && <Voice who="The house" what={done(house.last.what)} driver={house.last.driver} seat={house.seat ?? 1} paper />}
                 {agent?.last && (
                   <Voice
                     who={agent.name}

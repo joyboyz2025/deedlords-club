@@ -33,7 +33,7 @@ export type HouseSeat = {
   /** The house is doing its part right now. */
   thinking: boolean;
   /** Its last bet here and what it said about it. */
-  last: { what: string; reason?: string; driver?: string } | null;
+  last: { what: string; driver?: string } | null;
   /**
    * The house is to deal the next hand and waits for the player to say so (`deal`). It waits half of the time the
    * step has (`view.deadline`), then leaves the table, which pays both seats what they hold.
@@ -88,7 +88,7 @@ export function useHouse(id: string | null, view: MatchView | null | undefined):
     setThinking(true);
     // The wish to deal rides along, in case the first telling did not arrive.
     void askHouse(id, dealt === hand)
-      .then((played) => played.played && played.reason && setLast({ what: played.what, reason: played.reason, driver: played.driver }))
+      .then((played) => played.played && played.driver && setLast({ what: played.what, driver: played.driver }))
       .catch(() => undefined)
       .finally(() => setThinking(false));
   }, [id, waited, thinking, key, tick, dealt, hand]);

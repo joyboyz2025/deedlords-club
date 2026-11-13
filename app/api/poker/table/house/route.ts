@@ -3,11 +3,13 @@
 // house seat at that table. POST { id, add?, model? }: one step: with `add: true` a house account takes a free seat
 // of table `id`, betting by `model` (one of those offered; the server's house model when not given); otherwise the
 // house's seats there do what the table is waiting for from them. The tab that has the table open asks, for speed;
-// the house also looks at its tables by itself.
+// the house also looks at its tables by itself. A bet comes back with what the seat thought, sealed: it names the
+// seat's cards. POST { id, open: <sealed> } opens it once the hand it was thought in is over (games/poker/table/sealed.ts).
 
 import { clientKey, rateLimiter } from "@/games/co-ty-phu/agent/rateLimit";
 import { STAKE } from "@/games/poker/table/contract";
-import { freeHost, houseModels, houseStep, houses, lookAround, modelsAt, seats as houseSeats, watch } from "@/games/poker/table/house";
+import { freeHost, houseModels, houseStep, houses, lookAround, modelsAt, openThought, seats as houseSeats, watch } from "@/games/poker/table/house";
+import { MAX_SEALED } from "@/games/poker/table/sealed";
 
 export const dynamic = "force-dynamic";
 /** Room for a house seat's shuffle and its proof, on a host that limits how long a request may run. */
@@ -45,14 +47,22 @@ export async function GET(request: Request): Promise<Response> {
 
 export async function POST(request: Request): Promise<Response> {
   if (!houseSeats().length) return Response.json({ error: "no house plays on this server" }, { status: 503, headers: fresh });
-  let body: { id?: unknown; add?: unknown; model?: unknown } = {};
+  let body: { id?: unknown; add?: unknown; model?: unknown; open?: unknown } = {};
   try {
     body = (await request.json()) as typeof body;
   } catch {
     // No body: refused below.
   }
-  const { id, add, model } = body;
+  const { id, add, model, open } = body;
   if (typeof id !== "string" || !TABLE_ID.test(id)) return Response.json({ error: "send JSON: { id }" }, { status: 400, headers: fresh });
+  if (open !== undefined) {
+    if (typeof open !== "string" || open.length > MAX_SEALED) return Response.json({ error: "open: a sealed note of this table" }, { status: 400, headers: fresh });
+    try {
+      return Response.json(await openThought(id, open), { headers: fresh });
+    } catch {
+      return Response.json({ opened: false, why: "the chain did not answer" }, { headers: fresh });
+    }
+  }
   if (model !== undefined && (typeof model !== "string" || !houseModels().includes(model)))
     return Response.json({ error: `model: one of ${houseModels().join(", ")}` }, { status: 400, headers: fresh });
   watch();

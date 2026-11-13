@@ -465,7 +465,6 @@ const FRAMES: Frame[] = [
       thinking: false,
       last: {
         what: "raised to 6",
-        reason: "A pair of nines is strong heads-up; raising makes the ace-high hands pay to see the flop.",
         driver: "gemini-2.5-flash-lite",
       },
     },
@@ -489,7 +488,6 @@ const FRAMES: Frame[] = [
       thinking: false,
       last: {
         what: "raised to 6",
-        reason: "A pair of nines is strong heads-up; raising makes the ace-high hands pay to see the flop.",
         driver: "gemini-2.5-flash-lite",
       },
     },
@@ -513,7 +511,6 @@ const FRAMES: Frame[] = [
       thinking: false,
       last: {
         what: "raised to 6",
-        reason: "A pair of nines is strong heads-up; raising makes the ace-high hands pay to see the flop.",
         driver: "gemini-2.5-flash-lite",
       },
     },

@@ -25,6 +25,15 @@ export const FREE_TABLE_DEPOSIT = 25n * 10n ** 22n;
  * the seats' calls (about 0.07 NEAR for two seats, nearly all of it for checking the two shuffles).
  */
 export const FREE_TABLE_HANDS = 10;
+/**
+ * The clock of each step at a table opened from the page or by the free tables' host, in seconds. It is one clock for
+ * every step, so it has to hold the slowest: a shuffle and its proof take about a second to work out on a laptop
+ * (1.1 s measured, several on a phone) and a transaction of two or three seconds; an agent's model is given twelve
+ * seconds for a bet. Half a minute holds those, and is what a bet gets at an online table. Past it a seat at the table
+ * calls time (the page does, by itself), and the late seat is folded or given up as the contract rules. A table keeps
+ * the clock it was opened with.
+ */
+export const TURN_SECONDS = 30;
 export const MAX_SEATS = 9;
 const TGAS = 1_000_000_000_000n;
 /** A decryption share with its proof, in bytes. */

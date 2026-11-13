@@ -39,10 +39,12 @@ import { type FunctionCall, jsonArgs } from "@/lib/chain/transaction";
 import { type Keys, ORDER, keyProof, keysFromSecret } from "../crypto";
 import { FREE_TABLE_DEPOSIT, FREE_TABLE_HANDS, MAX_SEATS, RECORD_FEE, STAKE, TABLE_CHAIN, TABLE_CONTRACT, gasFor } from "./contract";
 import { advise } from "./decide";
+import { type Thought, handIsOver, readThought, sealThought } from "./sealed";
 import { type SeatStore, type TableView, betCall, betOptions, duty, fromBase64, holeCards, toBase64 } from "./seat";
 
 export type Played =
-  | { played: true; what: string; seat?: number; hash: string; reason?: string; driver?: string; account?: string; model?: string }
+  /** `sealed`: what the seat thought when it bet, which says what it holds: readable only through `openThought`, once the hand is over. */
+  | { played: true; what: string; seat?: number; hash: string; sealed?: string; driver?: string; account?: string; model?: string }
   /** `again`: the answer may differ in a moment (the node has not seen the table yet): worth asking once more. */
   | { played: false; why: string; again?: boolean };
 type House = { accountId: string; session: Pick<Session, "call" | "transact">; secret: string };
@@ -369,7 +371,7 @@ async function step(id: string, options: StepOptions): Promise<Played> {
   const played = await Promise.all(
     due.map(async (one): Promise<Played> => {
       const [seat, keys] = [seatOf(one), cardKeys(one, id)];
-      const done = (outcome: { hash: string }, what: string, more: { reason?: string; driver?: string } = {}): Played => {
+      const done = (outcome: { hash: string }, what: string, more: { sealed?: string; driver?: string } = {}): Played => {
         acted.set(`${id}:${seat}`, view.seq);
         return { played: true, what, seat, hash: outcome.hash, ...more };
       };
@@ -383,7 +385,9 @@ async function step(id: string, options: StepOptions): Promise<Played> {
         // With nothing bet on the street yet a raise is a bet.
         const raised = Math.max(...view.bet) === 0 ? `bet ${advice.amount}` : `raise to ${advice.amount}`;
         const what = advice.action === "raise" ? raised : advice.action === "fold" ? "fold" : betOptions(view, seat).owed > 0 ? "call" : "check";
-        return done(await one.session.call(call.method, call.args, gasFor(call.method, call.args)), what, { reason: advice.reason, driver: advice.driver });
+        // The sentence names the seat's cards: it leaves the server sealed, for after the hand (sealed.ts).
+        const sealed = advice.reason ? sealThought(one.secret, { id, hand: view.hand, seat, what, reason: advice.reason, driver: advice.driver }) : undefined;
+        return done(await one.session.call(call.method, call.args, gasFor(call.method, call.args)), what, { sealed, driver: advice.driver });
       }
       const owed = await duty(view, seat, keys, store(id));
       if (!owed) return { played: false, why: "nothing is owed" };
@@ -391,6 +395,21 @@ async function step(id: string, options: StepOptions): Promise<Played> {
     }),
   );
   return played.find((one) => one.played) ?? played[0];
+}
+
+/**
+ * What a house seat thought for a bet at table `id`, from the sealed note the page was given with the bet. Opened only
+ * when the chain says the hand it was thought in is over: before that it would hand the seat's cards to the table.
+ */
+export async function openThought(id: string, sealed: string): Promise<{ opened: true; thought: Thought } | { opened: false; why: string }> {
+  const thought = seats()
+    .map((one) => readThought(one.secret, sealed))
+    .find((one) => one !== null);
+  if (!thought || thought.id !== id) return { opened: false, why: "not a sealed note of this table" };
+  const view = await client.view<TableView | null>("get_match", { id });
+  // A table that is gone is over only if it was settled: one the node has not seen yet is not.
+  if (!view && !(await client.view<unknown>("get_result", { id }))) return { opened: false, why: "the table is not on chain yet" };
+  return handIsOver(view, thought.hand) ? { opened: true, thought } : { opened: false, why: "that hand is still being played" };
 }
 
 const jsonBytes = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value));

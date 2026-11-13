@@ -13,18 +13,13 @@ import { readStored, writeStored } from "@/lib/storage";
 import { canRelay, post, relay } from "../../co-ty-phu/chain/free";
 import { pokerAccount } from "../pokerAccount";
 import { type Keys, keyProof, keysFromSecret, newKeys, secretText } from "../crypto";
-import { MAX_SEATS, RECORD_FEE, STAKE, TABLE_CHAIN, TABLE_CONTRACT, gasFor } from "./contract";
+import { MAX_SEATS, RECORD_FEE, STAKE, TABLE_CHAIN, TABLE_CONTRACT, TURN_SECONDS, gasFor } from "./contract";
 import { type Call, type SeatStore, type TableResult, type TableView, fromBase64, toBase64 } from "./seat";
 
 export { MAX_SEATS, STAKE, TABLE_CONTRACT };
 export const tableClient = new ChainClient(TABLE_CHAIN);
 
-/**
- * The clock of each step at a table opened from the page, in seconds: a shuffle and its proof take a phone a few
- * seconds and a transaction, a bet is a minute's thought. Past it a seat at the table calls time (the page does, by
- * itself), and the late seat is folded or given up as the contract rules.
- */
-export const TURN_SECONDS = 90;
+export { TURN_SECONDS };
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** The account this browser plays poker as (pokerAccount.ts), as a signer for the table contract, or `null` when there is none. */

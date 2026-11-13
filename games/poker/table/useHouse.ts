@@ -41,9 +41,23 @@ export type HouseSeats = {
   seatModels: Record<number, string>;
   /** The house is doing its part right now. */
   thinking: boolean;
-  /** The last bet of a house seat here and what it said about it. */
-  last: { seat?: number; what: string; reason?: string; driver?: string } | null;
+  /** The last bet of a house seat here. What it thought stays sealed while the hand is played: it names its cards. */
+  last: { seat?: number; what: string; driver?: string; sealed: boolean } | null;
+  /** What the house's seats thought for their last bets of the hand before this one, opened now that it is over. */
+  opened: HouseThought[];
 };
+
+export type HouseThought = { hand: number; seat: number; what: string; reason: string; driver?: string };
+type Kept = { hand: number; sealed: string };
+/** How many thoughts of a finished hand are shown: the latest ones. */
+const SHOWN = 3;
+
+/** Asks the server to open a sealed note of table `id`; `null` while the hand it belongs to is still being played. */
+async function openNote(id: string, sealed: string): Promise<HouseThought | null> {
+  const response = await fetch("/api/poker/table/house", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, open: sealed }) });
+  const answer = (await response.json()) as { opened?: boolean; thought?: HouseThought };
+  return response.ok && answer.opened && answer.thought ? answer.thought : null;
+}
 
 export function useHouse(id: string | null, view: TableView | null | undefined): HouseSeats {
   const [accounts, setAccounts] = useState<string[] | undefined>(undefined);
@@ -55,6 +69,9 @@ export function useHouse(id: string | null, view: TableView | null | undefined):
   const [byAccount, setByAccount] = useState<Record<string, string>>({});
   const [thinking, setThinking] = useState(false);
   const [last, setLast] = useState<HouseSeats["last"]>(null);
+  const [opened, setOpened] = useState<HouseThought[]>([]);
+  const kept = useRef<Kept[]>([]);
+  const opening = useRef(false);
   const [tick, setTick] = useState(0);
   const tried = useRef<{ key: string; at: number } | null>(null);
 
@@ -103,11 +120,46 @@ export function useHouse(id: string | null, view: TableView | null | undefined):
     if (tried.current?.key === key && now - tried.current.at < RETRY_MS) return;
     tried.current = { key, at: now };
     setThinking(true);
+    const hand = view?.hand ?? 0;
     void askHouse(id)
-      .then((played) => played.played && played.reason && setLast({ seat: played.seat, what: played.what, reason: played.reason, driver: played.driver }))
+      .then((played) => {
+        if (!played.played || !(played.sealed || played.driver)) return;
+        if (played.sealed) kept.current = [...kept.current, { hand, sealed: played.sealed }].slice(-24);
+        setLast({ seat: played.seat, what: played.what, driver: played.driver, sealed: Boolean(played.sealed) });
+      })
       .catch(() => undefined)
       .finally(() => setThinking(false));
   }, [id, waited, thinking, key, tick]);
 
-  return { accounts, free, seats, canAdd, add, models, defaultModel, seatModels, thinking, last };
+  // A hand is over: the notes sealed in it are handed back and the server opens them. One it will not open yet (its
+  // node is a block behind) is kept and asked for again when the table next moves.
+  const handNow = view === null ? Number.MAX_SAFE_INTEGER : view === undefined ? -1 : view.phase === "lobby" ? Number.MAX_SAFE_INTEGER : view.hand;
+  useEffect(() => {
+    if (!id || opening.current) return;
+    const due = kept.current.filter((note) => note.hand < handNow);
+    if (!due.length) return;
+    opening.current = true;
+    const latest = Math.max(...due.map((note) => note.hand));
+    void Promise.all(
+      due
+        .filter((note) => note.hand === latest)
+        .map((note) =>
+          openNote(id, note.sealed)
+            .then((thought) => ({ note, thought }))
+            .catch(() => ({ note, thought: null })),
+        ),
+    )
+      .then((answers) => {
+        const shut = answers.filter((answer) => !answer.thought).map((answer) => answer.note);
+        // Older hands' notes are dropped with these: only the hand just played is shown.
+        kept.current = [...kept.current.filter((note) => note.hand >= handNow), ...shut];
+        const thoughts = answers.flatMap((answer) => (answer.thought ? [answer.thought] : []));
+        if (thoughts.length) setOpened(thoughts.slice(-SHOWN));
+      })
+      .finally(() => {
+        opening.current = false;
+      });
+  }, [id, handNow, key]);
+
+  return { accounts, free, seats, canAdd, add, models, defaultModel, seatModels, thinking, last, opened };
 }

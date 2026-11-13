@@ -974,6 +974,7 @@ function LiveTable({
           canAdd: house.canAdd,
           thinking: house.thinking,
           last: house.last,
+          opened: house.opened,
           models: house.models,
           defaultModel: house.defaultModel,
           seatModels: house.seatModels,

@@ -25,7 +25,7 @@ import { type Keys, ORDER, keyProof, keysFromSecret } from "./crypto";
 import { type MatchView, type SeatStore, duty, fromBase64, holeCards, toBase64 } from "./seat";
 
 export type Played =
-  | { played: true; what: string; hash: string; reason?: string; driver?: string }
+  | { played: true; what: string; hash: string; driver?: string }
   /** `again`: the answer may differ in a moment (the node has not seen the table yet): worth asking once more. */
   | { played: false; why: string; again?: boolean };
 type House = { accountId: string; session: Session; secret: string };
@@ -190,7 +190,9 @@ async function step(id: string, options: StepOptions): Promise<Played> {
   if (seat < 0) return { played: false, why: "the house does not sit at this table" };
   // A node may answer from the block before for a moment: what was played on this view is not played again.
   if ((acted.get(id) ?? -1) >= view.seq) return { played: false, why: "that step is already played" };
-  const done = (outcome: { hash: string }, what: string, more: { reason?: string; driver?: string } = {}): Played => {
+  // What the house thought for a bet names its cards: it is not sent to the page (tables of two to nine seats open it
+  // after the hand, table/sealed.ts).
+  const done = (outcome: { hash: string }, what: string, more: { driver?: string } = {}): Played => {
     acted.set(id, view.seq);
     if (acted.size > 500) for (const key of [...acted.keys()].slice(0, 250)) acted.delete(key);
     return { played: true, what, hash: outcome.hash, ...more };
@@ -221,7 +223,7 @@ async function step(id: string, options: StepOptions): Promise<Played> {
     const llm = !name || name === RULES_MODEL || !modelBudget.allow("*") ? null : llmFor(process.env, name);
     const advice = await advise(view, seat, hole as number[], { llm });
     const outcome = await playing.session.call("act", { id, seat, action: advice.action, amount: advice.amount ?? null }, gasFor("act"));
-    return done(outcome, advice.action === "raise" ? `raise to ${advice.amount}` : advice.action === "fold" ? "fold" : view.bet[1 - seat] > view.bet[seat] ? "call" : "check", { reason: advice.reason, driver: advice.driver });
+    return done(outcome, advice.action === "raise" ? `raise to ${advice.amount}` : advice.action === "fold" ? "fold" : view.bet[1 - seat] > view.bet[seat] ? "call" : "check", { driver: advice.driver });
   }
   const owed = await duty(view, seat, keys, store(id));
   if (!owed) return { played: false, why: "nothing is owed" };

@@ -326,7 +326,7 @@ export function TablesDemo({ start }: { start: string }) {
             seatModels: Object.fromEntries(houseSeats.map((seat, at) => [seat, ["gemini-2.5-flash-lite", "gpt-4.1-mini", "rules"][at % 3]])),
             thinking: Boolean(shown.houseThinking),
             last: shown.houseLast
-              ? { seat: houseSeats[0], what: "raise to 6", reason: "Pocket jacks in middle position: raise to thin the field before the flop.", driver: "gemini-2.5-flash-lite" }
+              ? { seat: houseSeats[0], what: "raise to 6", driver: "gemini-2.5-flash-lite", sealed: true }
               : null,
           }}
           agent={{

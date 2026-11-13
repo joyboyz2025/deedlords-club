@@ -5,7 +5,7 @@
 // closes, and a hand costs it the gas of every seat's calls, a shuffle most of all: hence the limits.
 
 import { clientKey, intEnv, rateLimiter } from "@/games/co-ty-phu/agent/rateLimit";
-import { MAX_SEATS } from "@/games/poker/table/contract";
+import { MAX_SEATS, TURN_SECONDS } from "@/games/poker/table/contract";
 import { freeHost, houseModels, openFreeTable, startFreeTable } from "@/games/poker/table/house";
 
 export const dynamic = "force-dynamic";
@@ -13,8 +13,6 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const TABLE_ID = /^[A-Za-z0-9_-]{1,32}$/;
-/** The clock of a step at a free table, in seconds: the same as at a table with a stake (games/poker/table/chain.ts). */
-const TURN_SECONDS = 90;
 const tablesPerIp = rateLimiter(intEnv(process.env.POKER_FREE_IP_LIMIT, 4), 10 * 60_000);
 const tablesInAll = rateLimiter(intEnv(process.env.POKER_FREE_GLOBAL_LIMIT, 40), 60 * 60_000);
 const startsPerIp = rateLimiter(20, 10 * 60_000);

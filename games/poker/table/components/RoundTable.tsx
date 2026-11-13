@@ -43,7 +43,10 @@ export type HouseAtTable = {
   /** House seats being seated now: "2 of 3", or `null`. */
   seating?: string | null;
   thinking: boolean;
-  last: { seat?: number; what: string; reason?: string; driver?: string } | null;
+  /** The house's last bet. `sealed`: what it thought is kept until the hand is over (it names its cards). */
+  last: { seat?: number; what: string; driver?: string; sealed?: boolean } | null;
+  /** What the house's seats thought in the hand before this one, opened now that it is over. */
+  opened?: { hand: number; seat: number; what: string; reason: string; driver?: string }[];
 };
 export type AgentAtTable = { on: boolean; toggle: () => void; thinking: boolean; last: Advice | null; name: string; model: string; said: string | null };
 
@@ -116,7 +119,24 @@ function Chips({ amount }: { amount: number }) {
 }
 
 /** What a house seat or an agent said for its last bet, on the action stub's paper. */
-export function Voice({ who, what, reason, driver, seat, problem }: { who: string; what: string; reason?: string; driver?: string; seat: number; problem?: string }) {
+export function Voice({
+  who,
+  what,
+  reason,
+  driver,
+  seat,
+  problem,
+  sealed,
+}: {
+  who: string;
+  what: string;
+  reason?: string;
+  driver?: string;
+  seat: number;
+  problem?: string;
+  /** What it thought is not shown yet: said so, so that the silence is not taken for a missing answer. */
+  sealed?: boolean;
+}) {
   return (
     <figure className="pk-voice" data-paper style={seatColour(seat)}>
       <figcaption>
@@ -126,6 +146,7 @@ export function Voice({ who, what, reason, driver, seat, problem }: { who: strin
       {(driver || problem) && (
         <small>
           {problem ? `The model failed (${problem}); the odds answered.` : driver === "the book" ? "Decided by the odds." : `Decided by ${driver}.`} It saw only its own two cards.
+          {sealed ? " What it thought is sealed until this hand is over: it would give its cards away." : ""}
         </small>
       )}
     </figure>
@@ -812,7 +833,7 @@ function ActionStub({
           ))}
         </section>
       </div>
-      {(extras || showPlanner || showAgent || houseLast || agent?.last) && (
+      {(extras || showPlanner || showAgent || houseLast || house?.opened?.length || agent?.last) && (
         <div className="pk-ticket">
           <section className="pk-stub pk-agents" aria-label="The table's other ways">
             {extras && (
@@ -872,17 +893,27 @@ function ActionStub({
                 </label>
               </div>
             )}
-            {(houseLast || agent?.last) && (
+            {(houseLast || house?.opened?.length || agent?.last) && (
               <div className="pk-voices">
                 {houseLast && (
                   <Voice
                     who={houseLast.seat !== undefined ? name(houseLast.seat) : "The house"}
                     what={done(houseLast.what)}
-                    reason={houseLast.reason}
                     driver={houseLast.driver}
                     seat={houseLast.seat ?? 0}
+                    sealed={houseLast.sealed}
                   />
                 )}
+                {house?.opened?.map((thought, at) => (
+                  <Voice
+                    key={`${thought.hand}:${thought.seat}:${at}`}
+                    who={name(thought.seat)}
+                    what={`${done(thought.what)} in hand ${thought.hand + 1}`}
+                    reason={thought.reason}
+                    driver={thought.driver}
+                    seat={thought.seat}
+                  />
+                ))}
                 {agent?.last && mine && (
                   <Voice
                     who={agent.name}
