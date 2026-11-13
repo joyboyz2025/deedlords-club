@@ -6,7 +6,8 @@
 // The agent knows what its own seat knows and no more: its two cards, the board, the bets. It never sees the other
 // seat's cards, because nobody but that seat can decrypt them.
 
-import { MAX_REASON, MAX_STYLE, type LlmConfig } from "../../co-ty-phu/agent/llm.ts";
+import { isNearAi } from "../../../lib/teeProof.ts";
+import { MAX_REASON, MAX_STYLE, type LlmConfig, quickAnswer } from "../../co-ty-phu/agent/llm.ts";
 import type { MatchView } from "../seat.ts";
 import { madeHand, winChance } from "./hands.ts";
 
@@ -163,7 +164,7 @@ export function askModel(config: LlmConfig, brief: Brief, options: { style?: str
 export async function askFor(config: LlmConfig, { system, user }: { system: string; user: string }, bounds: Bounds, options: { signal?: AbortSignal; fetch?: typeof fetch } = {}): Promise<Decision & { reason: string }> {
   const response = await (options.fetch ?? fetch)(`${config.baseUrl}/chat/completions`, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}` },
+    headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}`, ...(isNearAi(config.baseUrl) ? { "x-no-aliasing": "true" } : {}) },
     body: JSON.stringify({
       model: config.model,
       messages: [
@@ -171,7 +172,11 @@ export async function askFor(config: LlmConfig, { system, user }: { system: stri
         { role: "user", content: user },
       ],
       response_format: { type: "json_object" },
-      max_tokens: 300,
+      // NEAR AI's open models think before they answer unless told not to: left alone, the thinking used up the 300
+      // tokens, the answer came back empty and the seat bet by the odds without a word (measured 2026-11-13 on Qwen,
+      // DeepSeek and GLM). The same settings as at the board game (llm.ts `quickAnswer`).
+      max_tokens: isNearAi(config.baseUrl) ? 800 : 300,
+      ...quickAnswer(config),
     }),
     signal: options.signal,
   });

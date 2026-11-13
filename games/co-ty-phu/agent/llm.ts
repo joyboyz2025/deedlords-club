@@ -132,7 +132,7 @@ export function parseAnswer(text: string): { plan: Plan; reason: string } | null
  * eat the token budget (no plan left) or the time a turn has. GLM-5.3 Flash is kept short with `reasoning_effort: low`
  * (it ignores `enable_thinking`); the others take `enable_thinking: false` (https://docs.near.ai/cloud/reasoning-models).
  */
-function quickAnswer(config: LlmConfig): Record<string, unknown> {
+export function quickAnswer(config: LlmConfig): Record<string, unknown> {
   if (!isNearAi(config.baseUrl)) return {};
   return /glm-5\.3/i.test(config.model) ? { reasoning_effort: "low" } : { chat_template_kwargs: { enable_thinking: false } };
 }

@@ -182,3 +182,23 @@ test("a model is asked with the owner's words, and the odds answer when it fails
   // With no model there is nothing to fall back from.
   assert.deepEqual(Object.keys(await advise(view, 0, hole, { samples: 100 })).sort(), ["action", "driver", "reason"]);
 });
+
+test("a model NEAR AI serves is told to answer without thinking first, with room for the answer", async () => {
+  const view = table();
+  const hole = cards("As Kd");
+  const asked: { url: string; headers: Record<string, string>; body: Record<string, unknown> }[] = [];
+  const answering: typeof fetch = (async (url: unknown, init?: { body?: unknown; headers?: Record<string, string> }) => {
+    asked.push({ url: String(url), headers: init?.headers ?? {}, body: JSON.parse(String(init?.body)) });
+    return new Response(JSON.stringify({ choices: [{ message: { content: '{"action":"call","reason":"Priced in."}' } }] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const near = (model: string): LlmConfig => ({ baseUrl: "https://cloud-api.near.ai/v1", apiKey: "k", model, label: model });
+
+  // Left to think, these models spent the whole answer on it and the seat bet by the odds without a word.
+  assert.equal((await advise(view, 0, hole, { llm: near("Qwen/Qwen3.8-27B"), samples: 100, fetch: answering })).driver, "Qwen/Qwen3.8-27B");
+  await advise(view, 0, hole, { llm: near("z-ai/glm-5.3-flash"), samples: 100, fetch: answering });
+  await advise(view, 0, hole, { llm: { baseUrl: "https://model.test/v1", apiKey: "k", model: "m", label: "m" }, samples: 100, fetch: answering });
+  assert.deepEqual([asked[0].body.chat_template_kwargs, asked[0].body.max_tokens, asked[0].headers["x-no-aliasing"]], [{ enable_thinking: false }, 800, "true"]);
+  assert.deepEqual([asked[1].body.reasoning_effort, asked[1].body.max_tokens], ["low", 800]);
+  // Another service is asked as before: it would refuse settings it does not know.
+  assert.deepEqual([asked[2].body.chat_template_kwargs, asked[2].body.reasoning_effort, asked[2].body.max_tokens, asked[2].headers["x-no-aliasing"]], [undefined, undefined, 300, undefined]);
+});
