@@ -193,3 +193,10 @@
 .pk-stub[hidden] {
   display: none;
 }
+
+/* The poker account kept beside a wallet account: what it holds goes back in one tap. */
+.pk-who__back {
+  justify-self: start;
+  min-height: 44px;
+  margin-top: 10px;
+}

@@ -19,6 +19,7 @@ import { near, ownStake } from "../../../co-ty-phu/chain/calls";
 import { usePlayer, type Player } from "../../../co-ty-phu/chain/usePlayer";
 import { TopUp } from "../../../co-ty-phu/components/TopUp";
 import { makePokerAccount, pokerAccount } from "../../pokerAccount";
+import { type FundStep, amountToMove, fundPoker, sendBack } from "../../pokerFunds";
 import { Flap, Ledger, type LogLine } from "../../components/TableView";
 import {
   MAX_SEATS,
@@ -132,12 +133,14 @@ export function TablesScreen() {
           id={table.id}
           firstSeq={table.seq}
           session={player ? session : null}
+          // A poker account kept beside a wallet or Google account is filled from that account when a seat costs NEAR.
+          backer={player && session && pokerAccount()?.apart && player.accountId !== session.accountId ? player : null}
           // Somebody looking on goes back to the sign-in step; a wallet or Google account gets its poker account.
           onSignIn={player ? makeAccount : () => setWatching(false)}
           onBack={() => show(null)}
         />
       ) : (
-        <LiveLobby session={session} player={player} onSignIn={makeAccount} onOpen={(id, seq) => show({ id, seq })} />
+        <LiveLobby session={session} player={player} clubBalance={state.balance} onSignIn={makeAccount} onOpen={(id, seq) => show({ id, seq })} />
       )}
     </TablesShell>
   );
@@ -146,6 +149,7 @@ export function TablesScreen() {
 type LobbyProps = {
   session: Session | null;
   /** Who is signed in to the club, when that is not the account poker is played as. */ player?: Player | null;
+  /** What that club account holds, in yoctoNEAR (`null`: not on chain; `undefined`: not read yet). */ clubBalance?: bigint | null;
   /** Makes the game account poker is played with, for a club account that cannot sign a hand. */ onSignIn: () => void;
   onOpen: (id: string, seq: number) => void;
 };
@@ -167,6 +171,7 @@ const MODES: Record<Mode, { name: string; line: string }> = {
 export function TablesLobby({
   session,
   player = null,
+  clubBalance,
   onSignIn,
   onOpen,
   wall,
@@ -201,6 +206,9 @@ export function TablesLobby({
   const stake = near(ownTyped && "amount" in own ? own.amount : chip);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
+  // Where a table opened with NEAR moved from the club account is: the player's approval, then the transfer landing.
+  const [step, setStep] = useState<FundStep | null>(null);
+  const [returning, setReturning] = useState(false);
 
   const readBalance = useCallback(() => {
     if (session) void tableClient.balance(session.accountId).then(setBalance, () => undefined);
@@ -217,12 +225,35 @@ export function TablesLobby({
     setBusy(true);
     setNote("");
     try {
+      // A poker account kept beside a wallet or Google account is filled from that account first: one approval.
+      if (!gratis && short && backer) {
+        await fundPoker(backer, session.accountId, needed, setStep);
+        readBalance();
+      }
+      setStep(null);
       // The table has changed once when it is created.
       onOpen(gratis ? await openFreeTable(session, seats, model || undefined) : await openTable(session, seats, stake), 1);
     } catch (error) {
       setNote(text(error));
+      setStep(null);
       setBusy(false);
     }
+  };
+  /** Sends what the poker account holds back to the club account it stands beside. */
+  const giveBack = async () => {
+    if (!session || !backer || typeof balance !== "bigint") return;
+    setReturning(true);
+    setNote("");
+    try {
+      await sendBack(session, backer.accountId, balance);
+      for (let tries = 0; tries < 6; tries++) {
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        readBalance();
+      }
+    } catch (error) {
+      setNote(text(error));
+    }
+    setReturning(false);
   };
   /**
    * What a seat with a stake needs on the account: the stake, the record fee, and about half a NEAR that the call
@@ -232,19 +263,33 @@ export function TablesLobby({
   const short = !gratis && balance !== undefined && (balance === null || balance < needed);
   // Poker is played as the club's game account, or as one kept for poker beside a wallet or Google account.
   const apart = session ? Boolean(pokerAccount()?.apart) : false;
+  // The club account that fills the poker account kept beside it, and whether it holds enough to.
+  const backer: Player | null = apart && session && player && player.accountId !== session.accountId ? player : null;
+  const toMove = amountToMove(needed, balance);
+  const backerCan = Boolean(backer) && typeof clubBalance === "bigint" && clubBalance >= toMove + NEAR / 20n;
+  // A seat at a table holds the account's money: nothing goes back while it sits at one.
+  const seated = Boolean(session && wall.tables?.some((table) => table.players.includes(session.accountId)));
+  const canReturn = Boolean(backer) && typeof balance === "bigint" && balance > NEAR / 50n && !seated;
   // Who brings the missing NEAR: the club account when poker is played as it (an EVM wallet then pays through 1Click).
   const payer: Player | null = !session
     ? null
     : !apart && player?.via === "key" && player.accountId === session.accountId
       ? player
       : { via: "key", accountId: session.accountId, session, source: "guest", evmAddress: null, label: null };
-  const label = busy
-    ? "Opening the table…"
-    : mode === "house"
-      ? "Play vs the House"
-      : mode === "friends"
-        ? `Open a room of ${seats}`
-        : `Open a table of ${seats} · ${asNear(stake).replace(/\.?0+ NEAR$/, "")} NEAR`;
+  const label =
+    step === "approve"
+      ? backer?.via === "wallet"
+        ? "Approve it in your wallet…"
+        : "Approve it in the sign-in window…"
+      : step === "moving"
+        ? "Moving NEAR to your poker account…"
+        : busy
+          ? "Opening the table…"
+          : mode === "house"
+            ? "Play vs the House"
+            : mode === "friends"
+              ? `Open a room of ${seats}`
+              : `Open a table of ${seats} · ${asNear(stake).replace(/\.?0+ NEAR$/, "")} NEAR`;
   const houseModel = model ? (model === "rules" ? "the odds alone" : model) : "its usual model";
   const options = mode === "house" ? `House bets by ${houseModel}` : mode === "friends" ? `${seats} seats · house bets by ${houseModel}` : `${seats} seats`;
 
@@ -294,7 +339,7 @@ export function TablesLobby({
                 {balance === undefined ? (
                   <small>reading…</small>
                 ) : balance === null ? (
-                  <small>{free ? "no NEAR needed" : "not on chain yet"}</small>
+                  <small>{free && gratis ? "no NEAR needed" : "0 NEAR"}</small>
                 ) : (
                   <>
                     <strong>{asNear(balance).replace(" NEAR", "")}</strong>
@@ -303,6 +348,11 @@ export function TablesLobby({
                 )}
               </p>
             </div>
+            {canReturn && backer && (
+              <button type="button" className="pk-pill pk-who__back" disabled={returning || busy} onClick={() => void giveBack()}>
+                {returning ? "Sending it back…" : `Send it back to ${shortAccount(backer.accountId)}`}
+              </button>
+            )}
           </section>
         )}
 
@@ -385,7 +435,7 @@ export function TablesLobby({
               )}
             </div>
           )}
-          <button type="button" className="pk-go" disabled={!session || busy || short || Boolean(typedProblem)} onClick={() => void open()}>
+          <button type="button" className="pk-go" disabled={!session || busy || (short && !backerCan) || Boolean(typedProblem)} onClick={() => void open()}>
             {label}
           </button>
           {note && (
@@ -472,7 +522,20 @@ export function TablesLobby({
             </p>
           )}
           {/* Too little on the account for this stake: the way to the missing NEAR, right under it. */}
-          {short && payer && !typedProblem && (
+          {/* A wallet or Google account that holds enough: one approval moves it, and the table opens. */}
+          {short && backer && backerCan && !typedProblem && (
+            <p className="pk-fine">
+              One approval {backer.via === "wallet" ? "in your wallet" : "in the sign-in window"}: {asNear(toMove).replace(/\.?0+ NEAR$/, "")} NEAR moves from{" "}
+              {shortAccount(backer.accountId)} to your poker account (the stake for 100 chips, a small record fee, and about half a NEAR that the check of your shuffle proof must
+              be able to reserve), and the table opens. What you leave with goes back to {shortAccount(backer.accountId)} in one tap.
+            </p>
+          )}
+          {short && backer && !backerCan && typeof clubBalance === "bigint" && !typedProblem && (
+            <p className="pk-fine">
+              {shortAccount(backer.accountId)} holds {asNear(clubBalance)}: this table needs {asNear(toMove).replace(/\.?0+ NEAR$/, "")} NEAR moved to your poker account.
+            </p>
+          )}
+          {short && payer && !backerCan && !typedProblem && (
             <div className="pk-topup">
               <TopUp
                 player={payer}
@@ -585,7 +648,21 @@ function TableWall({ wall, you, houses, onOpen }: { wall: Tables; you: string | 
   );
 }
 
-function LiveTable({ id, firstSeq, session, onSignIn, onBack }: { id: string; firstSeq: number; session: Session | null; onSignIn: () => void; onBack: () => void }) {
+function LiveTable({
+  id,
+  firstSeq,
+  session,
+  backer = null,
+  onSignIn,
+  onBack,
+}: {
+  id: string;
+  firstSeq: number;
+  session: Session | null;
+  /** The club account that fills the poker account kept beside it, when there is one. */ backer?: Player | null;
+  onSignIn: () => void;
+  onBack: () => void;
+}) {
   /** `undefined`: not read yet. `null`: the table is gone (settled, or there never was one). */
   const [view, setView] = useState<TableView | null | undefined>(undefined);
   const [result, setResult] = useState<TableResult | null>(null);
@@ -838,7 +915,12 @@ function LiveTable({ id, firstSeq, session, onSignIn, onBack }: { id: string; fi
               return;
             }
             if (!view) return;
-            void click("Took a seat", undefined, () => takeSeat(session, id, BigInt(view.stake)));
+            const stake = BigInt(view.stake);
+            void click("Took a seat", undefined, async () => {
+              // A seat with a stake: the poker account is brought up to it from the club account first, in one approval.
+              if (backer && stake > 0n) await fundPoker(backer, session.accountId, stake + RECORD_FEE + NEAR / 2n);
+              return takeSeat(session, id, stake);
+            });
           },
           // A free table is hosted by the server: it is asked to start it. Any other is started by its host's own call.
           start: () =>

@@ -10,7 +10,7 @@ import { AS_KEY, openDevSession } from "./devSession";
 import { GRANT_METHODS } from "./calls";
 import { confirmGrant, identify, prepareGrant, resumeGoogle, sendWithNearAuth, type PendingGrant } from "./googleSession";
 import { hasKeyAccount, type KeySource, openKeySession, signInAsGuest, signInWithEvm, signOutOfKey } from "./keySession";
-import { hasWalletAccount, openWalletSession, sendWithWallet, signInWithNearWallet, signOutOfWallet } from "./walletSession";
+import { hasWalletAccount, openWalletSession, sendWithWallet, signInWithNearWallet, signOutOfWallet, transferWithWallet } from "./walletSession";
 
 /**
  * Whoever this browser plays as.
@@ -47,11 +47,16 @@ export async function sendStake(player: Player, calls: FunctionCall[]): Promise<
 }
 
 /**
- * Sends NEAR out of a game account, to any NEAR account. A guest's or an EVM wallet's key signs it here; a Google
- * account's is approved in the sign-in window. Resolves to the transaction's hash.
+ * Sends NEAR out of the player's account, to any NEAR account. A guest's or an EVM wallet's key signs it here; a
+ * Google account's is approved in the sign-in window; a NEAR wallet account's in the wallet (no hash comes back from
+ * there: ""). Resolves to the transaction's hash.
  */
 export async function withdraw(player: Player, receiverId: string, amount: bigint): Promise<string> {
-  if (player.via !== "key") throw new Error("a wallet account withdraws in its wallet");
+  if (player.via === "wallet") {
+    await transferWithWallet(player.accountId, receiverId, amount);
+    return "";
+  }
+  if (player.via !== "key") throw new Error("a test account of the local helper sends nothing out");
   const sent = approvesInWindow(player) ? sendWithNearAuth(player.accountId, receiverId, [{ transfer: amount }]) : player.session.sendTo(receiverId, [{ transfer: amount }]);
   return (await sent).hash;
 }

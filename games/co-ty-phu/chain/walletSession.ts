@@ -38,7 +38,9 @@ function connector(): Promise<NearConnector> {
  */
 export async function signInWithNearWallet(): Promise<void> {
   const pair = generateKeyPair();
-  const wallet = await (await connector()).connect({
+  const wallet = await (
+    await connector()
+  ).connect({
     addFunctionCallKey: {
       contractId: CHAIN.contractId,
       publicKey: publicKeyText(pair.publicKey),
@@ -92,6 +94,17 @@ export async function sendWithWallet(accountId: string, calls: FunctionCall[], r
       params: { methodName: call.method, args: JSON.parse(utf8.decode(call.args)) as object, gas: call.gas.toString(), deposit: call.deposit.toString() },
     })),
   });
+  const status = (outcome as { status?: { Failure?: unknown } } | undefined)?.status;
+  if (status?.Failure !== undefined) throw new ContractFailure(failureText(status.Failure), "");
+}
+
+/**
+ * Asks the wallet to send `amount` yoctoNEAR from the connected account to `receiverId`: its owner sees the transfer
+ * and approves it in the wallet. Used to move NEAR to the player's own poker game account (games/poker/pokerFunds.ts).
+ */
+export async function transferWithWallet(accountId: string, receiverId: string, amount: bigint): Promise<void> {
+  const { wallet } = await (await connector()).getConnectedWallet();
+  const outcome = await wallet.signAndSendTransaction({ signerId: accountId, receiverId, actions: [{ type: "Transfer" as const, params: { deposit: amount.toString() } }] });
   const status = (outcome as { status?: { Failure?: unknown } } | undefined)?.status;
   if (status?.Failure !== undefined) throw new ContractFailure(failureText(status.Failure), "");
 }
