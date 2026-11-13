@@ -183,6 +183,7 @@ Mainnet, owner `deedlords.near`, read on 2026-11-13:
 | [`chibi.deedlords.near`](https://nearblocks.io/address/chibi.deedlords.near) | Characters and items, NEP-171 | `BxzvTicT3UR8VcocQL7tDMW3D29jSTbfRGAWB6L7158C` |
 | `free.deedlords.near` | The sponsor of free tables: opens them, relays guests' moves, plays the house seats | no contract |
 | `house.deedlords.near` | The house seat of solo board-game matches | no contract |
+| `pokerhouse.deedlords.near`, `pokerhouse2.deedlords.near` | AI seats at poker tables, each with its own account and its own NEAR: they sit at free tables and at tables with the 0.1 NEAR stake, and win or lose it like anybody | no contract |
 
 Testnet, owner `deedlords.testnet`: `game.deedlords.testnet`, `pokertable.deedlords.testnet`, `poker.deedlords.testnet`,
 `chibi.deedlords.testnet`, `arena.deedlords.testnet`, sponsor `free.deedlords.testnet`.
