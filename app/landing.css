@@ -1626,3 +1626,111 @@ html:has(.lp),
 body:has(.lp) {
   background: #3f0806;
 }
+
+/* ---- Receipts, proofs, the judges' three checks ---- */
+
+/* A receipt: what a real transaction did, and what it burned. */
+.lp-ledger--receipts li a {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 4px 28px;
+}
+
+.lp-ledger__cost {
+  color: var(--soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The agent's own words, each with the way to the proof of the turn it said them for. */
+.lp-agent__notes li a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 6px;
+  border-bottom: 2px solid #b47a10;
+  color: #5d100a;
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.lp-agent__notes li a svg {
+  transition: translate 0.25s cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+.lp-agent__notes li a:hover svg {
+  translate: 3px 0;
+}
+
+/* What /verify checks. */
+.lp-proof {
+  margin-top: 40px;
+}
+
+.lp-ticks li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 21rem) minmax(0, 1fr);
+  gap: 4px 14px;
+  align-items: baseline;
+  padding: 12px 10px;
+  border-top: 1px solid rgb(255 247 230 / 11%);
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.lp-ticks svg {
+  align-self: center;
+  color: #7fd69a;
+}
+
+.lp-ticks b {
+  color: var(--cream);
+  font-weight: 700;
+}
+
+.lp-ticks span {
+  color: var(--soft);
+}
+
+.lp-judges__cli {
+  max-width: 70ch;
+  margin-top: 24px;
+  color: var(--soft);
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.lp-judges__cli code {
+  padding: 3px 9px;
+  border: 1px solid rgb(255 247 230 / 14%);
+  border-radius: 7px;
+  background: var(--night);
+  color: var(--cream);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 14.500px;
+  white-space: nowrap;
+}
+
+.lp-judges__cli a {
+  color: var(--gold);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 1099px) {
+  .lp-ledger--receipts li a {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .lp-ledger--receipts .lp-ledger__what {
+    grid-row: 1;
+  }
+
+  .lp-ticks li {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .lp-ticks span {
+    grid-column: 2;
+  }
+}

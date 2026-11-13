@@ -13,6 +13,7 @@ export const Arrow = ({ size = 20, className }: Props) => svg(size, className, <
 export const Chain = ({ size = 20, className }: Props) => svg(size, className, <path d="M10 14a4 4 0 0 0 5.700 0l3-3a4 4 0 0 0-5.700-5.700l-1 1M14 10a4 4 0 0 0-5.700 0l-3 3a4 4 0 0 0 5.700 5.700l1-1" />);
 export const Play = ({ size = 20, className }: Props) => svg(size, className, <path d="M8 5.200v13.600a1 1 0 0 0 1.500.860l11.300-6.800a1 1 0 0 0 0-1.720L9.500 4.340A1 1 0 0 0 8 5.200Z" />, false);
 export const Out = ({ size = 14, className }: Props) => svg(size, className, <path d="M9 5h10v10M19 5 6 18" />);
+export const Tick = ({ size = 20, className }: Props) => svg(size, className, <path d="M4.500 12.500 9.500 17.500 19.500 6.500" />);
 export const Die = ({ size = 30, className }: Props) => (
   <svg className={className} viewBox="0 0 32 32" width={size} height={size} aria-hidden="true">
     <path d="M16 3 28 9.500v13L16 29 4 22.500v-13L16 3Z" fill="#f6ecd2" stroke="#2a1208" strokeWidth="1.600" strokeLinejoin="round" />
