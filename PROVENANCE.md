@@ -81,6 +81,16 @@ repository with an AI coding assistant (Claude Code) at the owner's direction; t
 - **Mainnet:** deployed on 2026-11-13 by the owner with `contracts/sandbox/mainnet.js` (accounts and code hashes in
   the README).
 
+## The demo film (in-window, 2026-11-13)
+
+`tools/demo/rec.mjs` drives a headless Chrome over the DevTools protocol and films it with the browser's own
+screencast; `tools/demo/film.mjs` is the film, scene by scene. Every picture is the live site, clicked through with
+real mouse events: the pointer and the captions are two elements laid over the page, nothing else is added. The games
+are played on the testnet site by a guest account made in the take (the captions say so); the mainnet shots only
+read (the landing, its receipts, and the output of `npm run check:live`, run during the take). Waits for the chain
+that are cut out are named in the captions; a move's own two seconds are left in. No sound was recorded: the track is
+silence.
+
 ## Deedlords Arena (in-window, 2026-11-11)
 
 A second game, written in this repo during the hackathon window. Nothing of it was copied from the earlier platform or from another project. Commits `7912f3b`, `530eb0d`, `aea0424`.
