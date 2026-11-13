@@ -200,3 +200,21 @@
   min-height: 44px;
   margin-top: 10px;
 }
+
+/* At a table: the seat's account lacks the NEAR to sit down or to go on. */
+.pk-fund {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.pk-fund__lead {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.pk-fund__lead b {
+  display: block;
+  font-size: 16px;
+}

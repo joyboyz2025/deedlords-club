@@ -135,6 +135,14 @@ export function TablesScreen() {
           session={player ? session : null}
           // A poker account kept beside a wallet or Google account is filled from that account when a seat costs NEAR.
           backer={player && session && pokerAccount()?.apart && player.accountId !== session.accountId ? player : null}
+          // Who brings NEAR the seat's account lacks, when no club account stands behind it: the account itself.
+          payer={
+            !session
+              ? null
+              : player?.via === "key" && player.accountId === session.accountId
+                ? player
+                : { via: "key", accountId: session.accountId, session, source: "guest", evmAddress: null, label: null }
+          }
           // Somebody looking on goes back to the sign-in step; a wallet or Google account gets its poker account.
           onSignIn={player ? makeAccount : () => setWatching(false)}
           onBack={() => show(null)}
@@ -653,12 +661,14 @@ function LiveTable({
   firstSeq,
   session,
   backer = null,
+  payer = null,
   onSignIn,
   onBack,
 }: {
   id: string;
   firstSeq: number;
   session: Session | null;
+  /** The seat's own account as a player, for bringing NEAR it lacks (through 1Click, or to its address). */ payer?: Player | null;
   /** The club account that fills the poker account kept beside it, when there is one. */ backer?: Player | null;
   onSignIn: () => void;
   onBack: () => void;
@@ -817,6 +827,34 @@ function LiveTable({
 
   const mySeat = view ? seatOf(view) : null;
   const myCards = hole.hand === view?.hand ? hole.cards : null;
+
+  // What the seat's account holds. At a table with a stake the seat pays its own gas, and the check of its shuffle
+  // proof must be able to reserve about a quarter of a NEAR: an account without it cannot play its seat.
+  const [held, setHeld] = useState<bigint | null | undefined>(undefined);
+  const readHeld = useCallback(() => {
+    if (session) void tableClient.balance(session.accountId).then(setHeld, () => undefined);
+  }, [session]);
+  useEffect(() => {
+    if (!session) return;
+    readHeld();
+    const timer = setInterval(readHeld, 6_000);
+    return () => clearInterval(timer);
+  }, [session, readHeld]);
+  const stakeHere = view ? BigInt(view.stake) : 0n;
+  const seatNeeds = stakeHere + RECORD_FEE + NEAR / 2n;
+  const holds = held ?? 0n;
+  // Asked for a seat the account cannot afford yet: it is taken by itself once the NEAR is there.
+  const [wantSeat, setWantSeat] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const starved = stakeHere > 0n && mySeat !== null && held !== undefined && holds < PLAY_RESERVE;
+  const lacking =
+    !session || !view || stakeHere === 0n
+      ? null
+      : mySeat === null && wantSeat && holds < seatNeeds
+        ? { needed: seatNeeds, sitting: true }
+        : starved
+          ? { needed: PLAY_TOP_UP, sitting: false }
+          : null;
   const house = useHouse(id, view);
   const characters = useCharacters(view?.players ?? []);
 
@@ -874,6 +912,26 @@ function LiveTable({
     }
   });
 
+  // The NEAR for a seat that was asked for has arrived: the seat is taken.
+  useEffect(() => {
+    if (!wantSeat || !session || !view || mySeat !== null || holds < seatNeeds) return;
+    setWantSeat(false);
+    void latest.current.click("Took a seat", undefined, () => takeSeat(session, id, stakeHere));
+  }, [wantSeat, session, view, mySeat, holds, seatNeeds, id, stakeHere]);
+  /** The club account behind the poker account brings it up to what the seat lacks: one approval. */
+  const addFromClub = async () => {
+    if (!backer || !session || !lacking) return;
+    setAdding(true);
+    setRefused("");
+    try {
+      await fundPoker(backer, session.accountId, lacking.needed);
+      readHeld();
+    } catch (error) {
+      setRefused(text(error));
+    }
+    setAdding(false);
+  };
+
   if (view === null) return <TableSettled id={id} result={result} log={log} you={accountId} houses={house.accounts ?? []} onBack={onBack} />;
 
   const shown = view ?? UNREAD;
@@ -888,7 +946,7 @@ function LiveTable({
         locked={locked || !view}
         doing={sending ? "Sending to the contract…" : doing}
         now={now}
-        problems={[refused, trouble].filter(Boolean)}
+        problems={[refused, trouble].filter(Boolean).map((problem) => (/NotEnoughBalance/.test(problem) ? LACKS_NEAR : problem))}
         log={log}
         link={`${typeof window === "undefined" ? "" : window.location.origin}${ROUTE}?t=${id}`}
         explorer={explorerLink}
@@ -916,6 +974,12 @@ function LiveTable({
             }
             if (!view) return;
             const stake = BigInt(view.stake);
+            // A seat with a stake on an account that cannot also reserve a shuffle's gas would only run out of time:
+            // the NEAR is asked for first, right here, and the seat is taken when it has arrived.
+            if (stake > 0n && !backer && holds < stake + RECORD_FEE + NEAR / 2n) {
+              setWantSeat(true);
+              return;
+            }
             void click("Took a seat", undefined, async () => {
               // A seat with a stake: the poker account is brought up to it from the club account first, in one approval.
               if (backer && stake > 0n) await fundPoker(backer, session.accountId, stake + RECORD_FEE + NEAR / 2n);
@@ -943,9 +1007,53 @@ function LiveTable({
           },
         }}
       />
+      {/* The seat's account lacks the NEAR to sit down, or to go on: the way to it, at the table. */}
+      {lacking && session && (
+        <section className="pk-stub pk-fund" aria-label="Add NEAR for this seat">
+          {backer ? (
+            <>
+              <p className="pk-fund__lead">
+                <b>{lacking.sitting ? "A seat here needs NEAR on your poker account." : "Your poker account is low on NEAR."}</b> It holds {asNear(holds)};{" "}
+                {lacking.sitting ? "the seat" : "playing on"} needs {asNear(lacking.needed)}: {lacking.sitting ? "the stake for 100 chips, a small record fee, and " : ""}about half
+                a NEAR that the check of your shuffle proof must be able to reserve. Nearly all of the reserve comes back.
+              </p>
+              <button type="button" className="pk-go" disabled={adding} onClick={() => void addFromClub()}>
+                {adding
+                  ? backer.via === "wallet"
+                    ? "Approve it in your wallet…"
+                    : "Approve it in the sign-in window…"
+                  : `Add ${asNear(amountToMove(lacking.needed, held)).replace(/\.?0+ NEAR$/, "")} NEAR from ${shortAccount(backer.accountId)}`}
+              </button>
+            </>
+          ) : payer ? (
+            <TopUp
+              player={payer}
+              balance={held}
+              needed={lacking.needed}
+              onArrived={readHeld}
+              made={
+                lacking.sitting
+                  ? "the stake for 100 chips, a small record fee, and about half a NEAR that the check of your shuffle proof must be able to reserve; the chips you leave with and nearly all of the reserve come back"
+                  : "what the check of your shuffle proof must be able to reserve each hand; nearly all of it comes back"
+              }
+            />
+          ) : null}
+          {lacking.sitting && (
+            <button type="button" className="pk-pill pk-pill--quiet" onClick={() => setWantSeat(false)}>
+              Not now
+            </button>
+          )}
+        </section>
+      )}
     </>
   );
 }
+
+/** Below this a seat at a table with a stake cannot send its shuffle: the call must be able to reserve 0.26 NEAR. */
+const PLAY_RESERVE = (27n * NEAR) / 100n;
+/** What a seat that ran low is brought back up to. */
+const PLAY_TOP_UP = (4n * NEAR) / 10n;
+const LACKS_NEAR = "Your account holds too little NEAR for this step. Add some below: the page goes on by itself when it lands.";
 
 /** What a seat may cost at a table opened here, in NEAR: the contract takes 0.1 and up; the page stops at 1. */
 const STAKE_CHIPS = [0.1, 0.25, 0.5, 1];

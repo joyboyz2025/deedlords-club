@@ -606,7 +606,7 @@ function ActionStub({
     line = free
       ? noStake
         ? `A seat here is free: 100 chips that are only chips, and the house pays the gas of your moves. ${inLobby ? "" : "At a table under way you are dealt in from the next hand."}`
-        : `A seat costs ${asNear(view.deposit)}: ${asNear(view.stake)} for 100 chips, which come back when you leave, and a record fee that does not. ${inLobby ? "" : "At a table under way you are dealt in from the next hand."}`
+        : `A seat costs ${asNear(view.deposit)}: ${asNear(view.stake)} for 100 chips, which come back when you leave, and a record fee that does not. Your account also needs about half a NEAR that the check of your shuffle must be able to reserve. ${inLobby ? "" : "At a table under way you are dealt in from the next hand."}`
       : "Every seat is taken. You can watch the hands being played.";
     body = free ? (
       <button
