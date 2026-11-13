@@ -1,4 +1,4 @@
-// Ảnh minh họa của bàn cờ: khu phố giữa bàn, bốn ô góc, hai bộ thẻ, và cúp. Tệp nằm trong `public/board`,
+// Ảnh minh họa của bàn cờ: bốn ô góc, hai bộ thẻ, và cúp (giữa bàn để trơn, xem textures.ts `drawCenter`). Tệp nằm trong `public/board`,
 // cắt nền và thu nhỏ bằng `_notes/concepts/cut.py`. Tải không được thì bàn vẫn vẽ bằng nét như trước.
 
 import type { Deck } from "../board";
@@ -8,7 +8,6 @@ const BASE = "/board";
 export type CornerKind = "start" | "jail" | "rest" | "arrest";
 
 export type BoardArt = {
-  centre: HTMLImageElement;
   corners: Record<CornerKind, HTMLImageElement>;
   decks: Record<Deck, HTMLImageElement>;
 };
@@ -29,7 +28,6 @@ let loading: Promise<BoardArt | null> | null = null;
 /** Tải một lần cho cả trang; mở bàn khác thì dùng lại. `null`: tải không được. */
 export function loadBoardArt(): Promise<BoardArt | null> {
   loading ??= Promise.all([
-    load("centre"),
     load("corner-departure"),
     load("corner-customs"),
     load("corner-transit"),
@@ -37,7 +35,7 @@ export function loadBoardArt(): Promise<BoardArt | null> {
     load("deck-alert"),
     load("deck-souvenir"),
   ]).then(
-    ([centre, start, jail, rest, arrest, chance, chest]) => ({ centre, corners: { start, jail, rest, arrest }, decks: { chance, chest } }),
+    ([start, jail, rest, arrest, chance, chest]) => ({ corners: { start, jail, rest, arrest }, decks: { chance, chest } }),
     () => {
       // Lần sau thử lại, kẻo một lần rớt mạng thì cả phiên không có ảnh.
       loading = null;

@@ -3,7 +3,7 @@
 
 import * as THREE from "three";
 import { paint } from "../../ma-soi/scene/textures";
-import { GROUPS, SQUARES } from "../board";
+import { DECK_NAMES, GROUPS, SQUARES } from "../board";
 import type { BoardArt, CornerKind } from "./art";
 import { BAND, CORNER, HALF, SIDE, TILE, VIEW_YAW, tileCenter, tileYaw } from "./layout";
 
@@ -17,9 +17,6 @@ const LEVEL = -VIEW_YAW;
 const PAPER = "#fafbfc";
 const INK = "#17212b";
 const LINE = "#aab4bf";
-const LAWN = "#9fd39a";
-const ROAD = "#7d848c";
-const PAVEMENT = "#e4e8ec";
 /** Nền ô góc và màu tấm tên của từng góc. */
 const CORNER_PAPER = "#eef2f5";
 const CORNER_INK: Record<CornerKind, string> = { start: "#e8543f", jail: "#12838f", rest: "#1f9d6b", arrest: "#c8352a" };
@@ -210,34 +207,72 @@ function drawCorner(ctx: CanvasRenderingContext2D, index: number, fonts: { text:
 }
 
 /** Khu phố giữa bàn: ảnh công viên và hai con đường cắt nhau, mâm xúc xắc đặt trên vòng xuyến ở giữa. Chưa có ảnh thì vẽ bãi cỏ và đường. */
-const CENTRE_VEIL = "rgb(240 247 243 / 46%)";
+// The middle of the table, kept plain: felt of one quiet colour, the game's name as a watermark, and the places of the
+// two decks. A picture here (a little city, drawn in full colour) was the loudest thing on the table, and the pieces
+// and the owners' colours were lost against it. Whatever stands out now is something that is being played.
+const FELT = "#e7efe9";
+const FELT_EDGE = "#cbd8d0";
+const FELT_MARK = "#c4d2ca";
+const DECK_PAPER: Record<"chance" | "chest", { fill: string; edge: string; ink: string }> = {
+  chance: { fill: "#f7ecd0", edge: "#e2cc93", ink: "#8a713a" },
+  chest: { fill: "#f6dcd5", edge: "#e3b3a8", ink: "#93584c" },
+};
 
-function drawCenter(ctx: CanvasRenderingContext2D, art: BoardArt | null): void {
+function drawCenter(ctx: CanvasRenderingContext2D, fonts: { text: string; title: string }, art: BoardArt | null): void {
   const u = K;
   const inner = (HALF - CORNER) * u;
   const mid = BOARD_PX / 2;
-  if (art) {
-    ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(art.centre, mid - inner, mid - inner, inner * 2, inner * 2);
-    // The middle is scenery: at full strength its parks and roads were the loudest thing on the table and the pieces
-    // and the owners' colours were lost against them. A pale veil sets it back, so the ring of squares reads first.
-    ctx.fillStyle = CENTRE_VEIL;
-    ctx.fillRect(mid - inner, mid - inner, inner * 2, inner * 2);
-    return;
-  }
-  ctx.fillStyle = PAVEMENT;
+  ctx.fillStyle = FELT;
   ctx.fillRect(mid - inner, mid - inner, inner * 2, inner * 2);
-  const margin = 0.35 * u;
-  ctx.fillStyle = LAWN;
-  ctx.fillRect(mid - inner + margin, mid - inner + margin, inner * 2 - margin * 2, inner * 2 - margin * 2);
-  const road = 1.1 * u;
-  ctx.fillStyle = ROAD;
-  ctx.fillRect(mid - road / 2, mid - inner + margin, road, inner * 2 - margin * 2);
-  ctx.fillRect(mid - inner + margin, mid - road / 2, inner * 2 - margin * 2, road);
-  ctx.fillStyle = PAVEMENT;
+  ctx.save();
+  ctx.translate(mid, mid);
+  ctx.rotate(LEVEL);
+  // A fine line inside the ring of squares, and one around the dice tray.
+  ctx.strokeStyle = FELT_EDGE;
+  ctx.lineWidth = 0.05 * u;
+  const frame = inner - 0.45 * u;
   ctx.beginPath();
-  ctx.arc(mid, mid, 1.9 * u, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.roundRect(-frame, -frame, frame * 2, frame * 2, 0.5 * u);
+  ctx.stroke();
+  ctx.setLineDash([0.22 * u, 0.2 * u]);
+  ctx.beginPath();
+  ctx.arc(0, 0, 3.05 * u, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // The name, twice, so that it reads above the tray and below it.
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = FELT_MARK;
+  fitText(ctx, "DEEDLORDS", 0, -5.35 * u, 1.5 * u, 11.5 * u, fonts.title, "400");
+  fitText(ctx, "CLUB", 0, 5.4 * u, 1.05 * u, 6 * u, fonts.title, "400");
+  // Where each deck lies: a card's shape, its picture, its name.
+  for (const [deck, side] of [
+    ["chance", -1],
+    ["chest", 1],
+  ] as const) {
+    const paper = DECK_PAPER[deck];
+    ctx.save();
+    ctx.translate(side * 5.25 * u, 0);
+    ctx.rotate(side * 0.1);
+    const [w, h] = [2.7 * u, 3.7 * u];
+    ctx.fillStyle = paper.fill;
+    ctx.strokeStyle = paper.edge;
+    ctx.lineWidth = 0.06 * u;
+    ctx.beginPath();
+    ctx.roundRect(-w / 2, -h / 2, w, h, 0.28 * u);
+    ctx.fill();
+    ctx.stroke();
+    if (art) {
+      ctx.globalAlpha = 0.9;
+      fitImage(ctx, art.decks[deck], 0, -0.3 * u, w * 0.74, h * 0.5);
+      ctx.globalAlpha = 1;
+    }
+    ctx.fillStyle = paper.ink;
+    const words = lines(DECK_NAMES[deck].toUpperCase());
+    words.forEach((word, i) => fitText(ctx, word, 0, (art ? 1.05 : -0.2) * u + i * 0.44 * u, 0.36 * u, w * 0.84, fonts.text));
+    ctx.restore();
+  }
+  ctx.restore();
 }
 
 /** `salary`: tiền nhận mỗi lần đi qua Xuất phát của ván này, ghi trên ô Xuất phát. `art`: ảnh minh họa, `null` khi chưa tải xong. */
@@ -245,7 +280,7 @@ export function boardTexture(fonts: { text: string; title: string }, anisotropy:
   const texture = paint(BOARD_PX, BOARD_PX, (ctx) => {
     ctx.fillStyle = LINE;
     ctx.fillRect(0, 0, BOARD_PX, BOARD_PX);
-    drawCenter(ctx, art);
+    drawCenter(ctx, fonts, art);
     const gap = 0.025 * K;
     for (let index = 0; index < SQUARES.length; index++) {
       const center = tileCenter(index);
