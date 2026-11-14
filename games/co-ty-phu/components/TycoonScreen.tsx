@@ -320,7 +320,7 @@ export type ChainStage = {
   onBehind?: (behind: boolean) => void;
   /** Told when the viewer starts on something that is not a move yet (choosing where to build): they are given their time. */
   here?: () => void;
-  /** Told while the viewer has their tickets open, deciding whether to play one: nothing is thrown for them meanwhile. */
+  /** Told while the viewer, on their turn, has their tickets open, deciding whether to play one: nothing is thrown for them for a while. */
   choosing?: (on: boolean) => void;
   /** The payout card of a settled match, shown in place of the room server's result card. */
   result: (onClose: () => void) => ReactNode;
@@ -736,14 +736,15 @@ function Game({
   useEffect(() => {
     if (!myTurn) setBuilding(false);
   }, [myTurn]);
-  // With their tickets open the viewer is deciding: whoever runs the match throws nothing for them meanwhile.
+  // With their tickets open on their own turn the viewer is deciding: whoever runs the match throws nothing for them
+  // meanwhile (for a while: chain/room.ts `choose`).
   const choosing = chain?.choosing;
-  const ticketsOpen = sheet?.kind === "tickets";
+  const deciding = sheet?.kind === "tickets" && myTurn;
   useEffect(() => {
-    if (!ticketsOpen) return;
+    if (!deciding) return;
     choosing?.(true);
     return () => choosing?.(false);
-  }, [choosing, ticketsOpen]);
+  }, [choosing, deciding]);
 
   // Cầm dọc thì chừa dải trên, dải dưới cho thẻ người chơi và nút; xoay ngang thì chừa hai cột hai bên.
   const landscape = useLandscape();

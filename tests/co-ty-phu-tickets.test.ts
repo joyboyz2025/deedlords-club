@@ -13,7 +13,7 @@ import { SQUARES } from "../games/co-ty-phu/board.ts";
 import { applyAction, diceAllowed, logLine, needsDice, toAction, toGame } from "../games/co-ty-phu/chain/adapt.ts";
 import { NO_EXTRAS, RULES, TICKET_LINES, createDuelCall, extrasOf, freeTableCalls, roundsFor } from "../games/co-ty-phu/chain/calls.ts";
 import { describeCall } from "../games/co-ty-phu/chain/ledger.ts";
-import { AUTO_ROLL_AFTER_MS, ChainRoom, autoMove, nothingToDecide, ticketNews } from "../games/co-ty-phu/chain/room.ts";
+import { AUTO_ROLL_AFTER_MS, CHOOSE_LIMIT_MS, ChainRoom, autoMove, nothingToDecide, ticketNews } from "../games/co-ty-phu/chain/room.ts";
 import type { ChainEvent, ChainGame, ChainMatch, ChainRules } from "../games/co-ty-phu/chain/types.ts";
 import {
   TICKETS,
@@ -333,6 +333,15 @@ test("the room: a Takeover is something to decide, tickets before the throw are 
   assert.equal(room.getState().view!.tickets!.waiver, true);
   await room.idle();
   assert.deepEqual(sent, [{ id: "m1", seat: 0, actions: ["Waiver"] }]);
+  // Tickets left open on a table nobody is at hold a turn for so long, not for ever: then the dice are thrown.
+  room.choose(false);
+  room.choose(true);
+  now += CHOOSE_LIMIT_MS + 1;
+  await room.refresh();
+  now += AUTO_ROLL_AFTER_MS + 1;
+  await room.refresh();
+  await room.idle();
+  assert.deepEqual(sent.at(-1), { id: "m1", seat: 0, actions: ["Roll"] });
   room.stop();
 });
 

@@ -127,6 +127,11 @@ export const AUTO_DECIDE_AFTER_MS = 15_000;
  * a turn for somebody who is not there.
  */
 export const AUTO_PASS_AFTER_MS = 5_000;
+/**
+ * With `autoPlay`: a viewer who has their tickets open is waited for this long at most (`choose`). After it the room
+ * moves for them as for anybody else: tickets left open on a table nobody is at must not hold every turn.
+ */
+export const CHOOSE_LIMIT_MS = 20_000;
 
 /**
  * Whether `playerId`'s turn has nothing left for them to decide: the dice are thrown, there is nothing to buy or owe,
@@ -197,8 +202,8 @@ export class ChainRoom {
   private held = false;
   /** The viewer's board is still playing rolls the chain has already made: nothing is decided for them meanwhile. */
   private behind = false;
-  /** The viewer is choosing a ticket to play: nothing is thrown or ended for them meanwhile. */
-  private choosing = false;
+  /** The viewer is choosing a ticket to play, since when: nothing is thrown or ended for them meanwhile, for a while. */
+  private choosing: number | null = null;
   /** The round of the turn in which the viewer last did something themselves. */
   private hereRound: number | null = null;
   /** The viewer gave up while their roll was on its way: sent when it has landed. */
@@ -538,7 +543,8 @@ export class ChainRoom {
     if (!this.autoPlay || this.stopped || !match || !this.caller || this.working || this.queue.length > 0 || this.dicePending || this.result || match.meta.status !== "playing")
       return;
     const seat = seatOf(match.meta, this.accountId);
-    const game = seat !== null && match.meta.current_seat === seat && !this.held && !this.choosing ? toGame(match) : null;
+    const choosing = this.choosing !== null && this.now() - this.choosing < CHOOSE_LIMIT_MS;
+    const game = seat !== null && match.meta.current_seat === seat && !this.held && !choosing ? toGame(match) : null;
     const playerId = seat !== null ? match.meta.seats[seat].player : "";
     // The dice are thrown, and a square passed over, for somebody who has seen their turn come and let it wait, not
     // for somebody still watching the roll before. Ending a turn that holds no decision waits for nobody.
@@ -572,14 +578,15 @@ export class ChainRoom {
   };
 
   /**
-   * The viewer has a ticket open and is deciding whether to play it (`true`), or has closed it: meanwhile the room
-   * throws no dice and ends no turn for them, and the wait for them starts again when they are done. The contract's
-   * own turn clock runs on all the same.
+   * The viewer, on their turn, has their tickets open and is deciding whether to play one (`true`), or has closed
+   * them: meanwhile the room throws no dice and ends no turn for them, for `CHOOSE_LIMIT_MS` at most, and the wait for
+   * them starts again when they are done. The contract's own turn clock runs on all the same.
    */
   readonly choose = (on: boolean): void => {
-    if (this.choosing === on) return;
-    this.choosing = on;
+    if ((this.choosing !== null) === on) return;
+    this.choosing = on ? this.now() : null;
     this.endIdleTurn();
+    if (on) void this.sleep(CHOOSE_LIMIT_MS + 20).then(() => this.endIdleTurn());
   };
 
   /** The viewer's board is still playing rolls the chain has already made (`true`), or shows the present again. */
