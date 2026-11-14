@@ -20,7 +20,8 @@ import {
   limits,
   rememberHouseSeats,
   rememberSponsored,
-  sponsoredTables,
+  leftTables,
+  openTables,
   tidyFreeTables,
 } from "@/games/co-ty-phu/chain/freeDesk";
 import { CHAIN, MOVE_GAS } from "@/lib/chain/config";
@@ -89,13 +90,19 @@ export async function POST(request: Request): Promise<Response> {
     return jsonAnswer(429, { error: "too many free tables opened from here: wait a few minutes" });
 
   try {
-    const tables = await sponsoredTables(paying);
+    const everything = await openTables();
+    const tables = everything.filter((meta) => meta.creator === paying.accountId);
     // Tables people left hold the sponsor's deposit and a place each: lobbies are abandoned, and at tables under way
     // the house gives up its seats, which ends them. A few at a time, while somebody waits for a table.
     const { abandon, resign, open } = tidyFreeTables(tables, paying.accountId, Date.now());
+    // A contract that can close a table everybody left (`close`) is asked to: one call a table, whoever opened it and
+    // whoever sat at it, so a room of friends or a staked match nobody came back to does not stand on the board for ever.
+    const closing = (await contractFeatures()).includes("close") ? leftTables(everything, Date.now()) : null;
     const tidying: (() => Promise<unknown>)[] = [
       ...abandon.slice(0, 4).map((id) => () => paying.session.call("abandon", { id }, ABANDON_GAS)),
-      ...resign.slice(0, 3).flatMap(({ id, seats }) => seats.map((seat) => () => paying.session.call("play", { id, seat, actions: ["Resign"] }, MOVE_GAS))),
+      ...(closing
+        ? closing.slice(0, 4).map((id) => () => paying.session.call("close", { id }, MOVE_GAS))
+        : resign.slice(0, 3).flatMap(({ id, seats }) => seats.map((seat) => () => paying.session.call("play", { id, seat, actions: ["Resign"] }, MOVE_GAS)))),
     ];
     const until = Date.now() + TIDY_BUDGET_MS;
     for (const tidy of tidying) {
@@ -130,21 +137,28 @@ export async function POST(request: Request): Promise<Response> {
 }
 
 /** What the contract said it supports, and when it was asked. */
-let knownExtras: { extras: Extras; at: number } | null = null;
+let knownFeatures: { features: string[]; at: number } | null = null;
 const EXTRAS_FOR_MS = 60_000;
+
+/** The names the contract lists in `get_config` (`features`), asked at most once a minute; none when it cannot be reached. */
+async function contractFeatures(): Promise<string[]> {
+  if (knownFeatures && Date.now() - knownFeatures.at < EXTRAS_FOR_MS) return knownFeatures.features;
+  try {
+    const config = await chainClient.view<{ features?: unknown }>("get_config");
+    knownFeatures = { features: Array.isArray(config?.features) ? config.features.filter((name): name is string => typeof name === "string") : [], at: Date.now() };
+    return knownFeatures.features;
+  } catch {
+    return [];
+  }
+}
 
 /**
  * The opt-in rules a free table is opened with: those the contract lists in `get_config` (tickets, the leader's
  * rent), asked at most once a minute. A contract from before them, or one that cannot be reached, gets today's table.
  */
 async function contractExtras(): Promise<Extras> {
-  if (knownExtras && Date.now() - knownExtras.at < EXTRAS_FOR_MS) return knownExtras.extras;
-  try {
-    knownExtras = { extras: extrasOf(await chainClient.view<{ features?: unknown }>("get_config")), at: Date.now() };
-    return knownExtras.extras;
-  } catch {
-    return NO_EXTRAS;
-  }
+  const features = await contractFeatures();
+  return features.length > 0 ? extrasOf({ features }) : NO_EXTRAS;
 }
 
 const MATCH_ID = /^[A-Za-z0-9_-]{1,32}$/;

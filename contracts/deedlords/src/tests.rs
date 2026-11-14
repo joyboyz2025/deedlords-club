@@ -1439,11 +1439,11 @@ fn a_hosted_match_waits_for_its_host_and_nobody_else_starts_it() {
     t.join("room", CAROL, 2);
     assert_eq!(t.m("room").status, Status::Lobby, "the last seat does not start a hosted match");
     assert_eq!(t.m("room").turn_deadline, 0);
-    // Only the host says go, by `start` or by playing `Start`.
+    // The host says go, by `start` or by playing `Start`: for the first half minute nobody else may.
     t.call(BOB, 0);
-    expect_panic(|| t.c.start("room".into()), "only the host may start");
+    expect_panic(|| t.c.start("room".into()), "the host starts the game");
     t.call(BOB, 0);
-    expect_panic(|| t.c.play("room".into(), 1, vec![Action::Start]), "only the host may start");
+    expect_panic(|| t.c.play("room".into(), 1, vec![Action::Start]), "the host starts the game");
     // A move before the start is refused as it always was.
     t.call(ALICE, 0);
     expect_panic(|| t.c.play("room".into(), 0, vec![Action::Roll]), "the match is not being played");
@@ -1519,4 +1519,122 @@ fn a_player_gives_up_through_play_and_the_match_is_settled() {
     assert_eq!(result["reason"], "last");
     assert_eq!(result["ranking"], near_sdk::serde_json::json!([1 - quitter, quitter]));
     assert_eq!(result["backers"][0], stayer);
+}
+
+// ----- Rooms nobody is left waiting in: the host's grace, seats that are away, tables everybody left -------------------
+
+#[test]
+fn a_full_room_its_host_does_not_start_can_be_started_by_anyone_seated_after_the_grace() {
+    let mut t = T::new();
+    t.call(ALICE, STORAGE);
+    t.c.create_match("room".into(), 2, U128(STAKE), vec![7000, 3000], classic(MANY_ROUNDS), None, None, Some(acc(ALICE)));
+    t.join("room", ALICE, 0);
+    t.join("room", BOB, 1);
+    let full_at = t.m("room").last_activity;
+    t.now = full_at + crate::HOST_GRACE_NS - 1;
+    t.call(BOB, 0);
+    expect_panic(|| t.c.play("room".into(), 1, vec![Action::Start]), "the host starts the game");
+    t.now = full_at + crate::HOST_GRACE_NS;
+    // Somebody who is not at the table never starts it.
+    t.call(CAROL, 0);
+    expect_panic(|| t.c.start("room".into()), "only the host or a seated player");
+    t.call(BOB, 0);
+    assert_eq!(t.c.play("room".into(), 1, vec![Action::Start])["applied"], 1);
+    assert_eq!(t.m("room").status, Status::Playing);
+}
+
+#[test]
+fn a_seat_that_lets_its_whole_clock_run_out_is_away_and_gets_a_short_clock_until_it_is_back() {
+    let mut t = T::new();
+    started_pair(&mut t, MANY_ROUNDS);
+    let turn = u64::from(t.m("m").turn_seconds) * SEC;
+    let (s, _) = t.current("m");
+    let other = 1 - s;
+    let backer = |seat: usize| if seat == 0 { ALICE } else { BOB };
+    assert!(t.c.get_match("m".into()).unwrap()["meta"].get("away").is_none());
+    // Saying "I am back" when one was never away is refused, as an empty list always was.
+    t.call(backer(s), 0);
+    expect_panic(|| t.c.play("m".into(), s as u8, vec![]), "send 1..=32 actions");
+
+    // The seat to move never throws: one `timeout` plays its whole turn and marks it away.
+    t.now = t.m("m").turn_deadline + 1;
+    t.call(CAROL, 0);
+    t.c.timeout("m".into());
+    assert_eq!(current_seat(&t.m("m").game), Some(other), "the whole turn was played in one call");
+    assert_eq!(t.c.get_match("m".into()).unwrap()["meta"]["away"], near_sdk::serde_json::json!([s]));
+    assert_eq!(t.m("m").turn_deadline, t.now + turn, "the seat that is here keeps the match's clock");
+
+    // The other seat plays its turn itself; the turn comes back to the seat that is away, with the short clock.
+    t.now += 3 * SEC;
+    t.call(backer(other), 0);
+    t.c.turn("m".into(), other as u8, Plan::default());
+    assert_eq!(current_seat(&t.m("m").game), Some(s));
+    assert_eq!(t.m("m").turn_deadline, t.now + u64::from(crate::AWAY_TURN_SECONDS) * SEC);
+
+    // It says it is back, on its own turn: its whole clock again, from now, and it is no longer away.
+    t.now += SEC;
+    t.call(backer(s), 0);
+    assert_eq!(t.c.play("m".into(), s as u8, vec![])["applied"], 0);
+    assert!(t.c.get_match("m".into()).unwrap()["meta"].get("away").is_none());
+    assert_eq!(t.m("m").turn_deadline, t.now + turn);
+    assert!(env::storage_read(b"away:m").is_none());
+
+    // A seat that threw the dice itself and then stalls is late, not away: one step a call, as before.
+    t.call(backer(s), 0);
+    t.c.play("m".into(), s as u8, vec![Action::Roll]);
+    if current_seat(&t.m("m").game) == Some(s) {
+        t.now = t.m("m").turn_deadline + 1;
+        t.call(CAROL, 0);
+        t.c.timeout("m".into());
+        assert!(t.c.get_match("m".into()).map_or(true, |m| m["meta"].get("away").is_none()), "late is not away");
+    }
+}
+
+#[test]
+fn a_seat_that_is_away_is_here_again_as_soon_as_it_moves() {
+    let mut t = T::new();
+    started_pair(&mut t, MANY_ROUNDS);
+    let (s, _) = t.current("m");
+    let backer = |seat: usize| if seat == 0 { ALICE } else { BOB };
+    t.now = t.m("m").turn_deadline + 1;
+    t.call(CAROL, 0);
+    t.c.timeout("m".into());
+    t.call(backer(1 - s), 0);
+    t.c.turn("m".into(), (1 - s) as u8, Plan::default());
+    assert_eq!(current_seat(&t.m("m").game), Some(s));
+    t.call(backer(s), 0);
+    t.c.turn("m".into(), s as u8, Plan::default());
+    assert!(t.c.get_match("m".into()).unwrap()["meta"].get("away").is_none());
+    assert!(env::storage_read(b"away:m").is_none());
+}
+
+#[test]
+fn a_table_everybody_left_is_closed_by_anyone_after_fifteen_minutes_and_settled_by_net_worth() {
+    let mut t = T::new();
+    started_pair(&mut t, MANY_ROUNDS);
+    let (s, _) = t.current("m");
+    let backer = |seat: usize| if seat == 0 { ALICE } else { BOB };
+    t.call(backer(s), 0);
+    t.c.turn("m".into(), s as u8, Plan::default());
+    // Mark the other seat away, so that the record of it must be cleaned up too.
+    t.now = t.m("m").turn_deadline + 1;
+    t.call(CAROL, 0);
+    t.c.timeout("m".into());
+    let last = t.m("m").last_activity;
+    t.now = last + ABANDON_AFTER_NS - 1;
+    t.call(CAROL, 0);
+    expect_panic(|| t.c.close("m".into()), "can be closed 15 minutes after its last move");
+    t.now = last + ABANDON_AFTER_NS;
+    t.call(CAROL, 0);
+    t.c.close("m".into());
+    assert!(t.c.matches.get("m").is_none());
+    let result = t.c.get_result("m".into()).expect("the table was settled");
+    assert_eq!(result["reason"], "time");
+    assert_eq!(event("close")["data"]["by"], CAROL);
+    assert!(env::storage_read(b"away:m").is_none());
+    // A lobby is not closed this way: that is `abandon`.
+    t.create("lobby", 2, vec![10000], classic(MANY_ROUNDS), None);
+    t.now += ABANDON_AFTER_NS;
+    t.call(CAROL, 0);
+    expect_panic(|| t.c.close("lobby".into()), "the match is not being played");
 }

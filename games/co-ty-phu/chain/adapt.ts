@@ -222,10 +222,13 @@ export function settledGame(game: Game, meta: ChainMeta, result: ChainResult): G
 /** What this account sees. Somebody without a seat is added as a watcher: the contract has no such player. */
 export function chainView(game: Game, meta: ChainMeta, accountId: string | null, now: number, autoAt: number | null): View {
   const seat = seatOf(meta, accountId);
-  if (seat !== null) return viewFor(game, meta.seats[seat].player, { code: meta.id, online: new Set(game.players.map((p) => p.id)), now, autoAt });
+  // A seat the contract holds for away shows as away on its card; everybody else is at the table.
+  const away = new Set((meta.away ?? []).map((k) => meta.seats[k]?.player));
+  const here = (players: Player[]) => new Set(players.map((p) => p.id).filter((id) => !away.has(id)));
+  if (seat !== null) return viewFor(game, meta.seats[seat].player, { code: meta.id, online: here(game.players), now, autoAt });
   const watcher: Player = { ...newPlayer(WATCHER_ID, "", accountId ? shortAccount(accountId) : "Guest"), wantsToPlay: false };
   const shown: Game = { ...game, players: [...game.players, watcher] };
-  return viewFor(shown, WATCHER_ID, { code: meta.id, online: new Set(shown.players.map((p) => p.id)), now, autoAt });
+  return viewFor(shown, WATCHER_ID, { code: meta.id, online: here(shown.players), now, autoAt });
 }
 
 const isSquare = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0 && (value as number) < BOARD_SIZE;

@@ -40,6 +40,11 @@ export type ChainMeta = {
   turn_seconds: number;
   /** `"0"` in the lobby. */
   turn_deadline: string;
+  /**
+   * The seats that are away, when some are: a seat that let its whole clock run out without throwing. The contract
+   * plays such a seat's turns after a few seconds instead of a whole clock, until it moves or says it is back.
+   */
+  away?: number[];
   draws: number;
   current_seat: number | null;
 };

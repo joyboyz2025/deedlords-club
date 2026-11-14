@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { Arrow, Bot, Copy, Seat } from "@/components/landing/icons";
+import { chainClient } from "@/lib/chain/shared";
 import { CHAIN } from "@/lib/chain/config";
 import { PLAYBOOK_DRIVER } from "../agent/advise";
 import { TOKEN_COLORS } from "../board";
@@ -229,6 +230,9 @@ function Notice({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/** As in the contract (HOST_GRACE_NS): how long a full room waits for its host before anyone seated may start it. */
+const HOST_GRACE_MS = 30_000;
+
 /**
  * The gate of a match: who sits where on the wall, and on the desk the visitor's ticket, whose last stub is the boarding
  * pass of this match. The last seat taken starts the game.
@@ -271,6 +275,20 @@ function Lobby({
   const [starting, setStarting] = useState(false);
   const [adding, setAdding] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  // A full room its host does not start: on a contract that has the rule, anyone seated may start it half a minute
+  // after the last seat was taken. The clock here only says when to offer the button; the contract decides.
+  const [hostGrace, setHostGrace] = useState(false);
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    let alive = true;
+    chainClient.view<{ features?: unknown }>("get_config").then(
+      (config) => alive && setHostGrace(Array.isArray(config?.features) && config.features.includes("hostGrace")),
+      () => undefined,
+    );
+    return () => {
+      alive = false;
+    };
+  }, []);
   const seated = accountId !== null && meta.seats.some((seat) => seat.backer === accountId);
   // In a match against the house the last free seat is the solo player's.
   const mayJoin = player !== null && !seated && (meta.solo_player === null || meta.solo_player === accountId);
@@ -344,6 +362,15 @@ function Lobby({
   // A hosted room: the seats fill as people come, and nothing starts until its host says so.
   const host = meta.host ?? null;
   const isHost = host !== null && host === accountId;
+  // When the room filled (the contract's clock), and from when somebody other than the host may start it.
+  const startsFrom = Number(BigInt(meta.last_activity) / 1_000_000n) + HOST_GRACE_MS;
+  const waitingForHost = hostGrace && host !== null && !isHost && open === 0 && meta.seats.some((seat) => seat.backer === accountId);
+  const graceLeft = waitingForHost ? Math.max(0, Math.ceil((startsFrom + 2_000 - clock) / 1000)) : 0;
+  useEffect(() => {
+    if (!waitingForHost) return;
+    const timer = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [waitingForHost]);
   const toFill = `${open} ${open === 1 ? "seat" : "seats"} to fill`;
   const line =
     open === 0
@@ -579,7 +606,17 @@ function Lobby({
                 {!starting && <Arrow size={20} />}
               </button>
             )}
-            {host && !isHost && open === 0 && <p className="fd-small">Everybody is in. The host starts the game.</p>}
+            {host && !isHost && open === 0 && !waitingForHost && <p className="fd-small">Everybody is in. The host starts the game.</p>}
+            {waitingForHost && graceLeft > 0 && <p className="fd-small">Everybody is in. The host starts the game; if they do not, you can in {graceLeft} s.</p>}
+            {waitingForHost && graceLeft === 0 && (
+              <>
+                <button type="button" className="fd-go" disabled={starting} onClick={start}>
+                  {starting ? "Starting…" : "Start the game"}
+                  {!starting && <Arrow size={20} />}
+                </button>
+                <p className="fd-fine">The host has not started it: anyone seated may now.</p>
+              </>
+            )}
             {seated && open > 0 && (
               <div className="fd-acts">
                 <button type="button" className="fd-go" onClick={share}>
@@ -616,7 +653,11 @@ function Lobby({
                 </button>
                 <p className="fd-fine">
                   {unstaked ? "Your seat is free again." : "Your stake comes back and your seat is free again."}{" "}
-                  {isHost ? "Nobody else can start this room: the contract closes it 15 minutes after it was opened and returns every stake." : ""}
+                  {isHost
+                    ? hostGrace
+                      ? "The room stays open: once it is full, anyone seated can start it. A room nobody starts is closed by the contract 15 minutes after it was opened."
+                      : "Nobody else can start this room: the contract closes it 15 minutes after it was opened and returns every stake."
+                    : ""}
                 </p>
               </>
             )}

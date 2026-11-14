@@ -1520,6 +1520,14 @@ impl Game {
     // ----- End -----------------------------------------------------------------------------------------------------
 
     /// Standing players by net worth, descending, stable (ties keep turn order); then bankrupt players by `outAt` desc.
+    /// Ends a game under way as it stands, ranked by net worth as when the rounds run out. For whoever keeps the game
+    /// (the contract closes a table everybody has left); not an action of a player. Does nothing unless playing.
+    pub fn close(&mut self) {
+        if self.phase == Phase::Playing {
+            self.finish(Reason::Time);
+        }
+    }
+
     fn finish(&mut self, reason: Reason) {
         let mut standing: Vec<(String, i64)> =
             self.order.iter().filter(|id| !self.is_bankrupt(id)).map(|id| (id.clone(), self.net_worth(id))).collect();

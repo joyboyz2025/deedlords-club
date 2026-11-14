@@ -74,6 +74,8 @@ const RESYNC_WAIT_MS = 200;
 /** A seated player forces a turn this long after its deadline, and again this often while it stays overdue. */
 const TIMEOUT_GRACE_MS = 1_500;
 const TIMEOUT_RETRY_MS = 1_200;
+/** A seat marked away says it is back this often at most, while the mark stays. */
+const BACK_RETRY_MS = 8_000;
 const OFFLINE_AFTER = 2;
 /**
  * A transaction is waited for this long at most. Past it the room stops waiting and reads the match: the move may
@@ -196,6 +198,7 @@ export class ChainRoom {
   private notice: string | null = null;
   private failures = 0;
   private nextTimeoutAt = 0;
+  private nextBackAt = 0;
   /** The step of the viewer's turn the room is waiting on, when the chain first showed it, and how long it waits. */
   private idleTurn: { key: string; since: number; after: number } | null = null;
   /** Somebody else moves for the viewer (their agent): the room makes no move of its own. */
@@ -379,8 +382,27 @@ export class ChainRoom {
       this.rebase();
       this.emit();
     } else if (!wasOnline) this.emit();
+    this.sayBack();
     this.forceOverdueTurn();
     this.endIdleTurn();
+  }
+
+  /**
+   * The viewer's seat is marked away (the page was closed or hidden while its clock ran out) and the page is open
+   * again: it tells the contract so, with `play` and no actions, and gets its whole clock back. Asked again at most
+   * every `BACK_RETRY_MS` while the mark stays.
+   */
+  private sayBack(): void {
+    const match = this.chain;
+    const caller = this.caller;
+    if (this.stopped || !match || !caller || this.working || this.queue.length > 0 || this.result || match.meta.status !== "playing" || !this.isVisible()) return;
+    const seat = seatOf(match.meta, this.accountId);
+    if (seat === null || !match.meta.away?.includes(seat) || this.now() < this.nextBackAt) return;
+    this.nextBackAt = this.now() + BACK_RETRY_MS;
+    this.occupy(async () => {
+      await this.transact(caller, "play", { id: this.id, seat, actions: [] }).catch(() => undefined);
+      await this.resync(false);
+    });
   }
 
   /** Takes the answer unless it is the one already held or an older one. */

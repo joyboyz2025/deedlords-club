@@ -120,15 +120,32 @@ export async function isGrantedKey(accountId: string, publicKey: Uint8Array): Pr
   return true;
 }
 
-/** Every unfinished match the sponsor opened, lobby or playing. */
-export async function sponsoredTables(sponsor: Sponsor): Promise<ChainMeta[]> {
-  const mine: ChainMeta[] = [];
+/** Every unfinished match on the contract, lobby or playing. */
+export async function openTables(): Promise<ChainMeta[]> {
+  const all: ChainMeta[] = [];
   for (let from = 0; from < 400; from += 50) {
     const page = await chainClient.view<ChainMeta[]>("list_matches", { from_index: from, limit: 50 });
-    mine.push(...page.filter((meta) => meta.creator === sponsor.accountId));
+    all.push(...page);
     if (page.length < 50) break;
   }
-  return mine;
+  return all;
+}
+
+/** Every unfinished match the sponsor opened, lobby or playing. */
+export async function sponsoredTables(sponsor: Sponsor): Promise<ChainMeta[]> {
+  return (await openTables()).filter((meta) => meta.creator === sponsor.accountId);
+}
+
+/**
+ * The tables under way that everybody left, whoever opened them: nothing has moved there for longer than the contract
+ * asks before anyone may `close` a table (15 minutes; a little more here, for clocks that differ). Oldest first.
+ */
+export function leftTables(tables: ChainMeta[], now: number): string[] {
+  const ms = (nanos: string) => Number(BigInt(nanos) / 1_000_000n);
+  return tables
+    .filter((meta) => meta.status === "playing" && ms(meta.last_activity) + ABANDON_AFTER_MS < now)
+    .sort((a, b) => ms(a.last_activity) - ms(b.last_activity))
+    .map((meta) => meta.id);
 }
 
 /** A lobby nobody else came to is abandoned (the contract allows it 15 minutes after it was opened). */

@@ -53,6 +53,13 @@ pub const DEFAULT_TURN_SECONDS: u32 = 20;
 pub const MAX_TURN_SECONDS: u32 = 86_400;
 /// A match still in the lobby this long after creation may be abandoned by anyone.
 pub const ABANDON_AFTER_NS: u64 = 15 * 60 * 1_000_000_000;
+/// A full hosted room its host does not start: this long after its last seat was taken, anyone seated may start it.
+pub const HOST_GRACE_NS: u64 = 30 * 1_000_000_000;
+/// The clock of a seat that is away (it let a whole turn's clock run out without throwing): its turns after that last
+/// this long, until it moves again or says it is back. Never longer than the match's own `turn_seconds`.
+pub const AWAY_TURN_SECONDS: u32 = 5;
+/// The most steps one `timeout` plays for a seat that is away: a whole turn (three throws and what follows) fits.
+const AWAY_STEPS: usize = 16;
 /// Blitz deals 5 squares per player at list price; the 5 dearest ownables cost 400 + 350 + 320 + 300 + 300.
 pub const BLITZ_MIN_CASH: i64 = 1670;
 pub const MAX_CASH: i64 = 1_000_000;
@@ -279,7 +286,7 @@ fn call_arg(name: &str) -> Value {
 
 /// What `get_config` lists under `features`: the opt-in rules this code knows. A page opens a match with one of them
 /// only when the contract it talks to lists it (a contract deployed before them ignores the fields it does not know).
-pub const FEATURES: [&str; 3] = ["tickets", "leaderRent", "buildHere"];
+pub const FEATURES: [&str; 6] = ["tickets", "leaderRent", "buildHere", "hostGrace", "away", "close"];
 
 #[near(contract_state)]
 #[derive(PanicOnDefault)]
@@ -427,6 +434,24 @@ fn fee_key(id: &str) -> Vec<u8> {
 /// fees were recorded. Its name cannot be a [`fee_key`] (no colon).
 const FEE_BEFORE_KEY: &[u8] = b"fee_before_set";
 
+/// Which seats of the match `id` are away, one bit a seat, under a storage key of its own outside [`Match`] like the
+/// host: a match from before seats could be away reads as it was written, with nobody away.
+fn away_key(id: &str) -> Vec<u8> {
+    [b"away:".as_slice(), id.as_bytes()].concat()
+}
+
+fn away_of(id: &str) -> u8 {
+    env::storage_read(&away_key(id)).and_then(|bytes| bytes.first().copied()).unwrap_or(0)
+}
+
+fn set_away(id: &str, mask: u8) {
+    if mask == 0 {
+        env::storage_remove(&away_key(id));
+    } else {
+        env::storage_write(&away_key(id), &[mask]);
+    }
+}
+
 fn read_bps(key: &[u8]) -> Option<u16> {
     env::storage_read(key).and_then(|bytes| <[u8; 2]>::try_from(bytes.as_slice()).ok()).map(u16::from_le_bytes)
 }
@@ -500,7 +525,7 @@ impl Match {
                 })
             })
             .collect();
-        json!({
+        let mut meta = json!({
             "id": id,
             "status": self.status,
             "seats": seats,
@@ -518,7 +543,13 @@ impl Match {
             "turn_deadline": u64_json(self.turn_deadline),
             "draws": self.draws,
             "current_seat": current_seat(&self.game),
-        })
+        });
+        // The seats that are away, only when some are: a match where everybody is here reads as it always did.
+        let away = if self.status == Status::Playing { away_of(id) } else { 0 };
+        if away != 0 {
+            meta["away"] = json!((0..self.seats.len()).filter(|k| away & (1 << k) != 0).collect::<Vec<_>>());
+        }
+        meta
     }
 }
 
@@ -678,7 +709,7 @@ impl Contract {
     /// A key that may only call the moves of a match (a session key) can then start one as well.
     pub fn play(&mut self, id: String, seat: u8, actions: Vec<Action>) -> Value {
         require_move_gas();
-        require!(!actions.is_empty() && actions.len() <= MAX_ACTIONS_PER_CALL, "send 1..=32 actions");
+        require!(actions.len() <= MAX_ACTIONS_PER_CALL, "send at most 32 actions");
         if actions == [Action::Start] && self.matches.get(&id).is_some_and(|m| m.status == Status::Lobby) {
             self.start_hosted(id);
             return json!({ "applied": 1, "rejected": null });
@@ -686,6 +717,21 @@ impl Contract {
         let mut m = self.load_playing(&id);
         let s = m.seat_index(seat);
         let caller = m.authorize(s);
+        // Whoever moves is here: a seat that was away gets its whole clock again. No actions at all is "I am back".
+        let away = away_of(&id);
+        if away & (1 << s) != 0 {
+            set_away(&id, away & !(1 << s));
+            emit("back", json!({ "id": id, "seat": s, "by": caller }));
+        }
+        if actions.is_empty() {
+            require!(away & (1 << s) != 0, "send 1..=32 actions");
+            // Its turn right now: the clock it would have had, from now.
+            if current_seat(&m.game) == Some(s) {
+                m.turn_deadline = env::block_timestamp() + u64::from(m.turn_seconds) * 1_000_000_000;
+                self.matches.insert(id, m);
+            }
+            return json!({ "applied": 0, "rejected": null });
+        }
         // Checked for the whole list before anything is applied, so this rejection never follows a roll.
         if let Some((i, action)) = actions.iter().enumerate().find(|(_, action)| matches!(action, Action::Start | Action::Auto)) {
             panic_msg(format!("action {i} ({}) is not playable; use timeout() after the deadline", action.op()));
@@ -733,6 +779,10 @@ impl Contract {
         let mut m = self.load_playing(&id);
         let s = m.seat_index(seat);
         let caller = m.authorize(s);
+        let away = away_of(&id);
+        if away & (1 << s) != 0 {
+            set_away(&id, away & !(1 << s));
+        }
         let seat_before = current_seat(&m.game);
         require!(seat_before == Some(s), "it is not this seat's turn");
         let rolls_before = m.game.rolls;
@@ -759,6 +809,11 @@ impl Contract {
     ///
     /// While the timed-out player still holds the turn the deadline stays expired, so the next step can be forced at
     /// once; when the turn passes, the next player gets a fresh deadline.
+    ///
+    /// A seat that let its whole clock run out without even throwing is **away**: this call plays the rest of its turn
+    /// too, and from then on its turns get [`AWAY_TURN_SECONDS`] instead of the match's clock, so that one absent
+    /// player does not hold the table for every round. It is here again as soon as it moves (`play`, `turn`), or says
+    /// so with `play` and no actions.
     pub fn timeout(&mut self, id: String) {
         require_move_gas();
         let mut m = self.load_playing(&id);
@@ -767,17 +822,44 @@ impl Contract {
         }
         let before = current_seat(&m.game);
         let s = before.unwrap_or_else(|| env::panic_str("no current player"));
+        let away = away_of(&id);
+        // Nothing thrown yet this turn: the seat did not come to its turn at all.
+        let absent = m.game.stage == deedlords_engine::Stage::Roll;
+        if absent && away & (1 << s) == 0 {
+            set_away(&id, away | (1 << s));
+        }
+        let whole_turn = absent || away & (1 << s) != 0;
         let draws_before = m.draws;
         let mut steps = Vec::new();
         let stepped = {
             let mut rng = ChainRng::new(env::random_seed_array(), &id, &mut m.draws, near_sha256);
-            timeout_step(&mut m.game, &mut rng, &mut steps)
+            let mut stepped = timeout_step(&mut m.game, &mut rng, &mut steps);
+            let mut played = 1;
+            while whole_turn && stepped.is_ok() && played < AWAY_STEPS && m.game.phase == Phase::Playing && current_seat(&m.game) == before {
+                stepped = timeout_step(&mut m.game, &mut rng, &mut steps);
+                played += 1;
+            }
+            stepped
         };
         let rejected = stepped.err().map(|error| {
             keep_or_revert(m.draws != draws_before, format!("timeout failed: {error}"), json!({ "error": error.to_string() }))
         });
         let reset = current_seat(&m.game) != before;
         self.after_moves(id, m, "timeout", s, env::predecessor_account_id(), steps, rejected, reset);
+    }
+
+    /// Anyone, when nothing has moved at a table under way for 15 minutes (everybody left it): the game ends as it
+    /// stands, ranked by net worth as when the rounds run out, and is settled like any other. While somebody is still
+    /// at the table its moves and its `timeout` calls keep it alive, so this reaches only tables nobody is at.
+    pub fn close(&mut self, id: String) {
+        require_move_gas();
+        let mut m = self.load_playing(&id);
+        if env::block_timestamp() < m.last_activity + ABANDON_AFTER_NS {
+            panic_msg(format!("a table can be closed 15 minutes after its last move (at {})", m.last_activity + ABANDON_AFTER_NS));
+        }
+        m.game.close();
+        emit("close", json!({ "id": id, "by": env::predecessor_account_id() }));
+        self.settle(id, m);
     }
 
     /// Anyone, if the match is still in the lobby 15 minutes after creation: refunds every stake and the storage
@@ -1035,9 +1117,16 @@ impl Contract {
         let mut m = self.load(&id);
         require!(m.status == Status::Lobby, "the game has already started");
         let Some(host) = host_of(&id) else { env::panic_str("this match has no host: it starts when its last seat is taken") };
-        require!(env::predecessor_account_id() == host, "only the host may start the game");
         require!(m.seats.iter().all(|seat| seat.backer.is_some()), "every seat must be taken before the game starts");
         let now = env::block_timestamp();
+        let caller = env::predecessor_account_id();
+        if caller != host {
+            // A host who is not there must not hold a full room: after a grace, anyone seated starts it.
+            require!(m.seats.iter().any(|seat| seat.backer.as_ref() == Some(&caller)), "only the host or a seated player may start the game");
+            if now < m.last_activity + HOST_GRACE_NS {
+                panic_msg(format!("the host starts the game; anyone seated may from {}", m.last_activity + HOST_GRACE_NS));
+            }
+        }
         m.last_activity = now;
         begin(&id, &mut m, now);
         self.matches.insert(id, m);
@@ -1074,7 +1163,10 @@ impl Contract {
         let now = env::block_timestamp();
         m.last_activity = now;
         if reset_deadline {
-            m.turn_deadline = now + u64::from(m.turn_seconds) * 1_000_000_000;
+            // A seat that is away gets a short clock: the table does not wait a whole turn for it every round.
+            let next_away = current_seat(&m.game).is_some_and(|next| away_of(&id) & (1 << next) != 0);
+            let seconds = if next_away { AWAY_TURN_SECONDS.min(m.turn_seconds) } else { m.turn_seconds };
+            m.turn_deadline = now + u64::from(seconds) * 1_000_000_000;
         }
         let mut data = json!({
             "id": id,
@@ -1121,6 +1213,7 @@ impl Contract {
         // The fee comes off the whole pot first; the ranks share what is left, so fee + shares == pot to the yocto.
         let fee_bps = self.fee_of_match(&id);
         env::storage_remove(&fee_key(&id));
+        env::storage_remove(&away_key(&id));
         let fee = fee_of(pot, fee_bps);
         let shares = split_pot(pot - fee, &m.split, ranking.len());
         let backers: Vec<AccountId> = ranking

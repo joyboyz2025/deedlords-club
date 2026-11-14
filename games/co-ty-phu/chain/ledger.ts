@@ -20,7 +20,7 @@ export type MoveTx = {
 };
 
 /** The contract's methods that belong to a match. */
-export const MATCH_METHODS = ["create_match", "join", "play", "turn", "timeout", "leave", "abandon", "set_driver"];
+export const MATCH_METHODS = ["create_match", "join", "play", "turn", "timeout", "leave", "abandon", "close", "set_driver"];
 
 const ACTION_WORDS: Record<string, string> = {
   Roll: "Roll",
@@ -59,6 +59,8 @@ export function describeCall(method: string, args: unknown): string {
     case "join":
       return `Stake and take seat${seat}`;
     case "play":
+      // No actions at all: a seat that was away says it is back.
+      if (Array.isArray(a.actions) && a.actions.length === 0) return "Back at the table";
       return Array.isArray(a.actions) && a.actions.length > 0 ? (a.actions as ContractAction[]).map(actionWord).join(" · ") : "Move";
     case "turn":
       return "AI turn, by plan";
@@ -68,6 +70,8 @@ export function describeCall(method: string, args: unknown): string {
       return `Leave seat${seat}`;
     case "abandon":
       return "Close the match, stakes back";
+    case "close":
+      return "Close a table everybody left: ranked as it stands";
     case "set_driver":
       return a.driver ? `Hand seat${seat} to an agent` : `Take seat${seat} back`;
     default:

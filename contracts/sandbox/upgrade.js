@@ -117,7 +117,7 @@ async function dry(wasm) {
     const { features, ...sameConfig } = after.config;
     const { features: _were, ...wasConfig } = before.config;
     assert.deepEqual(sameConfig, wasConfig);
-    assert.deepEqual(features, ["tickets", "leaderRent", "buildHere"], "the new build lists the opt-in rules");
+    assert.deepEqual(features, ["tickets", "leaderRent", "buildHere", "hostGrace", "away", "close"], "the new build lists the opt-in rules");
     assert.deepEqual(await view("get_match", { id: "asked" }), asked, "the match opened on the old code reads as it was: without tickets");
     console.log("  the open lobby and the games in progress read the same after the deploy; get_config now lists features");
 
@@ -215,7 +215,7 @@ async function dry(wasm) {
     await call(bob, "join", { id: "room", seat: 1 }, Y / 10n);
     await call(carol, "join", { id: "room", seat: 2 }, Y / 10n);
     assert.equal((await view("get_match", { id: "room" })).meta.status, "lobby", "a hosted match waits for its host");
-    await assert.rejects(call(bob, "start", { id: "room" }), /only the host may start/);
+    await assert.rejects(call(bob, "start", { id: "room" }), /the host starts the game/);
     const sessionKey = KeyPair.fromRandom("ed25519");
     await alice.addKey(sessionKey.getPublicKey(), contractId, ["play", "turn", "timeout", "set_driver", "leave"], Y / 4n);
     const session = await (await connect({ networkId: "sandbox", nodeUrl: sandbox.rpcUrl, keyStore: (() => { const store = new keyStores.InMemoryKeyStore(); store.setKey("sandbox", alice.accountId, sessionKey); return store; })() })).account(alice.accountId);

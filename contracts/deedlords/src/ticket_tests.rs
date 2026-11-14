@@ -158,7 +158,7 @@ fn a_match_with_the_new_rules_keeps_them_in_a_tail_after_the_old_layout() {
 #[test]
 fn create_match_reads_the_opt_in_rules_from_its_arguments_and_get_config_lists_them() {
     let mut c = contract();
-    assert_eq!(c.get_config()["features"], json!(["tickets", "leaderRent", "buildHere"]));
+    assert_eq!(c.get_config()["features"], json!(["tickets", "leaderRent", "buildHere", "hostGrace", "away", "close"]));
     let args = |rules: Value| json!({ "id": "x", "seats": 2, "stake": "0", "split": [7000, 3000], "rules": rules, "solo_player": null, "turn_seconds": 30 });
     for (id, sent, want) in [
         (
