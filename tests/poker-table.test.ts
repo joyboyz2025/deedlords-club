@@ -9,7 +9,7 @@ import { winChance } from "../games/poker/agent/hands.ts";
 import { keyProof, newKeys, openDeck, tableKey } from "../games/poker/crypto.ts";
 import { shuffle } from "../games/poker/shuffle.ts";
 import { advise, briefFor, byTheBook } from "../games/poker/table/decide.ts";
-import { type SeatStore, type TableView, betCall, betOptions, contenders, duty, fromBase64, holeCards, nextDealt, toBase64 } from "../games/poker/table/seat.ts";
+import { type SeatStore, type TableView, betCall, betOptions, contenders, duty, fromBase64, holeCards, nextDealt, toBase64, tookEffect } from "../games/poker/table/seat.ts";
 
 const card = (name: string): number => "23456789TJQKA".indexOf(name[0]) + 13 * "cdhs".indexOf(name[1]);
 const cards = (names: string): number[] => names.split(" ").map(card);
@@ -225,4 +225,35 @@ test("by the odds alone it raises its best hands and folds what a call does not 
   assert.ok(sent.includes("Press every edge.") && sent.includes("two to nine seats") && sent.includes('\\"seatsDealt\\":9'));
   const failed = await advise(nine, 3, cards("7c 2d"), { llm, samples: 100, fetch: answering("no idea") });
   assert.deepEqual([failed.action, failed.driver, failed.fallback], ["fold", "the book", true]);
+});
+
+test("a call the node gave no receipt for landed only if the table shows what it would have changed", () => {
+  // Seat 0 (a.testnet) asked to leave between hands and the node did not answer. Then the button shuffled: the table
+  // changed, but the seat is still there and is not leaving. On 2026-11-14 the page wrote "the table shows it landed".
+  const before = table({ phase: "shuffle", dealt: [], shuffled: 0, awaited: [3] });
+  const shuffled = table({ phase: "shuffle", dealt: [3, 4, 0, 1], shuffled: 1, awaited: [4], seq: 21 });
+  assert.equal(tookEffect("leave", "a.testnet", 0, before, shuffled), false);
+  assert.equal(tookEffect("leave", "a.testnet", 0, before, { ...shuffled, leaving: [true, false, false, false, false, false] }), true);
+  assert.equal(tookEffect("leave", "a.testnet", 0, before, { ...shuffled, players: [null, "b.testnet", null, "d.testnet", "e.testnet", null] }), true);
+  assert.equal(tookEffect("leave", "a.testnet", 0, before, null), true);
+
+  // Shares for the flop, owed by seats 0 and 1: when seat 1's are in, seat 0's are still owed.
+  const flop = table({ phase: "open", street: 1, awaited: [0, 1] });
+  assert.equal(tookEffect("open", "a.testnet", 0, flop, { ...flop, awaited: [0], seq: 21 }), false);
+  assert.equal(tookEffect("open", "a.testnet", 0, flop, { ...flop, awaited: [1], seq: 21 }), true);
+  assert.equal(tookEffect("open", "a.testnet", 0, flop, table({ street: 1, board: [1, 2, 3], awaited: [4], toAct: 4, seq: 22 })), true);
+  // A shuffle is the seat's alone: the count of shuffles says whether it is in.
+  const mine = table({ phase: "shuffle", shuffled: 2, awaited: [0] });
+  assert.equal(tookEffect("shuffle", "a.testnet", 0, mine, { ...mine, seq: 21 }), false);
+  assert.equal(tookEffect("shuffle", "a.testnet", 0, mine, { ...mine, shuffled: 3, awaited: [1], seq: 21 }), true);
+
+  // A bet moves the table's count of bets; a seat taken shows the account; a start leaves the lobby.
+  assert.equal(tookEffect("act", "b.testnet", 1, table(), table({ seq: 21 })), false);
+  assert.equal(tookEffect("act", "b.testnet", 1, table(), table({ seq: 21, bets: 8, toAct: 3, awaited: [3] })), true);
+  assert.equal(tookEffect("join", "z.testnet", null, table(), table({ seq: 21 })), false);
+  assert.equal(tookEffect("join", "z.testnet", null, table(), table({ seq: 21, players: ["a.testnet", "b.testnet", "z.testnet", "d.testnet", "e.testnet", null] })), true);
+  assert.equal(tookEffect("start", "a.testnet", 0, table({ phase: "lobby" }), table({ phase: "lobby", seq: 21 })), false);
+  assert.equal(tookEffect("start", "a.testnet", 0, table({ phase: "lobby" }), table({ phase: "shuffle", seq: 21 })), true);
+  // Whatever it was, a table that is gone tells nothing about a bet or a share.
+  assert.equal(tookEffect("act", "b.testnet", 1, table(), null), false);
 });

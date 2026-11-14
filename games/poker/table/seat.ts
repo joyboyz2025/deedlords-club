@@ -88,6 +88,23 @@ export type SeatStore = {
 /** The contract's answer to a bet sent again, or chosen on a view the table has moved past: nothing was bet. */
 export const movedOn = (error: unknown): boolean => /the table moved on since this bet was chosen/.test(error instanceof Error ? error.message : String(error));
 
+/**
+ * Whether a call the node gave no receipt for shows in the table read afterwards (`after`; `null`: the table is
+ * settled): `method` sent by `account`, for `seat` when it has one, on the table as it was `before`. That the table
+ * changed says nothing: another seat's call changes it too. Only what this call alone could have changed counts.
+ */
+export function tookEffect(method: string, account: string, seat: number | null, before: TableView, after: TableView | null): boolean {
+  if (!after) return method === "leave" || method === "timeout";
+  const sameStep = after.hand === before.hand && after.phase === before.phase && after.street === before.street && after.shuffled === before.shuffled;
+  if (method === "join") return after.players.includes(account);
+  if (method === "start") return after.phase !== "lobby";
+  if (method === "leave") return !after.players.includes(account) || (seat !== null && after.leaving[seat]);
+  if (method === "act") return after.bets > before.bets;
+  if (method === "timeout") return !sameStep || before.awaited.some((late) => !after.awaited.includes(late));
+  // A shuffle, or shares: the hand is past the step, or no longer waits for this seat at it.
+  return !sameStep || seat === null || !after.awaited.includes(seat);
+}
+
 export const toBase64 = (bytes: Uint8Array): string => btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
 export const fromBase64 = (text: string): Uint8Array => Uint8Array.from(atob(text), (char) => char.charCodeAt(0));
 

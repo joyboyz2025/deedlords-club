@@ -44,7 +44,7 @@ import {
   viewResult,
 } from "../chain";
 import { FREE_TABLE_HANDS, RECORD_FEE } from "../contract";
-import { type TableResult, type TableView, betCall, duty, holeCards, movedOn, seated } from "../seat";
+import { type TableResult, type TableView, betCall, duty, holeCards, movedOn, seated, tookEffect } from "../seat";
 import { useHouse } from "../useHouse";
 import { useSeatAgent } from "../useSeatAgent";
 import { type Tables, useTables } from "../useTables";
@@ -687,8 +687,12 @@ function LiveTable({
   const [lockUntil, setLockUntil] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const seq = useRef(firstSeq);
-  /** A call the node did not answer: once the table is read past the change it was sent at, it landed. */
-  const unsure = useRef<{ seq: number; line: string; seat?: number } | null>(null);
+  /**
+   * A call the node did not answer. Whether it landed is read from the table: `took` says whether a table shows what
+   * the call would have changed. That the table moved on does not: on 2026-11-14 a "Leave the table" the sponsor never
+   * sent was written down as landed because the house had shuffled meanwhile, and the seat ran out of time unattended.
+   */
+  const unsure = useRef<{ seq: number; at: number; line: string; seat?: number; duty?: boolean; took: (table: TableView | null) => boolean } | null>(null);
   /** The change of the table a refused click was sent against: once the table has moved on, its error is old news. */
   const refusedAt = useRef<number | null>(null);
   /**
@@ -716,12 +720,21 @@ function LiveTable({
 
   useEffect(() => {
     let alive = true;
-    const landed = () => {
+    const settle = (at: TableView | null) => {
       const pending = unsure.current;
       if (!pending) return;
+      const took = pending.took(at);
+      // Not there yet: it may still be on its way until the table has moved on and a while has passed.
+      if (!took && at && (at.seq <= pending.seq || Date.now() - pending.at < UNSURE_MS)) return;
       unsure.current = null;
       setRefused("");
-      say(`${pending.line} (the node gave no receipt; the table shows it landed)`, undefined, pending.seat);
+      if (took) say(`${pending.line} (the node gave no receipt; the table shows it landed)`, undefined, pending.seat);
+      // The seat's own step is sent again at once; a click is the player's to make again.
+      else if (pending.duty) playedStep.current = null;
+      else if (at) {
+        refusedAt.current = at.seq;
+        setRefused(`This did not reach the table: "${pending.line}". Press it again.`);
+      }
     };
     const run = async () => {
       while (alive) {
@@ -729,7 +742,7 @@ function LiveTable({
           const at = await readTable(id, seq.current, () => alive);
           if (!alive) return;
           if (!at) {
-            landed();
+            settle(null);
             setResult(await viewResult(id));
             setView(null);
             return;
@@ -738,7 +751,7 @@ function LiveTable({
           seq.current = at.seq;
           setView(at);
           setTrouble("");
-          if (unsure.current && at.seq > unsure.current.seq) landed();
+          settle(at);
           if (refusedAt.current !== null && at.seq > refusedAt.current + 1) {
             refusedAt.current = null;
             setRefused("");
@@ -773,7 +786,7 @@ function LiveTable({
                 } catch (error) {
                   if (!unanswered(error)) throw error;
                   playedStep.current = { step, at: Date.now(), sure: false };
-                  unsure.current = { seq: at.seq, line, seat };
+                  unsure.current = { seq: at.seq, at: Date.now(), line, seat, duty: true, took: (now) => tookEffect(call.method, session.accountId, seat, at, now) };
                   setTrouble(NO_ANSWER);
                   await sleep(2_000);
                 }
@@ -801,8 +814,8 @@ function LiveTable({
     };
   }, [id, session, store, say, seatOf]);
 
-  /** Sends a call a click asked for. Returns whether the contract took it. */
-  const click = async (line: string, seat: number | undefined, send_: () => Promise<{ hash?: string }>): Promise<boolean> => {
+  /** Sends a call a click asked for: `method` of the contract. Returns whether the contract took it. */
+  const click = async (line: string, seat: number | undefined, method: string, send_: () => Promise<{ hash?: string }>): Promise<boolean> => {
     if (!view) return false;
     setSending(true);
     setRefused("");
@@ -816,7 +829,7 @@ function LiveTable({
       // A copy of a bet whose first sending the node did not answer, refused because the table moved on: nothing was
       // bet, and the table read next shows what did happen. Not an error for the player.
       if (stale(error)) return false;
-      if (unanswered(error)) unsure.current = { seq: view.seq, line, seat };
+      if (unanswered(error)) unsure.current = { seq: view.seq, at: Date.now(), line, seat, took: (now) => tookEffect(method, accountId ?? "", mySeat, view, now) };
       else refusedAt.current = view.seq;
       setRefused(unanswered(error) ? NO_ANSWER : text(error));
       return false;
@@ -872,7 +885,7 @@ function LiveTable({
       const line = words ?? (action === "fold" ? "folds" : action === "raise" ? `raises to ${amount}` : owed > 0 ? `calls ${owed}` : "checks");
       const keys = seatKeys(id, session.accountId);
       if (!keys) return false;
-      const took = await send_(`Seat ${seat + 1}${byAgent ? "'s agent" : ""} ${line}`, seat, async () => send(session, await betCall(at, seat, action, amount, keys, store)));
+      const took = await send_(`Seat ${seat + 1}${byAgent ? "'s agent" : ""} ${line}`, seat, "act", async () => send(session, await betCall(at, seat, action, amount, keys, store)));
       if (took && byAgent) setAgentSaid(line);
       return took;
     },
@@ -908,7 +921,7 @@ function LiveTable({
   useEffect(() => {
     if (sitting && session && view) {
       setSitting(false);
-      void click("Took a seat", undefined, () => takeSeat(session, id, BigInt(view.stake)));
+      void click("Took a seat", undefined, "join", () => takeSeat(session, id, BigInt(view.stake)));
     }
   });
 
@@ -932,7 +945,7 @@ function LiveTable({
   useEffect(() => {
     if (!wantSeat || !session || !view || mySeat !== null || holds < seatNeeds) return;
     setWantSeat(false);
-    void latest.current.click("Took a seat", undefined, () => takeSeat(session, id, stakeHere));
+    void latest.current.click("Took a seat", undefined, "join", () => takeSeat(session, id, stakeHere));
   }, [wantSeat, session, view, mySeat, holds, seatNeeds, id, stakeHere]);
   /** The club account behind the poker account brings it up to what the seat lacks: one approval. */
   const addFromClub = async () => {
@@ -997,7 +1010,7 @@ function LiveTable({
               setWantSeat(true);
               return;
             }
-            void click("Took a seat", undefined, async () => {
+            void click("Took a seat", undefined, "join", async () => {
               // A seat with a stake: the poker account is brought up to it from the club account first, in one approval.
               if (backer && stake > 0n) await fundPoker(backer, session.accountId, stake + RECORD_FEE + NEAR / 2n);
               return takeSeat(session, id, stake);
@@ -1007,17 +1020,17 @@ function LiveTable({
           start: () =>
             session &&
             view &&
-            void click("Started the table", undefined, () => (isFreeStake(view) && view.host !== session.accountId ? startFreeTable(id) : startTable(session, id))),
+            void click("Started the table", undefined, "start", () => (isFreeStake(view) && view.host !== session.accountId ? startFreeTable(id) : startTable(session, id))),
           // Off a table between hands the seat is cashed out at once, and the page goes back to the tables.
           leave: () => {
             if (!session) return;
             const inHand = mySeat !== null && Boolean(view?.dealt.includes(mySeat));
-            void click(inHand ? "Asked to leave after this hand" : "Left the table and cashed out", mySeat ?? undefined, () => leaveTable(session, id)).then(
+            void click(inHand ? "Asked to leave after this hand" : "Left the table and cashed out", mySeat ?? undefined, "leave", () => leaveTable(session, id)).then(
               (left) => left && !inHand && onBack(),
             );
           },
           back: onBack,
-          callTime: () => session && void click("Called time on the late seats", undefined, () => callTime(session, id)),
+          callTime: () => session && void click("Called time on the late seats", undefined, "timeout", () => callTime(session, id)),
           addHouse: (models) => {
             setRefused("");
             void seatHouses(models);
@@ -1066,6 +1079,8 @@ function LiveTable({
   );
 }
 
+/** A call the node did not answer is given this long to show in the table before it is taken as not sent. */
+const UNSURE_MS = 8_000;
 /** A seated page calls time this long after a step's deadline, and again this often while the table stays late. */
 const TIME_GRACE_MS = 4_000;
 const TIME_RETRY_MS = 12_000;
