@@ -45,6 +45,8 @@ async function press(page, spec, after = 1200) {
   return pressed;
 }
 const openHand = (page) => press(page, ".tp-hand");
+/** A pointer's click on a button of the turn (the dice, a purchase). The room may have moved first and taken the button away: then nothing is clicked. */
+const tap = (page, spec) => page.click(spec, { ms: 200, after: 200 }).catch(() => undefined);
 let shots = 0;
 async function shot(page, name) {
   const { result } = await page.send("Page.captureScreenshot", { format: "png" });
@@ -114,8 +116,8 @@ try {
     // A contract from before tickets: today's table, and not a word of tickets on it.
     const until = Date.now() + Math.min(MINUTES, 1.5) * 60_000;
     while (Date.now() < until) {
-      if (await has(page, { text: "^Buy", tag: "button" })) await page.click({ text: "^Buy", tag: "button" }, { ms: 200, after: 200 });
-      else if (await has(page, { text: "^(ROLL|AGAIN|END)", tag: "button" })) await page.click({ text: "^(ROLL|AGAIN|END)", tag: "button" }, { ms: 200, after: 200 });
+      if (await has(page, { text: "^Buy", tag: "button" })) await tap(page, { text: "^Buy", tag: "button" });
+      else if (await has(page, { text: "^(ROLL|AGAIN|END)", tag: "button" })) await tap(page, { text: "^(ROLL|AGAIN|END)", tag: "button" });
       else await sleep(250);
     }
     expect(!(await page.evaluate(`Boolean(document.querySelector(".tp-hand, .tp-pip, .tp-news, .tp-hud__x2"))`)), "nothing of tickets on the table");
@@ -183,8 +185,8 @@ try {
           await sleep(900);
           await shot(page, "after-playing");
         }
-      } else if (await has(page, { text: "^Buy", tag: "button" })) await page.click({ text: "^Buy", tag: "button" }, { ms: 200, after: 200 });
-      else if (await has(page, { text: "^(ROLL|AGAIN|END)", tag: "button" })) await page.click({ text: "^(ROLL|AGAIN|END)", tag: "button" }, { ms: 200, after: 200 });
+      } else if (await has(page, { text: "^Buy", tag: "button" })) await tap(page, { text: "^Buy", tag: "button" });
+      else if (await has(page, { text: "^(ROLL|AGAIN|END)", tag: "button" })) await tap(page, { text: "^(ROLL|AGAIN|END)", tag: "button" });
       else await sleep(150);
     }
     await shot(page, "end");
