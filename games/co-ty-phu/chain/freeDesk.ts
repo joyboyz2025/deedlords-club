@@ -16,6 +16,13 @@ export const limits = {
   relayPerIp: rateLimiter(intEnv(env.DEEDLORDS_RELAY_IP_LIMIT, 400), TEN_MINUTES),
   relayPerAccount: rateLimiter(intEnv(env.DEEDLORDS_RELAY_IP_LIMIT, 400), TEN_MINUTES),
   relayGlobal: rateLimiter(intEnv(env.DEEDLORDS_RELAY_GLOBAL_LIMIT, 6000), HOUR),
+  /**
+   * Relayed poker shuffles: each burns about 0.02 NEAR of the sponsor's for checking the proof, forty times a move,
+   * and burns it even when the proof is wrong. A seat shuffles once a hand, a hand takes a minute or more.
+   */
+  shufflePerIp: rateLimiter(intEnv(env.DEEDLORDS_SHUFFLE_IP_LIMIT, 40), TEN_MINUTES),
+  shufflePerAccount: rateLimiter(intEnv(env.DEEDLORDS_SHUFFLE_IP_LIMIT, 40) / 2, TEN_MINUTES),
+  shuffleGlobal: rateLimiter(intEnv(env.DEEDLORDS_SHUFFLE_GLOBAL_LIMIT, 240), HOUR),
   /** New game accounts brought into existence, and free tables opened. */
   openPerIp: rateLimiter(intEnv(env.DEEDLORDS_FREE_IP_LIMIT, 6), TEN_MINUTES),
   openGlobal: rateLimiter(intEnv(env.DEEDLORDS_FREE_GLOBAL_LIMIT, 120), HOUR),

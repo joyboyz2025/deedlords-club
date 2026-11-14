@@ -73,6 +73,9 @@ export async function POST(request: Request): Promise<Response> {
   if (!limits.relayPerIp.allow(ip) || !limits.relayPerAccount.allow(action.senderId) || !limits.relayGlobal.allow("*")) {
     return jsonAnswer(429, { error: "too many moves from here in a short time: wait a few minutes" });
   }
+  if (what.method === "shuffle" && (!limits.shufflePerIp.allow(ip) || !limits.shufflePerAccount.allow(action.senderId) || !limits.shuffleGlobal.allow("*"))) {
+    return jsonAnswer(429, { error: "too many hands from here in a short time: wait a few minutes" });
+  }
   try {
     if (!what.ownKey && !(await isGrantedKey(action.senderId, action.publicKey))) return jsonAnswer(403, { error: "this key is not one the account granted for the game" });
     if (!(poker ? await isFreeTableOfOurs(what.matchId) : await isSponsored(what.matchId, paying)))
