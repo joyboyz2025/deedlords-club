@@ -8,6 +8,7 @@ import { buildMessages } from "../games/co-ty-phu/agent/llm.ts";
 import type { Brief } from "../games/co-ty-phu/agent/brief.ts";
 import { RULES, createDuelCall, extrasOf } from "../games/co-ty-phu/chain/calls.ts";
 import { build, canBuild, createGame, currentPlayer, newPlayer, roll, startGame, type Game, type Rng } from "../games/co-ty-phu/engine.ts";
+import { viewFor } from "../games/co-ty-phu/view.ts";
 
 /** Hands out zeros for every draw of the start (the order, the Blitz deal's shuffle). */
 const zeros: Rng = { die: () => 1, below: () => 0 };
@@ -58,4 +59,14 @@ test("a model is told the rule only in a match that has it", () => {
   const brief = { blitz: true } as Brief;
   assert.ok(!buildMessages(brief).system.includes("only on your own city that you stop on"));
   assert.ok(buildMessages({ ...brief, buildHere: true }).system.includes("only on your own city that you stop on"));
+});
+
+test("the table offers the house exactly then: the viewer's own city, when their piece has stopped on it", () => {
+  const { game, mover } = blitz(true);
+  const offered = () => viewFor(game, mover, { code: "m", online: new Set(["s0", "s1"]), now: 0, autoAt: null }).you.can.build;
+  assert.deepEqual(offered(), []);
+  roll(game, mover, [1, 2]);
+  assert.deepEqual(offered(), [3]);
+  build(game, mover, 3);
+  assert.deepEqual(offered(), []);
 });
