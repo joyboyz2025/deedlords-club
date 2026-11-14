@@ -23,8 +23,11 @@ export const limits = {
   shufflePerIp: rateLimiter(intEnv(env.DEEDLORDS_SHUFFLE_IP_LIMIT, 40), TEN_MINUTES),
   shufflePerAccount: rateLimiter(intEnv(env.DEEDLORDS_SHUFFLE_IP_LIMIT, 40) / 2, TEN_MINUTES),
   shuffleGlobal: rateLimiter(intEnv(env.DEEDLORDS_SHUFFLE_GLOBAL_LIMIT, 240), HOUR),
-  /** New game accounts brought into existence, and free tables opened. */
-  openPerIp: rateLimiter(intEnv(env.DEEDLORDS_FREE_IP_LIMIT, 6), TEN_MINUTES),
+  /**
+   * New game accounts brought into existence, and free tables opened. Twelve accounts from one address in ten minutes:
+   * nine friends in one room, behind one address, must all be able to sit down at a poker table of nine.
+   */
+  openPerIp: rateLimiter(intEnv(env.DEEDLORDS_FREE_ACCOUNT_IP_LIMIT, 12), TEN_MINUTES),
   openGlobal: rateLimiter(intEnv(env.DEEDLORDS_FREE_GLOBAL_LIMIT, 120), HOUR),
   tablePerIp: rateLimiter(intEnv(env.DEEDLORDS_FREE_IP_LIMIT, 6), TEN_MINUTES),
   tableGlobal: rateLimiter(intEnv(env.DEEDLORDS_FREE_GLOBAL_LIMIT, 120), HOUR),
