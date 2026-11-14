@@ -91,10 +91,12 @@ test("the table's clock: a person's turn no longer pays for its end a second tim
   const bought = roll({ offered: true, bought: true });
   near(tableSeconds(one([bought]), PACE_BEFORE, person), 2 + 2.5 + walk + 2.5 + 2.5 + 1.8 + 2.5);
   near(tableSeconds(one([bought]), PACE_NOW, person), 2 + 2.5 + walk + 2.5 + 2.5);
-  // An agent's turn is one transaction, seen at the next read of the match, then played on the board.
-  near(tableSeconds(one([roll()]), PACE_NOW, () => false), 0.65 + 0.3 + 2.5 + 0.65 + walk + 0.7);
+  // An agent's turn is one transaction, then played on the board. Before, the page learnt of the turn, and of its
+  // result, at its next read of the match (every 1.3 s); now it reads when the server answers.
+  near(tableSeconds(one([roll()]), PACE_BEFORE, () => false), 0.65 + 0.3 + 2.5 + 0.65 + walk + 0.7);
+  near(tableSeconds(one([roll()]), PACE_NOW, () => false), 0.3 + 2.5 + walk + 0.7);
   // A card that sends the piece on is read (2.8 s) before the second leg (1.6 s).
-  near(tableSeconds(one([roll({ card: true, sentOn: true })]), PACE_NOW, () => false), 0.65 + 0.3 + 2.5 + 0.65 + walk + 2.8 + 1.6 + 0.7);
+  near(tableSeconds(one([roll({ card: true, sentOn: true })]), PACE_NOW, () => false), 0.3 + 2.5 + walk + 2.8 + 1.6 + 0.7);
 });
 
 test("a match is played the same from the same seed, and ranks every seat", () => {

@@ -277,6 +277,8 @@ export type Pace = {
   endOnRoll: boolean;
   /** lib/chain/config.ts pollMs on mainnet: how often the match is read. */
   poll: number;
+  /** The page that asked the server for an agent's turn reads the match when the answer comes, not at its next poll. */
+  readOnAnswer: boolean;
   /** A transaction, from sending it to reading its result (README: about 2 s, measured on testnet; then the re-read). */
   tx: number;
   /** An agent's plan: the server reads the match and asks its model. About nothing for the playbook. */
@@ -299,6 +301,7 @@ export const PACE_BEFORE: Pace = {
   endWithMove: false,
   endOnRoll: false,
   poll: 1300,
+  readOnAnswer: false,
   tx: 2500,
   plan: 300,
   react: 2000,
@@ -307,8 +310,11 @@ export const PACE_BEFORE: Pace = {
   thinkDebt: 5000,
 };
 
-/** The client as it is now (chain/room.ts): the end of a turn no longer waits for the piece, nor travels alone after a purchase. */
-export const PACE_NOW: Pace = { ...PACE_BEFORE, autoEnd: 0, endWithMove: true, endOnRoll: true };
+/**
+ * The client as it is now: the end of a turn no longer waits for the piece, nor travels alone after a purchase
+ * (chain/room.ts), and an agent's turn is read as soon as the server has played it (chain/useFree.ts).
+ */
+export const PACE_NOW: Pace = { ...PACE_BEFORE, autoEnd: 0, endWithMove: true, endOnRoll: true, readOnAnswer: true };
 
 /** The same client with people who take their time and agents that ask a model: twice the thinking, 2.5 s a plan. */
 export const unhurried = (pace: Pace): Pace => ({ ...pace, plan: 2500, react: 2 * pace.react, thinkBuy: 2 * pace.thinkBuy, thinkBuild: 2 * pace.thinkBuild, thinkDebt: 2 * pace.thinkDebt });
@@ -329,8 +335,9 @@ export function tableSeconds(match: MatchSeen, pace: Pace, human: (playerId: str
   for (const turn of match.turns) {
     if (!human(turn.player)) {
       // Whoever has the match open sees the turn at their next read and asks the server; one transaction plays it.
-      chain += pace.poll / 2 + pace.plan + pace.tx;
-      const seenAt = chain + pace.poll / 2;
+      const read = pace.readOnAnswer ? 0 : pace.poll / 2;
+      chain += read + pace.plan + pace.tx;
+      const seenAt = chain + read;
       for (const roll of turn.rolls) show(roll, seenAt);
       continue;
     }
