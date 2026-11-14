@@ -81,6 +81,22 @@ repository with an AI coding assistant (Claude Code) at the owner's direction; t
 - **Mainnet:** deployed on 2026-11-13 by the owner with `contracts/sandbox/mainnet.js` (accounts and code hashes in
   the README).
 
+## The last day (in-window, 2026-11-14)
+
+Written the same way, by AI coding agents working in parallel on separate branches at the owner's direction, each
+merged after review and a run of the tests:
+
+- **A shorter Deedlords match.** Every match opened from the page now plays the contract's existing Blitz rules with
+  a round limit (`games/co-ty-phu/chain/calls.ts`), the end of a turn travels with the last decision
+  (`chain/room.ts`), and `scripts/co-ty-phu-sim.ts` simulates whole matches to choose the limits. The contracts were
+  not changed. The short-game recipe (properties dealt at the start, a limit, the winner by total assets) is the one
+  published board games of this kind use; the rules and the code are this project's own.
+- **A review of poker** as played on the live testnet site: a sponsor's transaction that the chain passed over is
+  signed again (`lib/chain/client.ts`), leaving between two hands, a clock that runs down, abandoned free rooms, and
+  what the table shows after a hand (`games/poker/table/`).
+- **For readers:** `JUDGES.md`, the README's "Tracks" section, and a labelled warning instead of a failure when NEAR
+  AI's report no longer lists an old move's signer (`lib/teeProof.ts`, `scripts/check-live.ts`).
+
 ## The demo film (in-window, 2026-11-13)
 
 `tools/demo/rec.mjs` drives a headless Chrome over the DevTools protocol and films it with the browser's own
@@ -88,8 +104,10 @@ screencast; `tools/demo/film.mjs` is the film, scene by scene. Every picture is 
 real mouse events: the pointer and the captions are two elements laid over the page, nothing else is added. The games
 are played on the testnet site by a guest account made in the take (the captions say so); the mainnet shots only
 read (the landing, its receipts, and the output of `npm run check:live`, run during the take). Waits for the chain
-that are cut out are named in the captions; a move's own two seconds are left in. No sound was recorded: the track is
-silence.
+that are cut out are named in the captions; a move's own two seconds are left in. No sound was recorded: the track of
+the first cut is silence. A second cut carries a narration: `tools/demo/narrate.py` has a text-to-speech model read
+one line per caption on the author's machine (Kokoro-82M, Apache-2.0 by its model card, run through the VoiceStudio
+app). The lines are the captions, shortened; no person's voice was recorded or imitated.
 
 ## Deedlords Arena (in-window, 2026-11-11)
 

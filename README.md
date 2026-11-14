@@ -50,7 +50,7 @@ It prints seventeen checks in five groups and exits 0 when all pass (`scripts/ch
 4. an AI agent's move: the five checks of its TEE proof (the same ones the `/verify` page runs in the browser);
 5. a staked match whose last move made the contract pay the stakes out.
 
-`npm test` runs the 245 unit tests of the rules engines, the chain adapters, the relayer's rules and the proofs (about
+`npm test` runs the 289 unit tests of the rules engines, the chain adapters, the relayer's rules and the proofs (about
 ten seconds, no network).
 
 ## Try it in the browser: do X, see Y
@@ -112,7 +112,7 @@ Intents (`lib/chain/oneclick.ts`). The player's own chain is where they start, n
 
 | | Deedlords | Poker | Arena |
 |---|---|---|---|
-| What it is | An original property-trading board game. 40 squares of world cities ranked by real prime-property prices; buy, build, collect rent, go bankrupt. 2 to 4 seats | Texas Hold'em for 2 to 9 seats with no dealer. Cash-game chips: 100 chips per stake, blinds 1 and 2 | An original auto-battler: a shared market, sealed first-price bids, a hex-grid fight with no randomness |
+| What it is | An original property-trading board game. 40 squares of world cities ranked by real prime-property prices; buy, build, collect rent, go bankrupt. 2 to 4 seats. A match is short: five squares are dealt to each seat, a house can go up on any own city once a turn, and after 12 to 20 rounds (by seat count) the highest net worth wins. A free match of two seats against the AI took 10.5 minutes on testnet on 2026-11-14; `scripts/co-ty-phu-sim.ts` plays thousands of whole matches to measure length and how often the seat behind at half-time wins | Texas Hold'em for 2 to 9 seats with no dealer. Cash-game chips: 100 chips per stake, blinds 1 and 2 | An original auto-battler: a shared market, sealed first-price bids, a hex-grid fight with no randomness |
 | Mainnet | `game.deedlords.near` | `poker.deedlords.near` | not deployed |
 | Testnet | `game.deedlords.testnet` | `pokertable.deedlords.testnet` (`poker.deedlords.testnet` is the first, heads-up contract) | `arena.deedlords.testnet` |
 | Web route | `/play` | `/poker/tables` | `/arena` (trailer) |
@@ -244,7 +244,7 @@ Needs Node 22.6 or newer (tested on 22.12). Rust is needed only to rebuild or te
 
 ```bash
 npm ci
-npm test              # 245 tests, about 10 s, no network
+npm test              # 289 tests, about 10 s, no network
 npm run typecheck
 npm run check:live    # reads mainnet, sends nothing
 npm run build         # the production build of the web app
@@ -385,7 +385,8 @@ server/ worker/         The board game as it was before the hackathon, refereed 
                         and the route app/co-ty-phu/). Kept as the baseline. Nothing under /play, /poker or the
                         contracts uses it
 scripts/check-live.ts   npm run check:live
-tests/                  245 unit tests
+scripts/co-ty-phu-sim.ts  Whole Deedlords matches simulated: how long, how open, under which rules
+tests/                  289 unit tests
 docs/ENGINE-RULES.md    The exact contract between the TypeScript and Rust rules engines
 PROVENANCE.md           What predates the hackathon, what was written during it, how art was generated
 PRODUCT.md DESIGN.md    Design briefs as they were written during the week (also .impeccable/, docs/design/). Where
