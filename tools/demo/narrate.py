@@ -12,8 +12,12 @@
 # Nothing is sent anywhere. The pieces are kept in NARRATE_DIR by text, voice and speed, so a second run only mixes.
 # A line longer than the room before the next one is spoken again a little faster (up to 15%); if it still does not fit
 # it is reported and nothing is mixed (FORCE=1 mixes anyway). The voice track is brought to -16 LUFS by one fixed gain.
+#
+# A voice named `eleven:<name>` (brian, george, daniel, adam, eric) is asked of ElevenLabs instead, a whole line at a
+# time: the line's words are sent to api.elevenlabs.io with the key in ELEVENLABS_API_KEY, or in the file
+# ELEVENLABS_KEY_FILE names. Each line is kept by its words and settings, so it is paid for once.
 # Kokoro spells a word in capitals letter by letter, so the lines say "Near", not "NEAR", and "Deed Lords" in two words.
-import glob, hashlib, json, os, subprocess, sys
+import glob, hashlib, json, os, subprocess, sys, urllib.error, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PYTHON = os.environ.get("NARRATE_PYTHON") or os.path.expanduser("~/Library/Application Support/VoiceStudio/runtime/project/.venv/bin/python3")
@@ -22,6 +26,44 @@ REPO = "mlx-community/Kokoro-82M-bf16"
 LEAD = 0.3  # seconds between a caption appearing and its line starting
 GAP = 0.2  # silence a line must leave before the next one
 FASTEST = 1.15
+
+
+ELEVEN = {"brian": "nPczCjzI2devNBz1zQrb", "george": "JBFqnCBsd6RMkjVDRZzb", "daniel": "onwK4e9ZLuTAKqWW03F9", "adam": "pNInz6obpgDQGcFmaJgB", "eric": "cjVigY5qzO86Huf0OWal"}
+ELEVEN_MODEL = os.environ.get("ELEVENLABS_MODEL", "eleven_multilingual_v2")
+
+
+def folder(voice):
+    """Where a voice's sound is kept."""
+    path = os.path.join(KEEP, voice.replace(":", "-"))
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def eleven_line(voice, line, pace, out):
+    """One whole line from ElevenLabs, its silence trimmed, as `out`. Returns its seconds. Pauses are left to the punctuation."""
+    name = voice.split(":", 1)[1]
+    words = " ".join(piece["t"] if isinstance(piece, dict) else piece for piece in (line if isinstance(line, list) else [line]) if not isinstance(piece, (int, float)))
+    settings = {"stability": 0.42, "similarity_boost": 0.78, "style": 0.3, "use_speaker_boost": True, "speed": round(min(1.18, max(0.8, pace)), 2)}
+    kept = os.path.join(folder(voice), hashlib.sha1(json.dumps([name, ELEVEN_MODEL, settings, words]).encode()).hexdigest()[:16] + ".mp3")
+    if not os.path.exists(kept):
+        key = os.environ.get("ELEVENLABS_API_KEY") or open(os.path.expanduser(os.environ.get("ELEVENLABS_KEY_FILE", "~/Documents/deedlords-work/.elevenlabs-key"))).read().strip()
+        body = json.dumps({"text": words, "model_id": ELEVEN_MODEL, "voice_settings": settings}).encode()
+        ask = urllib.request.Request("https://api.elevenlabs.io/v1/text-to-speech/%s?output_format=mp3_44100_128" % ELEVEN.get(name, name), data=body, headers={"xi-api-key": key, "content-type": "application/json"})
+        try:
+            sound = urllib.request.urlopen(ask, timeout=120).read()
+        except urllib.error.HTTPError as error:
+            raise SystemExit("ElevenLabs answered %d: %s" % (error.code, error.read().decode()[:300]))
+        open(kept, "wb").write(sound)
+    trim = "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.02"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", kept, "-af", "aresample=48000,aformat=channel_layouts=mono,%s,areverse,%s,areverse" % (trim, trim), out], check=True)
+    return seconds(out)
+
+
+def line_audio(voice, line, pace, out):
+    """One line as `out`, by whichever engine the voice names. For Kokoro the pieces must have been spoken (`speak`)."""
+    if voice.startswith("eleven:"):
+        return eleven_line(voice, line, pace, out)
+    return assemble(voice, pieces_of(line, pace), out)
 
 
 def worker(jobs_path):
@@ -62,13 +104,14 @@ def pieces_of(line, quicker):
 
 def piece_path(voice, text, speed):
     name = hashlib.sha1(("%s|%s|%s" % (voice, speed, text)).encode()).hexdigest()[:16]
-    return os.path.join(KEEP, voice, name + ".wav")
+    return os.path.join(folder(voice), name + ".wav")
 
 
 def speak(voice, lines):
+    if voice.startswith("eleven:"):
+        return
     jobs = [{"text": p[0], "speed": p[1], "voice": voice, "out": piece_path(voice, *p)} for line in lines for p in line if isinstance(p, tuple)]
-    os.makedirs(os.path.join(KEEP, voice), exist_ok=True)
-    path = os.path.join(KEEP, voice, "jobs.json")
+    path = os.path.join(folder(voice), "jobs.json")
     json.dump(jobs, open(path, "w"))
     env = dict(os.environ, HF_HUB_OFFLINE="1")
     subprocess.run([PYTHON, "-I", os.path.abspath(__file__), "--worker", path], check=True, env=env, stdout=subprocess.DEVNULL)
@@ -99,7 +142,7 @@ def mix(film, said, out, voice, film_seconds):
         inputs += ["-i", entry["wav"]]
         parts.append("[%d:a]adelay=%d:all=1[a%d]" % (i, int(entry["at"] * 1000), i))
     parts.append("%samix=inputs=%d:normalize=0,apad=whole_dur=%.2f[voice]" % ("".join("[a%d]" % i for i in range(len(said))), len(said), film_seconds))
-    track = os.path.join(KEEP, voice, "track.wav")
+    track = os.path.join(folder(voice), "track.wav")
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error"] + inputs + ["-filter_complex", ";".join(parts), "-map", "[voice]", track], check=True)
     report = subprocess.run(["ffmpeg", "-hide_banner", "-i", track, "-af", "loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json", "-f", "null", "-"], capture_output=True, text=True).stderr
     loud = float(json.JSONDecoder().raw_decode(report[report.rindex("{") :])[0]["input_i"])
@@ -130,7 +173,7 @@ def main():
         speak(voice, [pieces_of(entry["line"], entry["quicker"]) for entry in said])
         late = 0
         for entry in said:
-            entry["wav"] = os.path.join(KEEP, voice, "line-%s.wav" % entry["id"])
+            entry["wav"] = os.path.join(folder(voice), "line-%s.wav" % entry["id"])
             entry["length"] = assemble(voice, pieces_of(entry["line"], entry["quicker"]), entry["wav"])
             over = entry["length"] - (entry["room"] - GAP)
             if over > 0 and attempt == 1:

@@ -80,8 +80,8 @@ def main():
     spoken = [beat for beat in beats if beat.get("say")]
     narrate.speak(voice, [narrate.pieces_of(beat["say"], pace * beat.get("pace", 1.0)) for beat in spoken])
     for beat in spoken:
-        beat["wav"] = os.path.join(narrate.KEEP, voice, "cut-%s.wav" % beat["id"])
-        beat["said"] = narrate.assemble(voice, narrate.pieces_of(beat["say"], pace * beat.get("pace", 1.0)), beat["wav"])
+        beat["wav"] = os.path.join(narrate.folder(voice), "cut-%s.wav" % beat["id"])
+        beat["said"] = narrate.line_audio(voice, beat["say"], pace * beat.get("pace", 1.0), beat["wav"])
 
     parts, clock, where, captions = [], 0.0, {}, []
     for n, beat in enumerate(beats):
