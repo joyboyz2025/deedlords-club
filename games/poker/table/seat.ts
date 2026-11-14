@@ -308,3 +308,11 @@ export const ruledLate = (view: Pick<TableView, "players" | "last">, seat: numbe
  * all), as lib/chain/rpc.ts words it: nothing for the player to act on, and not to be read out as "RPC query: HTTP 429".
  */
 export const nodeTrouble = (problem: string): boolean => /^RPC \w+: (HTTP \d{3}|no answer in time|network error)$/.test(problem);
+
+/**
+ * What a seat of the house is called at a table: "House" when it is the only one of the house's accounts there, else
+ * numbered as the server lists them. `at`: everybody who sits or sat at the table. Heads-up against the house, the
+ * one opponent was "House 4": the free tables' host is the fourth account on the server's list.
+ */
+export const houseName = (houses: string[], account: string, at: (string | null)[]): string =>
+  new Set(at.filter((other) => other !== null && houses.includes(other))).size > 1 ? `House ${houses.indexOf(account) + 1}` : "House";

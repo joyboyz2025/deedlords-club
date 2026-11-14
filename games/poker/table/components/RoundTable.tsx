@@ -14,7 +14,7 @@ import { CardPlace, PlayingCard } from "../../components/Cards";
 import { Ledger, type LogLine } from "../../components/TableView";
 import type { Advice } from "../../agent/decide";
 import { madeHand } from "../../agent/hands";
-import { type TableView, betOptions, clockMarginMs, handNets, handStory, nextDealt, seated } from "../seat";
+import { type TableView, betOptions, clockMarginMs, handNets, handStory, houseName, nextDealt, seated } from "../seat";
 
 const FACE_PX = 112;
 const seatColour = (seat: number) => ({ "--seat": `var(--seat-${seat})` }) as CSSProperties;
@@ -200,13 +200,14 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
 
   const looks = view.players.map((player, seat) => (player ? (!houseSeats.includes(seat) && characters?.get(player)?.look) || lookFromSeat(seat) : null));
   const faces = useLookPictures(looks, FACE_PX);
+  /** Everybody who sits or sat at the table: one house seat among them is "House", several are numbered. */
+  const everyone = [...view.players, ...view.cashed.map((paid) => paid.account)];
   /** Who sits at a seat, in a word or two. */
   const name = (seat: number): string => {
     const player = view.players[seat];
     if (!player) return "Free seat";
     if (seat === mySeat) return "You";
-    const houseIndex = house?.accounts.indexOf(player) ?? -1;
-    if (houseIndex >= 0) return `House ${houseIndex + 1}`;
+    if (house?.accounts.includes(player)) return houseName(house.accounts, player, everyone);
     return characters?.get(player)?.name || shortAccount(player);
   };
   /** The same inside a sentence. */
@@ -474,7 +475,7 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
               {view.cashed.map((paid, at) => (
                 <li key={`${paid.account}:${at}`}>
                   <span title={paid.account}>
-                    {paid.account === you ? "You" : house?.accounts.includes(paid.account) ? `House ${house.accounts.indexOf(paid.account) + 1}` : shortAccount(paid.account)}
+                    {paid.account === you ? "You" : house?.accounts.includes(paid.account) ? houseName(house.accounts, paid.account, everyone) : shortAccount(paid.account)}
                   </span>
                   <b>{paid.chips}</b>
                 </li>

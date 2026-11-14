@@ -26,6 +26,7 @@ import {
   handStory,
   holeCards,
   hostIsSpent,
+  houseName,
   leaveState,
   nextDealt,
   nodeTrouble,
@@ -449,4 +450,14 @@ test("a node that does not answer is told to the player in plain words, a refusa
   // What the contract or the chain says about the call itself stays as it is.
   assert.equal(nodeTrouble("the table is full"), false);
   assert.equal(nodeTrouble('RPC send_tx: INVALID_TRANSACTION: {"TxExecutionError":{"InvalidTxError":"Expired"}}'), false);
+});
+
+test("the one house seat at a table is the House; several are numbered", () => {
+  const houses = ["pokerhouse.testnet", "pokerhouse2.testnet", "pokerhouse3.testnet", "free.testnet"];
+  // Heads-up at a free table: the guest's one opponent read "House 4".
+  assert.equal(houseName(houses, "free.testnet", ["free.testnet", "guest.testnet"]), "House");
+  // A room with the host and a house seat that was asked in: told apart by their numbers, as before.
+  const room = ["free.testnet", "guest.testnet", "pokerhouse.testnet", null];
+  assert.equal(houseName(houses, "free.testnet", room), "House 4");
+  assert.equal(houseName(houses, "pokerhouse.testnet", room), "House 1");
 });

@@ -44,7 +44,23 @@ import {
   viewResult,
 } from "../chain";
 import { FREE_TABLE_HANDS, FREE_TURN_SECONDS, RECORD_FEE } from "../contract";
-import { type TableResult, type TableView, betCall, callsTime, clockAhead, clockMove, duty, holeCards, leaveState, movedOn, nodeTrouble, ruledLate, seated, tookEffect } from "../seat";
+import {
+  type TableResult,
+  type TableView,
+  betCall,
+  callsTime,
+  clockAhead,
+  clockMove,
+  duty,
+  holeCards,
+  houseName,
+  leaveState,
+  movedOn,
+  nodeTrouble,
+  ruledLate,
+  seated,
+  tookEffect,
+} from "../seat";
 import { useHouse } from "../useHouse";
 import { useSeatAgent } from "../useSeatAgent";
 import { type Tables, useTables } from "../useTables";
@@ -569,7 +585,7 @@ const WALL_LINES = 5;
 function TableWall({ wall, you, houses, onOpen }: { wall: Tables; you: string | null; houses: string[]; onOpen: (id: string) => void }) {
   const { tables, offline } = wall;
   const rows = tables ?? [];
-  const who = (account: string): string => (account === you ? "You" : houses.includes(account) ? `House ${houses.indexOf(account) + 1}` : shortAccount(account));
+  const who = (account: string, at: (string | null)[]): string => (account === you ? "You" : houses.includes(account) ? houseName(houses, account, at) : shortAccount(account));
   return (
     <section className="pk-board pk-wall-board" aria-label="Tables on the contract">
       <h2 className="pk-board__title">
@@ -621,7 +637,7 @@ function TableWall({ wall, you, houses, onOpen }: { wall: Tables; you: string | 
                         <i key={seat} data-taken={player ? true : undefined} style={{ "--seat": `var(--seat-${seat})` } as CSSProperties} />
                       ))}
                     </span>
-                    <small>host {who(table.host)}</small>
+                    <small>host {who(table.host, table.players)}</small>
                   </span>
                   <span role="cell">{isFreeStake(table) ? "Free" : asNear(table.stake, 2)}</span>
                   <span role="cell" className="pk-tables__now">
@@ -1221,7 +1237,8 @@ export function TableSettled({
     );
   }
   // A long account id is cut short here as at the table; the whole of it is in the title of each line.
-  const who = (account: string) => (account === you ? "You" : houses.includes(account) ? `House ${houses.indexOf(account) + 1}` : shortAccount(account));
+  const everyone = result.cashed.map((seat) => seat.account);
+  const who = (account: string) => (account === you ? "You" : houses.includes(account) ? houseName(houses, account, everyone) : shortAccount(account));
   const fees = result.cashed.reduce((sum, seat) => sum + BigInt(seat.fee), 0n);
   // A free table staked nothing and paid nothing: its seats left with chips, and that is all there is to show.
   const free = BigInt(result.stake) === 0n;
