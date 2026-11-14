@@ -233,10 +233,16 @@ function useRollPace(live: PacedView, enabled: boolean): { view: View; holding: 
         const timer = setTimeout(() => setTick((n) => n + 1), wait);
         return () => clearTimeout(timer);
       }
-    } else if (next.current !== shown.current && shown.dice !== null && shown.rolls !== settled) {
-      // The turn does not pass on the board before the piece that ends it has arrived. The chain is ahead of that
-      // now: a turn with nothing left to decide is ended while its roll is still playing (chain/room.ts).
-      return;
+    } else if (next.current !== shown.current && shown.dice !== null) {
+      // The turn does not pass on the board before the piece that ends it has arrived, nor before a card drawn there
+      // has been read (the card goes with the turn). The chain is ahead of both now: a turn with nothing left to
+      // decide is ended while its roll is still playing (chain/room.ts).
+      if (shown.rolls !== settled) return;
+      const wait = settledAt.current + (shown.card ? CARD_MS : 0) - Date.now();
+      if (wait > 0) {
+        const timer = setTimeout(() => setTick((n) => n + 1), wait);
+        return () => clearTimeout(timer);
+      }
     }
     queue.shift();
     // The second leg of a roll (a card sent the piece on) throws no dice, so the board reports no arrival for it:
