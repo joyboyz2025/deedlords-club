@@ -2,7 +2,7 @@
 // agent, a price from another chain, and the Arena trailer. Every picture is the live site, as in `film.mjs`; no
 // caption is drawn here (`cut.py` lays its own under the picture).
 //
-//   node tools/demo/extra.mjs <out dir> [wallets agents selfplay chains arena]
+//   node tools/demo/extra.mjs <out dir> [wallets agents selfplay chains poker arena]
 //
 // agents, selfplay and chains use one guest account made here on DEMO_PLAY (the testnet site unless told otherwise).
 import { randomBytes } from "node:crypto";
@@ -135,6 +135,54 @@ const scenes = {
     console.log(`chains: ${(await page.evaluate(`(document.querySelector(".fd-xchain")?.innerText ?? "").replace(/\\s+/g, " ").slice(0, 500)`)) ?? ""}`);
   },
 
+  /**
+   * A free poker hand against the house on the round table: the shuffles, the two cards, bets to the end, who took the
+   * pot. The waits between steps are cut. The clip's captions file says when the shuffle (S), the cards (H) and the
+   * end (E) come.
+   */
+  async poker(page) {
+    await page.style(`html { background: #4a0c09 !important; } body { transform: scale(0.82); transform-origin: 50% 0; }`);
+    await page.goto(`${PLAY}/poker/tables`, 3500);
+    if (await has(page, { text: "Play as a guest" })) await page.click({ text: "Play as a guest" }, { ms: 150 });
+    await page.until(`window.__demo.find({ text: "^Play vs the House" })`, 60_000, "the poker desk");
+    const say = `(document.querySelector(".pk-say")?.innerText ?? "")`;
+    const bet = { text: "^(Check|Call \\d+)$", tag: "button" };
+    const over = `/took the pot|shared the pot/.test(${say}) || /Hand 2/.test(document.querySelector(".pt-head")?.innerText ?? "")`;
+    await page.take(dir, "n6-poker", async () => {
+      await sleep(1500);
+      await page.click({ text: "^Play vs the House" });
+      await sleep(900);
+      await page.cut(async () => {
+        await page.until(`/[?&]t=/.test(location.search) && /shuffl/i.test(${say})`, 120_000, "the first shuffle");
+        await page.evaluate("scrollTo(0, 0)");
+        await sleep(500);
+      });
+      await page.caption("", "S");
+      await sleep(5200);
+      await page.cut(() => page.until(`window.__demo.find(${JSON.stringify(bet)})`, 180_000, "the first bet"));
+      await page.caption("", "H");
+      await sleep(4200);
+      for (let bets = 0; bets < 14; bets++) {
+        if (await has(page, bet)) await page.click(bet, { ms: 500, after: 900 });
+        const ended = await page.cut(async () => {
+          // The button stays while the bet is on its way: it has to go before the next one counts.
+          for (let i = 0; i < 40 && (await has(page, bet)); i++) await sleep(400);
+          for (let i = 0; i < 300; i++) {
+            if (await page.evaluate(over).catch(() => false)) return true;
+            if (await has(page, bet)) return false;
+            await sleep(400);
+          }
+          return true;
+        });
+        if (ended) break;
+        await sleep(700);
+      }
+      await page.caption("", "E");
+      await sleep(5000);
+    });
+    console.log(`poker: ${await page.evaluate(say)}`);
+  },
+
   /** The Arena trailer page: the next game. */
   async arena(page) {
     await page.style("");
@@ -149,7 +197,7 @@ const scenes = {
   },
 };
 
-const order = ["wallets", "agents", "selfplay", "chains", "arena"];
+const order = ["wallets", "agents", "selfplay", "chains", "poker", "arena"];
 const wanted = asked.length ? asked : order;
 for (const name of wanted) if (!scenes[name]) throw new Error(`no scene ${name}: ${order.join(", ")}`);
 const page = await open();

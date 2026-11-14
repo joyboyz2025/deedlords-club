@@ -34,7 +34,7 @@ ELEVEN_MODEL = os.environ.get("ELEVENLABS_MODEL", "eleven_multilingual_v2")
 
 def folder(voice):
     """Where a voice's sound is kept."""
-    path = os.path.join(KEEP, voice.replace(":", "-"))
+    path = os.path.join(KEEP, "takes-" + os.path.basename(voice.rstrip("/")) if voice.startswith("takes:") else voice.replace(":", "-"))
     os.makedirs(path, exist_ok=True)
     return path
 

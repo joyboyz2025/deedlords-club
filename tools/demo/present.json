@@ -313,42 +313,45 @@
   {
    "card": "Poker. No dealer.",
    "sub": "Zero-knowledge shuffles, verified on chain",
-   "over": "5-poker",
-   "at": 9.5
+   "over": "n6-poker",
+   "at": 15.0
   },
   {
    "id": "P1",
-   "clip": "5-poker",
-   "from": 0.4,
+   "clip": "n6-poker",
+   "from": 0.3,
    "say": [
     "Game two: poker.",
     0.1,
     "Two to nine seats, and no dealer."
    ],
-   "show": "<b>Poker</b> for two to nine seats, with no dealer."
+   "show": "<b>Poker</b> for two to nine seats, with no dealer.",
+   "shift": 100
   },
   {
    "id": "P2",
-   "clip": "5-poker",
-   "from": 4.1,
+   "clip": "n6-poker",
+   "from": 3.7,
    "say": [
     "Every seat shuffles the deck, and proves it in zero knowledge.",
     0.1,
     "The contract verifies each proof, with Near's built-in curve functions."
    ],
    "show": "Each seat shuffles and <b>proves it in zero knowledge</b>. The contract verifies every proof on chain.",
-   "tech": "ZK SHUFFLE PROOFS · ALT_BN128"
+   "tech": "ZK SHUFFLE PROOFS · ALT_BN128",
+   "shift": 100
   },
   {
    "id": "P3",
-   "clip": "5-poker",
-   "from": "+",
+   "clip": "n6-poker",
+   "from": 13.0,
    "say": [
     "Nobody can see your cards.",
     0.1,
     "Not the house. Not us."
    ],
-   "show": "Nobody can see your cards: <b>not the house, not us</b>."
+   "show": "Nobody can see your cards: <b>not the house, not us</b>.",
+   "shift": 100
   },
   {
    "id": "U1",

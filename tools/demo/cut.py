@@ -78,10 +78,16 @@ def main():
 
     beats = script["beats"]
     spoken = [beat for beat in beats if beat.get("say")]
-    narrate.speak(voice, [narrate.pieces_of(beat["say"], pace * beat.get("pace", 1.0)) for beat in spoken])
+    if not voice.startswith("takes:"):
+        narrate.speak(voice, [narrate.pieces_of(beat["say"], pace * beat.get("pace", 1.0)) for beat in spoken])
     for beat in spoken:
         beat["wav"] = os.path.join(narrate.folder(voice), "cut-%s.wav" % beat["id"])
-        beat["said"] = narrate.line_audio(voice, beat["say"], pace * beat.get("pace", 1.0), beat["wav"])
+        if voice.startswith("takes:"):
+            # A voice recorded elsewhere, one file a line (<folder>/<id>.wav), played a little faster when TAKES_TEMPO says so.
+            run(["ffmpeg", "-y", "-loglevel", "error", "-i", os.path.join(os.path.expanduser(voice[6:]), beat["id"] + ".wav"), "-af", "atempo=%s" % os.environ.get("TAKES_TEMPO", "1.0"), beat["wav"]])
+            beat["said"] = narrate.seconds(beat["wav"])
+        else:
+            beat["said"] = narrate.line_audio(voice, beat["say"], pace * beat.get("pace", 1.0), beat["wav"])
 
     parts, clock, where, captions = [], 0.0, {}, []
     for n, beat in enumerate(beats):
@@ -129,7 +135,9 @@ def main():
             if beat.get("tech"):
                 words.append(("Tech", WIDTH // 2, 925, beat["tech"]))
             write_ass(ass, words)
-            see = "fps=30,scale=%d:%d,tpad=stop_mode=clone:stop_duration=30,trim=0:%.3f,setpts=PTS-STARTPTS,drawbox=x=0:y=%d:w=%d:h=%d:color=0x170a06:t=fill,drawbox=x=0:y=%d:w=%d:h=2:color=0xf8c93f@0.55:t=fill,ass=%s" % (
+            # `shift`: the picture moved up by that many pixels, for a page whose last row would lie under the band.
+            lift = "crop=%d:%d:0:%d,pad=%d:%d:0:0:color=0x170a06," % (WIDTH, HEIGHT - beat["shift"], beat["shift"], WIDTH, HEIGHT) if beat.get("shift") else ""
+            see = ("fps=30,scale=%d:%d," + lift.replace("%", "%%") + "tpad=stop_mode=clone:stop_duration=30,trim=0:%.3f,setpts=PTS-STARTPTS,drawbox=x=0:y=%d:w=%d:h=%d:color=0x170a06:t=fill,drawbox=x=0:y=%d:w=%d:h=2:color=0xf8c93f@0.55:t=fill,ass=%s") % (
                 WIDTH, HEIGHT, seconds, BAND_TOP, WIDTH, HEIGHT - BAND_TOP, BAND_TOP, WIDTH, ass)
             run(["ffmpeg", "-y", "-loglevel", "error", "-ss", "%.3f" % start, "-i", clip_path(beat["clip"]), "-vf", see, "-an", "-c:v"] + look + [part])
             if beat.get("say"):
