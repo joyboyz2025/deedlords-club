@@ -358,6 +358,9 @@ The new build is 583,211 bytes: **the game account must hold about 0.49 NEAR mor
 - **`buildHere`** (a third opt-in rule, docs/ENGINE-RULES.md section 10.5): in a Blitz match a house goes up only on
   the own city just stopped on, one per stop. Building on several cities in one turn read to players as buying many
   places at once. Stored in a tail of version 2 that only such a match has.
+- **`buildOne`** (a fourth, docs/ENGINE-RULES.md section 10.6), which the page asks for instead: one house a turn in
+  all, on any own city of the player's choice. Building only where one stops left a match with almost no houses (1.8
+  a two-seat match in 600 simulated ones, against 18.8 before). Stored in a tail of version 3.
 - **The host's grace.** A full hosted room its host does not start can be started by anyone seated 30 seconds after
   the last seat was taken (`start`, or `play` with `["Start"]`). Before: only the host, so a host who walked away
   left the others in a room nobody could start for 15 minutes.
@@ -371,7 +374,7 @@ The new build is 583,211 bytes: **the game account must hold about 0.49 NEAR mor
   ranked by net worth, and is settled like any other. The free-table desk calls it for tables everybody left, a few
   each time somebody opens a table (`app/api/free/route.ts`); a staked testnet match that had stood on the board for
   83 hours was settled this way.
-- `get_config` lists `"features": ["tickets", "leaderRent", "buildHere", "hostGrace", "away", "close"]`. None of this
+- `get_config` lists `"features": ["tickets", "leaderRent", "buildHere", "hostGrace", "away", "close", "buildOne"]`. None of this
   changes how a stored match is read: which seats are away is kept under a key of its own (`away:<id>`), like the host.
 
 ## Known limits

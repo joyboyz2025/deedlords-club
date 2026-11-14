@@ -16,7 +16,7 @@ export type ChainSeat = {
 };
 
 /** `tickets`, `leaderRent`, `buildHere`: the opt-in rules of ENGINE-RULES §10; the contract leaves them out of a match that has none. */
-export type ChainRules = { salary: number; cash: number; blitz: boolean; maxRounds: number; tickets?: boolean; leaderRent?: boolean; buildHere?: boolean };
+export type ChainRules = { salary: number; cash: number; blitz: boolean; maxRounds: number; tickets?: boolean; leaderRent?: boolean; buildHere?: boolean; buildOne?: boolean };
 
 export type ChainMeta = {
   id: string;

@@ -142,6 +142,8 @@ pub const MATCH_TAIL_V1: u8 = 1;
 /// The same tail, followed by one more flag: `extras.build_here` (ENGINE-RULES §10.5). Written only for a match that
 /// has that rule, so that every other match is stored exactly as the build before it stored it.
 pub const MATCH_TAIL_V2: u8 = 2;
+/// The same again, followed by `extras.build_one` (ENGINE-RULES §10.6). Written only for a match that has that rule.
+pub const MATCH_TAIL_V3: u8 = 3;
 /// Set on the stored status byte (a [`Status`] is 0..=3) of a match that has a tail after its game.
 pub const MATCH_TAIL_FLAG: u8 = 0x80;
 
@@ -165,12 +167,16 @@ impl BorshSerialize for Match {
         BorshSerialize::serialize(&self.draws, writer)?;
         BorshSerialize::serialize(&self.game, writer)?;
         if tail {
-            let build_here = self.game.extras.build_here;
-            BorshSerialize::serialize(&if build_here { MATCH_TAIL_V2 } else { MATCH_TAIL_V1 }, writer)?;
+            let (build_here, build_one) = (self.game.extras.build_here, self.game.extras.build_one);
+            let version = if build_one { MATCH_TAIL_V3 } else if build_here { MATCH_TAIL_V2 } else { MATCH_TAIL_V1 };
+            BorshSerialize::serialize(&version, writer)?;
             BorshSerialize::serialize(&self.game.extras, writer)?;
             BorshSerialize::serialize(&self.game.tickets, writer)?;
-            if build_here {
-                BorshSerialize::serialize(&true, writer)?;
+            if version >= MATCH_TAIL_V2 {
+                BorshSerialize::serialize(&build_here, writer)?;
+            }
+            if version >= MATCH_TAIL_V3 {
+                BorshSerialize::serialize(&build_one, writer)?;
             }
         }
         Ok(())
@@ -209,13 +215,16 @@ impl BorshDeserialize for Match {
             return Ok(m);
         }
         let version = u8::deserialize_reader(reader)?;
-        if version != MATCH_TAIL_V1 && version != MATCH_TAIL_V2 {
+        if !(MATCH_TAIL_V1..=MATCH_TAIL_V3).contains(&version) {
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "unknown match tail"));
         }
         m.game.extras = Extras::deserialize_reader(reader)?;
         m.game.tickets = Option::<Tickets>::deserialize_reader(reader)?;
-        if version == MATCH_TAIL_V2 {
+        if version >= MATCH_TAIL_V2 {
             m.game.extras.build_here = bool::deserialize_reader(reader)?;
+        }
+        if version >= MATCH_TAIL_V3 {
+            m.game.extras.build_one = bool::deserialize_reader(reader)?;
         }
         Ok(m)
     }
@@ -270,7 +279,12 @@ pub struct RulesArg {
 fn extras_of_call() -> Extras {
     let rules = call_arg("rules");
     let on = |keys: [&str; 2]| keys.iter().any(|key| rules[*key] == json!(true));
-    Extras { tickets: on(["tickets", "tickets"]), leader_rent: on(["leaderRent", "leader_rent"]), build_here: on(["buildHere", "build_here"]) }
+    Extras {
+        tickets: on(["tickets", "tickets"]),
+        leader_rent: on(["leaderRent", "leader_rent"]),
+        build_here: on(["buildHere", "build_here"]),
+        build_one: on(["buildOne", "build_one"]),
+    }
 }
 
 /// The tickets a `turn` call's plan plays: `plan.tickets` of its JSON arguments ([`TicketPlan`]). Absent, or not such
@@ -286,7 +300,7 @@ fn call_arg(name: &str) -> Value {
 
 /// What `get_config` lists under `features`: the opt-in rules this code knows. A page opens a match with one of them
 /// only when the contract it talks to lists it (a contract deployed before them ignores the fields it does not know).
-pub const FEATURES: [&str; 6] = ["tickets", "leaderRent", "buildHere", "hostGrace", "away", "close"];
+pub const FEATURES: [&str; 7] = ["tickets", "leaderRent", "buildHere", "hostGrace", "away", "close", "buildOne"];
 
 #[near(contract_state)]
 #[derive(PanicOnDefault)]
@@ -506,6 +520,9 @@ impl Match {
         }
         if self.game.extras.build_here {
             rules["buildHere"] = json!(true);
+        }
+        if self.game.extras.build_one {
+            rules["buildOne"] = json!(true);
         }
         rules
     }

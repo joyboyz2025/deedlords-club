@@ -174,7 +174,7 @@ test("what the page sends: today's arguments unless the contract lists the rules
   assert.deepEqual(args(createDuelCall("m", { ...terms, extras: extrasOf(old) })), args(createDuelCall("m", terms)));
   // One that lists them.
   const now = { ...old, features: ["tickets", "leaderRent"] };
-  assert.deepEqual(extrasOf(now), { tickets: true, leaderRent: true, buildHere: false });
+  assert.deepEqual(extrasOf(now), { tickets: true, leaderRent: true, buildHere: false, buildOne: false });
   assert.deepEqual(extrasOf(now, true), NO_EXTRAS, "switched off for this deployment of the page");
   assert.deepEqual(args(createDuelCall("m", { ...terms, extras: extrasOf(now) })).rules, { ...RULES, max_rounds: 20, tickets: true, leaderRent: true });
   assert.deepEqual(args(freeTableCalls("f", 20, 30, true, null, 1, extrasOf(now))[0]).rules.tickets, true);

@@ -26,7 +26,7 @@ impl Rng for Script {
     }
 }
 
-const BOTH: Extras = Extras { tickets: true, leader_rent: true, build_here: false };
+const BOTH: Extras = Extras { tickets: true, leader_rent: true, build_here: false, build_one: false };
 
 /// Two players in seating order, classic rules; `draws`: the ticket each is dealt (`below(4)`), when tickets are on.
 fn started(extras: Extras, draws: &[u32]) -> Game {
@@ -88,7 +88,7 @@ fn the_borsh_form_of_a_game_is_the_one_from_before_and_leaves_the_new_rules_out(
 
 #[test]
 fn a_ticket_each_at_the_start_and_one_more_at_departure_up_to_two() {
-    let mut game = started(Extras { tickets: true, leader_rent: false, build_here: false }, &[0, 3]);
+    let mut game = started(Extras { tickets: true, leader_rent: false, build_here: false, build_one: false }, &[0, 3]);
     assert_eq!(game.tickets_of("p0"), [Ticket::Waiver]);
     assert_eq!(game.tickets_of("p1"), [Ticket::Festival]);
     assert_eq!(
@@ -252,4 +252,33 @@ fn blitz_with_build_here_builds_only_where_the_piece_stopped() {
             assert_eq!(there, Ok(()));
         }
     }
+}
+
+/// ENGINE-RULES §10.6: in Blitz with `build_one`, one house a turn in all, on any own city, before or after the throw.
+#[test]
+fn blitz_with_build_one_builds_one_house_a_turn_on_a_city_of_the_players_choice() {
+    let blitz = Rules { blitz: true, max_rounds: 0, ..Rules::default() };
+    let mut game = Game::new(blitz, vec!["p0".into(), "p1".into()]).with_extras(Extras { build_one: true, ..Extras::default() });
+    let mut values = vec![0];
+    values.extend(std::iter::repeat_n(0, 64));
+    let mut rng = Script::new(&values);
+    game.apply(None, Action::Start, &mut rng).unwrap();
+    game.props.clear();
+    let mover = game.current_player().unwrap().to_string();
+    let other = if mover == "p0" { "p1" } else { "p0" };
+    own(&mut game, 1, &mover, 0);
+    own(&mut game, 3, &mover, 0);
+    own(&mut game, 6, other, 0);
+    // Before the throw, any own city may take the turn's one house.
+    assert_eq!(game.check(Some(&mover), Action::Build(1)), Ok(()));
+    assert_eq!(game.check(Some(&mover), Action::Build(3)), Ok(()));
+    act(&mut game, &mover, Action::Build(1), &[]).unwrap();
+    // That was the turn's house: no second one, there or anywhere, before the throw or after it.
+    assert_eq!(game.check(Some(&mover), Action::Build(1)), Err(EngineError::NotAllowed));
+    assert_eq!(game.check(Some(&mover), Action::Build(3)), Err(EngineError::NotAllowed));
+    act(&mut game, &mover, Action::Roll, &[1, 2]).unwrap();
+    assert_eq!(game.check(Some(&mover), Action::Build(3)), Err(EngineError::NotAllowed), "not even where the piece stopped");
+    // The next turn of the same seat has its house again.
+    act(&mut game, &mover, Action::End, &[]).unwrap();
+    assert_eq!(game.check(Some(other), Action::Build(6)), Ok(()));
 }

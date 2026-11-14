@@ -224,3 +224,13 @@ and `buildAt` is cleared by the build. `builtThisTurn` is still recorded and pla
 The contract stores it after the tickets, in a tail of version 2 that only a match with this rule has; `get_config`
 lists it as `buildHere`.
 
+### 10.6 One house a turn (`rules.buildOne`)
+
+A fourth opt-in rule, for Blitz games; where both are set it goes before `buildHere`. With it, `build` is allowed on
+any of the player's own cities, at any moment of their turn except in debt (as in Blitz), but only while
+`builtThisTurn` is empty: one house a turn in all, on a city of the player's choice. The other conditions are those of
+section 5 (not mortgaged, fewer than five houses, cash for the house). In a classic game the rule changes nothing.
+
+The contract stores it after `buildHere`, in a tail of version 3 that only a match with this rule has; `get_config`
+lists it as `buildOne`. The page asks for it where the contract lists it, and then not for `buildHere`.
+

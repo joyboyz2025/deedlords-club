@@ -79,6 +79,8 @@ export type Brief = {
   leads?: boolean;
   /** Only in a match where a house goes up only on the own city stood on (ENGINE-RULES §10.5). */
   buildHere?: true;
+  /** Only in a match with one house a turn, on any own city (ENGINE-RULES §10.6). */
+  buildOne?: true;
 };
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
@@ -198,5 +200,6 @@ export function briefFor(match: ChainMatch, seat: number): Brief | null {
       : {}),
     ...(match.meta.rules.leaderRent ? { leads: leads(game, playerId) } : {}),
     ...(match.meta.rules.buildHere ? { buildHere: true as const } : {}),
+    ...(match.meta.rules.buildOne ? { buildOne: true as const } : {}),
   };
 }

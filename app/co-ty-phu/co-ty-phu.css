@@ -2250,6 +2250,27 @@
   white-space: nowrap;
 }
 
+/* The choice of the city that gets this turn's house: one tile a city, its colour on the left edge. */
+.tp-build {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
+  max-height: 46dvh;
+  overflow-y: auto;
+}
+
+.tp-build__site {
+  min-height: 56px;
+  border-left: 8px solid rgb(42 18 8 / 22%);
+  cursor: pointer;
+}
+
+.tp-build__site b {
+  min-width: 46px;
+  color: var(--ink);
+  font-size: 17px;
+}
+
 .tp-tickets .tp-row {
   display: flex;
   gap: 8px;

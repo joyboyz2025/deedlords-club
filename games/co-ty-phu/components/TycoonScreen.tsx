@@ -13,7 +13,7 @@ import { readStored, writeStored } from "@/lib/storage";
 import { formatClock, useCountdown } from "@/lib/useCountdown";
 import { usePin } from "@/lib/usePin";
 import { useWakeLock } from "@/lib/useWakeLock";
-import { DECK_NAMES, GROUPS, JAIL_FINE, SALARY, SQUARES, TOKEN_COLORS, groupSquares, houseCost, isOwnable } from "../board";
+import { DECK_NAMES, GROUPS, JAIL_FINE, SALARY, SQUARES, TOKEN_COLORS, cityRents, groupSquares, houseCost, isOwnable } from "../board";
 import { LEADER_LINE, TICKETS_LINE, TICKET_LINES, roundOf, winLine } from "../chain/calls";
 import { BLITZ_DEAL, MAX_TICKETS, TICKET_NAMES, autoSecondsOf, isBlitz, maxRoundsOf, redeemPrice, startCashOf, type Ticket } from "../engine";
 import { AUTO_CHOICES, CASH_CHOICES, LIMIT_CHOICES, SALARY_CHOICES, type ErrorCode } from "../protocol";
@@ -567,7 +567,9 @@ function Rules({ view, open = false }: { view: View; open?: boolean }) {
           {blitz && ` and is dealt ${BLITZ_DEAL} properties, paid for at their price out of it`}. Passing Departure pays {money(view.settings.salary ?? SALARY)}. The turn order is drawn at random.
         </li>
         <li>Land on an unowned property and you may buy it; if you don't, it stays free. There is no auction.</li>
-        {blitz && !view.settings.buildHere ? (
+        {blitz && view.settings.buildOne ? (
+          <li>Land on somebody else's property and you pay rent. On your turn you may build one house, on a city of yours that you choose; the fifth on a city is a hotel. Owning a whole colour group doubles the rent of its empty lots.</li>
+        ) : blitz && !view.settings.buildHere ? (
           <li>Land on somebody else's property and you pay rent. On your turn you may add one house to each of your cities; the fifth is a hotel. Owning a whole colour group doubles the rent of its empty lots.</li>
         ) : (
           <li>Land on somebody else's property and you pay rent. When you later stop on your own city you may add one house; after 4 houses the next stop makes it a hotel. Owning a whole colour group doubles the rent of its empty lots.</li>
@@ -653,7 +655,7 @@ function useWalkingTokens(view: View): Record<string, number> {
   return shown;
 }
 
-type Sheet = { kind: "assets"; playerId: string } | { kind: "trade" } | { kind: "rules" } | { kind: "menu" } | { kind: "ledger" } | { kind: "tickets" } | null;
+type Sheet = { kind: "assets"; playerId: string } | { kind: "trade" } | { kind: "rules" } | { kind: "menu" } | { kind: "ledger" } | { kind: "tickets" } | { kind: "build" } | null;
 
 function Game({
   view,
@@ -732,7 +734,7 @@ function Game({
   // With their tickets open on their own turn the viewer is deciding: whoever runs the match throws nothing for them
   // meanwhile (for a while: chain/room.ts `choose`).
   const choosing = chain?.choosing;
-  const deciding = sheet?.kind === "tickets" && myTurn;
+  const deciding = (sheet?.kind === "tickets" || sheet?.kind === "build") && myTurn;
   useEffect(() => {
     if (!deciding) return;
     choosing?.(true);
@@ -803,6 +805,10 @@ function Game({
               onTickets={() => {
                 chain?.here?.();
                 setSheet({ kind: "tickets" });
+              }}
+              onBuild={() => {
+                chain?.here?.();
+                setSheet({ kind: "build" });
               }}
             />
           )}
@@ -929,6 +935,7 @@ function Game({
         {sheet?.kind === "trade" && <TradeSheet view={view} send={send} onClose={close} />}
         {sheet?.kind === "rules" && <RulesSheet view={view} onClose={close} />}
         {sheet?.kind === "tickets" && <TicketsSheet view={view} send={send} ready={!holding && !(chain?.busy ?? false)} onRules={() => setSheet({ kind: "rules" })} onClose={close} />}
+        {sheet?.kind === "build" && <BuildSheet view={view} send={send} ready={!holding && !(chain?.busy ?? false)} onClose={close} />}
         {sheet?.kind === "ledger" && chain?.ledger && (
           <div className="tp-sheet" role="dialog" aria-label="Transactions" onClick={(event) => event.target === event.currentTarget && close()}>
             <div className="tp-sheet__body tp-more">{chain.ledger(close)}</div>
@@ -1010,6 +1017,7 @@ function TurnControls({
   offers,
   onStopRaising,
   onTickets,
+  onBuild,
 }: {
   view: View;
   send: Send;
@@ -1023,6 +1031,8 @@ function TurnControls({
   onStopRaising: () => void;
   /** Opens the viewer's tickets. */
   onTickets: () => void;
+  /** Opens the choice of the city that gets this turn's house (a match with one house a turn). */
+  onBuild: () => void;
 }) {
   const mine = me(view);
   const myTurn = view.current === mine.id && !view.pause && !holding && !busy;
@@ -1113,7 +1123,11 @@ function TurnControls({
     const again = view.stage === "end" && view.again;
     const roll = view.stage === "roll" || again;
     const index = mine.position;
-    const build = view.you.can.build.includes(index);
+    // One house a turn on a city of one's choice: one button that opens the choice. Otherwise a house goes up where
+    // the piece stands, and the button says where.
+    const choice = isBlitz(view) && Boolean(view.settings.buildOne);
+    const build = !choice && view.you.can.build.includes(index);
+    const choose = choice && view.you.can.build.length > 0;
     corner = (
       <div className="tp-turn">
         {jailed && <span className="tp-turn__note">Roll a double to get out ({mine.jail! + 1}/3)</span>}
@@ -1130,6 +1144,11 @@ function TurnControls({
         {build && (
           <button type="button" className="tp-btn tp-btn--main" onClick={() => send({ t: "build", square: index })}>
             {view.props[index].houses === 4 ? "Build a hotel" : "Build a house"} · {money(houseCost(index))}
+          </button>
+        )}
+        {choose && (
+          <button type="button" className="tp-btn" onClick={onBuild}>
+            Build a house
           </button>
         )}
         {autopilot && (
@@ -1365,7 +1384,8 @@ function Actions({ view, send }: { view: View; send: Send }) {
 /** Đứng trên đất của mình thì xây ngay tại chỗ, khỏi phải mở mục Tài sản. */
 function BuildHere({ view, send }: { view: View; send: Send }) {
   const index = me(view).position;
-  if (!view.you.can.build.includes(index)) return null;
+  // With one house a turn on a city of one's choice the Assets list has the buttons: nothing is tied to this square.
+  if ((isBlitz(view) && view.settings.buildOne) || !view.you.can.build.includes(index)) return null;
   return (
     <button type="button" className="tp-btn" onClick={() => send({ t: "build", square: index })}>
       {view.props[index].houses === 4 ? "Build a hotel" : "Build a house"} in {SQUARES[index].name} · {money(houseCost(index))}
@@ -1838,6 +1858,63 @@ function TicketsSheet({ view, send, ready, onRules, onClose }: { view: View; sen
   );
 }
 
+/**
+ * This turn's house: the viewer's cities that can take one now, each with what it costs and what its rent becomes.
+ * One tap builds and closes. In a match with one house a turn, on a city of the player's choice.
+ */
+function BuildSheet({ view, send, ready, onClose }: { view: View; send: Send; ready: boolean; onClose: () => void }) {
+  const mine = me(view);
+  const sites = view.current === mine.id && ready && !view.pause ? view.you.can.build : [];
+  const rentOf = (index: number, houses: number) => {
+    const square = SQUARES[index];
+    if (square.kind !== "city") return 0;
+    const wholeGroup = groupSquares(square.group).every((other) => view.props[other]?.owner === mine.id);
+    return cityRents(square.price)[houses] * (houses === 0 && wholeGroup ? 2 : 1);
+  };
+  return (
+    <div className="tp-sheet" role="dialog" aria-label="Build a house" onClick={(event) => event.target === event.currentTarget && onClose()}>
+      <div className="tp-sheet__body tp-tickets">
+        <div className="tp-sheet__head">
+          <h2>Build a house</h2>
+          <p>One house a turn, on a city of yours. You have {money(mine.cash)}.</p>
+        </div>
+        {sites.length === 0 && <p className="tp-hint">{view.current === mine.id ? "Nothing can be built right now." : "You build on your own turn."}</p>}
+        <div className="tp-build">
+          {sites.map((index) => {
+            const square = SQUARES[index];
+            const houses = view.props[index].houses;
+            return (
+              <button
+                key={index}
+                type="button"
+                className="tp-step tp-build__site"
+                style={{ borderLeftColor: square.kind === "city" ? GROUPS[square.group].color : undefined }}
+                onClick={() => {
+                  send({ t: "build", square: index });
+                  onClose();
+                }}
+              >
+                <b>{money(houseCost(index))}</b>
+                <span>
+                  {square.name} · {houses === 4 ? "hotel" : `house ${houses + 1}`}
+                </span>
+                <small>
+                  rent {money(rentOf(index, houses))} → {money(rentOf(index, houses + 1))}
+                </small>
+              </button>
+            );
+          })}
+        </div>
+        <div className="tp-row">
+          <button type="button" className="tp-btn tp-btn--big" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** A piece of ticket news stays up this long; less when more are waiting. */
 const NEWS_MS = 3_200;
 const NEWS_HURRIED_MS = 1_700;
@@ -1990,7 +2067,11 @@ function AssetsSheet({ view, playerId, send, onClose }: { view: View; playerId: 
         </ul>
         {mine && (
           <p className="tp-hint">
-            {isBlitz(view) ? "On your turn, one house per city." : "To build, stop on your own city: one house per stop."} A house sells for half its price; a property with houses cannot be mortgaged or
+            {isBlitz(view) && view.settings.buildOne
+              ? "On your turn, one house, on a city you choose."
+              : isBlitz(view) && !view.settings.buildHere
+                ? "On your turn, one house per city."
+                : "To build, stop on your own city: one house per stop."} A house sells for half its price; a property with houses cannot be mortgaged or
             traded. Redeeming costs 10% more.
           </p>
         )}

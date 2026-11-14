@@ -117,7 +117,7 @@ async function dry(wasm) {
     const { features, ...sameConfig } = after.config;
     const { features: _were, ...wasConfig } = before.config;
     assert.deepEqual(sameConfig, wasConfig);
-    assert.deepEqual(features, ["tickets", "leaderRent", "buildHere", "hostGrace", "away", "close"], "the new build lists the opt-in rules");
+    assert.deepEqual(features, ["tickets", "leaderRent", "buildHere", "hostGrace", "away", "close", "buildOne"], "the new build lists the opt-in rules");
     assert.deepEqual(await view("get_match", { id: "asked" }), asked, "the match opened on the old code reads as it was: without tickets");
     console.log("  the open lobby and the games in progress read the same after the deploy; get_config now lists features");
 
@@ -174,6 +174,23 @@ async function dry(wasm) {
     assert.equal((await view("get_match", { id: "here" })).game.props[mine[0]].houses, 0);
     await playOut("here", ticketPlan);
     console.log("  a match opened after the deploy with buildHere builds only where the piece stops, and settled");
+
+    // Opened after the deploy with one house a turn: any own city takes the turn's house, and then no other does.
+    await call(alice, "create_match", { id: "one", seats: 2, stake: String(Y / 10n), split: [7000, 3000], rules: { ...withTickets, buildOne: true }, solo_player: null, turn_seconds: 60 }, Y / 10n);
+    await call(alice, "join", { id: "one", seat: 0 }, Y / 10n);
+    await call(bob, "join", { id: "one", seat: 1 }, Y / 10n);
+    const one = await view("get_match", { id: "one" });
+    assert.deepEqual([one.meta.rules.buildOne, one.meta.rules.buildHere], [true, undefined]);
+    const toMove = one.meta.seats[one.meta.current_seat];
+    const cities = Object.entries(one.game.props).filter(([square, owned]) => owned.owner === toMove.player && ticketPlan.tickets.takeover.includes(Number(square))).map(([square]) => Number(square));
+    assert.ok(cities.length >= 2, "the seat to move was dealt two cities");
+    const builder = [alice, bob].find((account) => toMove.backer === account.accountId);
+    await call(builder, "play", { id: "one", seat: one.meta.current_seat, actions: [{ Build: cities[0] }] });
+    await call(builder, "play", { id: "one", seat: one.meta.current_seat, actions: [{ Build: cities[1] }] }).catch(() => undefined);
+    const built = (await view("get_match", { id: "one" })).game.props;
+    assert.deepEqual([built[cities[0]].houses, built[cities[1]].houses], [1, 0], "one house a turn, on the city chosen");
+    await playOut("one", ticketPlan);
+    console.log("  a match opened after the deploy with buildOne takes one house a turn on a chosen city, and settled");
 
     // The owner makes the fee free for matches opened from now on. The two matches opened before keep their 2.5%.
     await assert.rejects(call(alice, "set_fee", { fee_bps: 0 }, 1n), /only the owner may set the fee/);
