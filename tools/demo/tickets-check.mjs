@@ -11,6 +11,7 @@
 // Exit code 1 when what was expected did not show. --site (default http://localhost:3300), --minutes (default 6).
 // --want "Pick your steps": tables are opened until the guest is dealt that ticket (at most six), to see it played.
 // --gate <match id>: only a still of that match's gate (a lobby the helper opened), with what it says of the rules.
+// --agents 3: the table is opened against that many house agents (1 to 3), so a table of up to four seats.
 
 import { mkdirSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
@@ -29,10 +30,21 @@ const PHONE = args.includes("--phone");
 const MINUTES = Number(option("minutes", "6"));
 const WANT = option("want", "");
 const GATE = option("gate", "");
+const AGENTS = Number(option("agents", "1"));
 if (!/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(SITE)) throw new Error("this check only runs against a site on this machine");
 
 const has = (page, spec) => page.evaluate(`Boolean(window.__demo.find(${JSON.stringify(spec)}))`).catch(() => false);
 const text = (page, selector) => page.evaluate(`(document.querySelector(${JSON.stringify(selector)})?.innerText ?? "").replace(/\\s+/g, " ").trim()`).catch(() => "");
+/**
+ * Presses a button where it is at that instant, not where a pointer on its way saw it: the table's side columns are
+ * laid out again when the turn passes, and a pointer then lands beside what it aimed at. `false`: no such button.
+ */
+async function press(page, spec, after = 1200) {
+  const pressed = await page.evaluate(`(() => { const el = window.__demo.find(${JSON.stringify(spec)}); if (!el) return false; el.click(); return true; })()`);
+  await sleep(after);
+  return pressed;
+}
+const openHand = (page) => press(page, ".tp-hand");
 let shots = 0;
 async function shot(page, name) {
   const { result } = await page.send("Page.captureScreenshot", { format: "png" });
@@ -75,6 +87,10 @@ try {
   await page.click({ text: "Play as a guest" });
   await page.until(`window.__demo.find({ text: "^Play vs" })`, 60_000, "the desk");
   await sleep(800);
+  if (AGENTS > 1) {
+    await press(page, { text: "^Table options", tag: "summary" }, 600);
+    await press(page, { text: `^${AGENTS}$`, tag: "button", within: '[aria-labelledby="fd-agents"]' }, 600);
+  }
   const lede = await text(page, ".fd-stub .fd-fine, .fd-more");
   await shot(page, "desk");
   await page.click({ text: "^Play vs" });
@@ -103,25 +119,25 @@ try {
       else await sleep(250);
     }
     expect(!(await page.evaluate(`Boolean(document.querySelector(".tp-hand, .tp-pip, .tp-news, .tp-hud__x2"))`)), "nothing of tickets on the table");
-    await page.click('button[aria-label^="More"]', { after: 1400 });
-    await page.click({ text: "^Rules$", tag: "button", within: ".tp-more" }, { ms: 300, after: 900 });
+    await press(page, 'button[aria-label^="More"]');
+    await press(page, { text: "^Rules$", tag: "button", within: ".tp-more" });
     const rules = await text(page, ".tp-rules");
     expect(rules.length > 200 && !/ticket|Festival|Takeover|leads on net worth/i.test(rules), "the rules sheet is the one of before");
     expect(!/special tickets|leads on net worth/i.test(lede), "the desk promises no tickets");
     await shot(page, "rules");
   } else {
     expect(await has(page, ".tp-hand"), "the guest's tickets are in the turn's corner");
-    expect(await page.evaluate(`document.querySelectorAll(".tp-hud__pips .tp-pip").length >= 2`), "every seat's card shows the tickets it holds");
+    expect(await page.evaluate(`document.querySelectorAll(".tp-hud__pips .tp-pip").length >= ${AGENTS + 1}`), "every seat's card shows the tickets it holds");
     // The rules sheet says each ticket and the leader's rent.
-    await page.click('button[aria-label^="More"]', { after: 1400 });
-    await page.click({ text: "^Rules$", tag: "button", within: ".tp-more" }, { ms: 300, after: 900 });
+    await press(page, 'button[aria-label^="More"]');
+    await press(page, { text: "^Rules$", tag: "button", within: ".tp-more" });
     const rules = await text(page, ".tp-rules");
     expect(
       /Rent waiver/.test(rules) && /Pick your steps/.test(rules) && /Takeover/.test(rules) && /Festival/.test(rules) && /leads on net worth pays double rent/.test(rules),
       "the rules sheet says each ticket and the leader's rent",
     );
     await shot(page, "rules");
-    await page.click({ text: "^Close$", tag: "button" }, { after: 500 });
+    await press(page, { text: "^Close$", tag: "button" }, 600);
 
     const news = new Set();
     let played = null;
@@ -143,15 +159,15 @@ try {
       const myTurn = await has(page, { text: "^(ROLL|AGAIN)", tag: "button" });
       if (!opened && (await has(page, ".tp-hand"))) {
         // Once, whoever's turn it is: the sheet of the guest's tickets, with what each does.
-        await page.click(".tp-hand", { ms: 200, after: 1200 });
+        await openHand(page);
         const sheet = await text(page, ".tp-tickets");
         expect(/Your tickets/.test(sheet) && /You hold \d of 2/.test(sheet), "the sheet lists the guest's tickets with what each does");
         await shot(page, "tickets-sheet");
-        await page.click({ text: "^Close$", tag: "button", within: ".tp-tickets" }, { ms: 200, after: 400 });
+        await press(page, { text: "^Close$", tag: "button", within: ".tp-tickets" }, 500);
         opened = true;
       } else if (myTurn && !played && (await has(page, ".tp-hand.tp-btn--main"))) {
         // A ticket can be played now: open the sheet and play it.
-        await page.click(".tp-hand", { ms: 200, after: 1200 });
+        await openHand(page);
         if (await has(page, { text: "^Choose the steps", tag: "button", within: ".tp-tickets" })) {
           await page.click({ text: "^Choose the steps", tag: "button", within: ".tp-tickets" }, { ms: 200, after: 500 });
           await shot(page, "pick-steps");
@@ -161,7 +177,7 @@ try {
           played = await page.evaluate(`window.__demo.find({ text: "^Play ", tag: "button", within: ".tp-tickets" }).innerText.trim()`);
           await shot(page, "play-ticket");
           await page.click({ text: "^Play ", tag: "button", within: ".tp-tickets" }, { ms: 200, after: 300 });
-        } else await page.click({ text: "^Close$", tag: "button", within: ".tp-tickets" }, { ms: 200, after: 300 });
+        } else await press(page, { text: "^Close$", tag: "button", within: ".tp-tickets" }, 400);
         if (played) {
           console.log(`  the guest played: ${played}`);
           await sleep(900);
