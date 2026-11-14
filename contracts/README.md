@@ -5,7 +5,7 @@ reads them again):
 
 | Account | Crate | Code hash |
 |---|---|---|
-| `game.deedlords.near` | `deedlords/` | `Ha6nhaKnZ8p4SyGrvhgzniXNujjhbwfi3WKobcwMv5o6` |
+| `game.deedlords.near` | `deedlords/` | `HB5ibsB7g2iR5ht2kWjKMDjpMfhwVd1tJgQn5WzHNY5T` |
 | `poker.deedlords.near` | `poker-table/` | `7gBmMKnAkiroQJsMa1NnEoogPTotqsnEHiFzk6KRPb5Y` |
 | `chibi.deedlords.near` | `chibi/` | `BxzvTicT3UR8VcocQL7tDMW3D29jSTbfRGAWB6L7158C` |
 
