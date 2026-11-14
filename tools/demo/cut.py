@@ -110,6 +110,8 @@ def main():
                     boxes.append("drawbox=x=130:y=%d:w=1700:h=2:color=0xf8c93f@0.28:t=fill" % (y - step // 2))
                     for x, style, words in zip(xs, ("Label", "Dim", "Cell"), row):
                         lines.append((style, x, y, ass_words(words)))
+            if beat.get("note"):
+                lines.append(("Col", 150, 985, beat["note"]))
             for i, point in enumerate(beat.get("points", [])):
                 y = 330 + i * (640 // max(len(beat["points"]), 4))
                 lines.append(("Point", 290, y, "{\\c" + GOLD + "}" + str(i + 1) + "{\\c" + WHITE + "}     " + ass_words(point)))
@@ -137,6 +139,9 @@ def main():
             write_ass(ass, words)
             # `shift`: the picture moved up by that many pixels, for a page whose last row would lie under the band.
             lift = "crop=%d:%d:0:%d,pad=%d:%d:0:0:color=0x170a06," % (WIDTH, HEIGHT - beat["shift"], beat["shift"], WIDTH, HEIGHT) if beat.get("shift") else ""
+            # `crop`: [x, y, width, height] of the 1920 by 1080 picture, shown full frame: a closer look at a small table.
+            if beat.get("crop"):
+                lift = "crop=%d:%d:%d:%d,scale=%d:%d:flags=lanczos," % (beat["crop"][2], beat["crop"][3], beat["crop"][0], beat["crop"][1], WIDTH, HEIGHT)
             see = ("fps=30,scale=%d:%d," + lift.replace("%", "%%") + "tpad=stop_mode=clone:stop_duration=30,trim=0:%.3f,setpts=PTS-STARTPTS,drawbox=x=0:y=%d:w=%d:h=%d:color=0x170a06:t=fill,drawbox=x=0:y=%d:w=%d:h=2:color=0xf8c93f@0.55:t=fill,ass=%s") % (
                 WIDTH, HEIGHT, seconds, BAND_TOP, WIDTH, HEIGHT - BAND_TOP, BAND_TOP, WIDTH, ass)
             run(["ffmpeg", "-y", "-loglevel", "error", "-ss", "%.3f" % start, "-i", clip_path(beat["clip"]), "-vf", see, "-an", "-c:v"] + look + [part])

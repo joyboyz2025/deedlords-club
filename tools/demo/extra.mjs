@@ -183,6 +183,90 @@ const scenes = {
     console.log(`poker: ${await page.evaluate(say)}`);
   },
 
+  /**
+   * A free poker room of nine, full: the filmed guest hosts, the house's AI and seven more guests (browsers of their
+   * own, not filmed, each checking or calling) take the other seats. The last seat is taken on film; a full table
+   * deals by itself. Captions file: F the room filling, S the shuffles, H the cards, E the end.
+   */
+  async pokerfull(page) {
+    const SEATS = 9;
+    await page.style(`html { background: #4a0c09 !important; } body { transform: scale(0.82); transform-origin: 50% 0; }`);
+    await page.goto(`${PLAY}/poker/tables`, 3500);
+    if (await has(page, { text: "Play as a guest" })) await page.click({ text: "Play as a guest" }, { ms: 150 });
+    await page.until(`window.__demo.find({ text: "^Play vs the House" })`, 60_000, "the poker desk");
+    await page.click({ text: "^Friends" }, { ms: 150 });
+    await page.click({ text: "^Table options", tag: "summary" }, { ms: 150 });
+    await page.click({ text: `^${SEATS}$`, within: '[aria-labelledby="pt-seats"]', tag: "button" }, { ms: 150 });
+    await page.click({ text: `^Open a room of ${SEATS}` }, { ms: 150 });
+    await page.until(`/[?&]t=/.test(location.search)`, 180_000, "the room");
+    const link = await page.evaluate("location.href");
+    const say = `(document.querySelector(".pk-say")?.innerText ?? "")`;
+    const head = `(document.querySelector(".pt-head")?.innerText ?? "")`;
+    const bet = { text: "^(Check|Call \\d+)$", tag: "button" };
+    const over = `/took the pot|shared the pot/.test(${say}) || /Hand 2/.test(${head})`;
+    const taken = async () => Number(((await page.evaluate("document.body.innerText").catch(() => "")).match(/(\d+) of \d+ seats taken/) ?? [])[1] ?? NaN);
+    await sleep(2500);
+    const first = await taken();
+    const friends = [];
+    let playing = true;
+    const seat = async (k) => {
+      const friend = await open({ width: 900, height: 640, scale: 1 });
+      friends.push(friend);
+      await friend.goto(`${PLAY}/poker/tables`, 3500);
+      if (await has(friend, { text: "Play as a guest" })) await friend.click({ text: "Play as a guest" }, { ms: 150 });
+      await friend.until(`window.__demo.find({ text: "^Play vs the House" })`, 90_000, `guest ${k}'s desk`);
+      await friend.goto(link, 3500);
+      await friend.until(`window.__demo.find({ text: "^Sit down" })`, 120_000, `guest ${k}'s seat button`);
+      return friend;
+    };
+    const bets = (friend) => void (async () => { while (playing) { if (await has(friend, bet)) await friend.click(bet, { ms: 120, after: 200 }).catch(() => undefined); await sleep(1500); } })();
+    try {
+      const guests = SEATS - first;
+      for (let k = 1; k < guests; k++) {
+        const friend = await seat(k);
+        await friend.click({ text: "^Sit down" }, { ms: 150 });
+        for (let i = 0; i < 90 && !((await taken()) >= first + k); i++) await sleep(1000);
+        bets(friend);
+        console.log(`guest ${k} seated: ${await taken()} of ${SEATS}`);
+      }
+      const last = await seat(guests);
+      await page.evaluate("scrollTo(0, 0)");
+      await page.take(dir, "n7-pokerfull", async () => {
+        await page.caption("", "F");
+        await sleep(2600);
+        await last.click({ text: "^Sit down" }, { ms: 150 });
+        bets(last);
+        await page.cut(() => page.until(`/Hand 1/.test(${head}) && /shuffl/i.test(${say})`, 180_000, "the first shuffle"));
+        await page.caption("", "S");
+        await sleep(5200);
+        await page.cut(() => page.until(`document.querySelectorAll(".pt-felt .pk-card, .pt-hole .pk-card, [class*=hole] [class*=card]").length >= 2 || /to act|your turn/i.test(${say})`, 240_000, "the cards"));
+        await page.caption("", "H");
+        await sleep(5200);
+        for (let rounds = 0; rounds < 40; rounds++) {
+          if (await has(page, bet)) await page.click(bet, { ms: 500, after: 900 });
+          const ended = await page.cut(async () => {
+            for (let i = 0; i < 40 && (await has(page, bet)); i++) await sleep(400);
+            for (let i = 0; i < 900; i++) {
+              if (await page.evaluate(over).catch(() => false)) return true;
+              if (await has(page, bet)) return false;
+              await sleep(400);
+            }
+            return true;
+          });
+          if (ended) break;
+          await sleep(900);
+        }
+        await page.caption("", "E");
+        await sleep(5500);
+      });
+      console.log(`pokerfull: ${await page.evaluate(say)}`);
+    } finally {
+      playing = false;
+      await sleep(1800);
+      for (const friend of friends) await friend.close().catch(() => undefined);
+    }
+  },
+
   /** The Arena trailer page: the next game. */
   async arena(page) {
     await page.style("");
@@ -197,7 +281,7 @@ const scenes = {
   },
 };
 
-const order = ["wallets", "agents", "selfplay", "chains", "poker", "arena"];
+const order = ["wallets", "agents", "selfplay", "chains", "poker", "pokerfull", "arena"];
 const wanted = asked.length ? asked : order;
 for (const name of wanted) if (!scenes[name]) throw new Error(`no scene ${name}: ${order.join(", ")}`);
 const page = await open();

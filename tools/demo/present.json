@@ -71,7 +71,7 @@
   },
   {
    "id": "W1",
-   "slide": "Why these two games first",
+   "slide": "Research: why these two games first",
    "over": "1-open",
    "at": 1.0,
    "table": {
@@ -83,19 +83,26 @@
     "rows": [
      [
       "Monopoly-style",
-      "<b>1 billion+</b> people have played\\Nin 114 countries (Hasbro)",
+      "<b>1 billion+</b> people have played\\N114 countries, 47 languages",
       "<b>Long-term decisions</b>:\\Nmoney, risk and timing"
      ],
      [
       "Poker",
-      "<b>~100 million</b> play online\\N(World Poker Tour estimate)",
+      "<b>~100 million</b> play online\\N~60 million of them in the US",
       "<b>Judgment</b> when information\\Nis hidden: reading, bluffing"
+     ],
+     [
+      "Both",
+      "Rules the whole world\\Nalready knows",
+      "Every decision <b>on a public record</b>\\Nto train and test on"
      ]
     ]
    },
    "say": [
     "Why these two games first? More than a billion people have played Monopoly. About a hundred million play poker online. Everyone already knows the rules. And for A.I., they train two different skills. Monopoly: long-term decisions, with money and risk. Poker: judgment, when information is hidden."
-   ]
+   ],
+   "note": "Sources: Hasbro (Monopoly) · World Poker Tour estimate (poker)",
+   "pad": 1.6
   },
   {
    "id": "T1",
@@ -316,25 +323,30 @@
   {
    "card": "Poker. No dealer.",
    "sub": "Zero-knowledge shuffles, verified on chain",
-   "over": "n6-poker",
-   "at": 15.0
+   "over": "n7-pokerfull",
+   "at": 12.0
   },
   {
    "id": "P1",
-   "clip": "n6-poker",
+   "clip": "n7-pokerfull",
    "from": 0.3,
    "say": [
     "Game two: poker.",
     0.1,
     "Two to nine seats, and no dealer."
    ],
-   "show": "<b>Poker</b> for two to nine seats, with no dealer.",
-   "shift": 100
+   "show": "<b>Poker</b> for two to nine seats, with no dealer. Here: a full table of nine.",
+   "crop": [
+    125,
+    105,
+    1670,
+    939
+   ]
   },
   {
    "id": "P2",
-   "clip": "n6-poker",
-   "from": 3.7,
+   "clip": "n7-pokerfull",
+   "from": 4.3,
    "say": [
     "Every seat shuffles the deck, and proves it in zero knowledge.",
     0.1,
@@ -342,19 +354,29 @@
    ],
    "show": "Each seat shuffles and <b>proves it in zero knowledge</b>. The contract verifies every proof on chain.",
    "tech": "ZK SHUFFLE PROOFS · ALT_BN128",
-   "shift": 100
+   "crop": [
+    125,
+    105,
+    1670,
+    939
+   ]
   },
   {
    "id": "P3",
-   "clip": "n6-poker",
-   "from": 13.0,
+   "clip": "n7-pokerfull",
+   "from": 14.0,
    "say": [
     "Nobody can see your cards.",
     0.1,
     "Not the house. Not us."
    ],
    "show": "Nobody can see your cards: <b>not the house, not us</b>.",
-   "shift": 100
+   "crop": [
+    125,
+    105,
+    1670,
+    939
+   ]
   },
   {
    "id": "U1",
@@ -374,6 +396,21 @@
     "Fully on chain, yet it feels like a normal game: no pop-ups, no gas, two-second moves.",
     0.06,
     "Any wallet, any chain. And a training ground for A.I."
+   ]
+  },
+  {
+   "id": "AU1",
+   "slide": "Audit it yourself",
+   "over": "4-proof",
+   "at": 12.0,
+   "points": [
+    "Every move: <b>a transaction</b> on the NEAR explorer",
+    "Every AI move: its <b>enclave signature</b>, five checks in your browser",
+    "Every shuffle: a <b>zero-knowledge proof</b> the contract verifies",
+    "Every claim: <b>one command</b>, seventeen checks against mainnet"
+   ],
+   "say": [
+    "And you can audit all of it: every move is a transaction on the Near explorer, every shuffle carries a proof, and one command checks seventeen claims against mainnet."
    ]
   },
   {
