@@ -174,7 +174,7 @@ export const roundsLabel = (maxRounds: number): string => (maxRounds >= TO_THE_E
 export const roundOf = (round: number, maxRounds: number): string => (maxRounds >= TO_THE_END ? `${round + 1}` : `${Math.min(round + 1, maxRounds)}/${maxRounds}`);
 /** How a match with these rules is won, in one sentence, for the gate and the table's rules. */
 export function winLine(rules: { blitz: boolean; maxRounds: number }): string {
-  const worth = `cash, squares at their price (half when mortgaged) and houses at ${rules.blitz ? "three quarters of " : ""}their cost`;
+  const worth = `cash, properties at their price (half when mortgaged) and houses at ${rules.blitz ? "three quarters of " : ""}their cost`;
   return rules.maxRounds >= TO_THE_END
     ? `The last seat standing wins. Should round ${TO_THE_END} ever end, the highest net worth wins: ${worth}.`
     : `The last seat standing wins; after round ${rules.maxRounds} the highest net worth wins: ${worth}.`;

@@ -127,7 +127,7 @@ export default function LandingPage() {
                   </div>
                   <div>
                     <dt>Rounds</dt>
-                    <dd>3 to 12, or to the end</dd>
+                    <dd>8 to 20, or to the end</dd>
                   </div>
                   <div>
                     <dt>A seat</dt>

@@ -90,7 +90,7 @@ test("a table says which round it is in and what wins it", () => {
   assert.equal(roundOf(0, 20), "1/20");
   assert.equal(roundOf(19, 20), "20/20");
   assert.equal(roundOf(36, TO_THE_END), "37");
-  assert.match(winLine({ blitz: true, maxRounds: 20 }), /^The last seat standing wins; after round 20 the highest net worth wins: cash, squares at their price \(half when mortgaged\) and houses at three quarters of their cost\.$/);
+  assert.match(winLine({ blitz: true, maxRounds: 20 }), /^The last seat standing wins; after round 20 the highest net worth wins: cash, properties at their price \(half when mortgaged\) and houses at three quarters of their cost\.$/);
   assert.match(winLine({ blitz: false, maxRounds: 12 }), /houses at their cost\.$/);
   assert.match(winLine({ blitz: true, maxRounds: TO_THE_END }), /^The last seat standing wins\. Should round 255 ever end/);
 });

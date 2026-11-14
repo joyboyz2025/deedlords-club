@@ -449,7 +449,7 @@ function Lobby({
               </div>
               <div>
                 <dt>{meta.rules.blitz ? "To start" : "Cash to start"}</dt>
-                <dd>{meta.rules.blitz ? `${BLITZ_DEAL} squares dealt, paid out of ${meta.rules.cash}` : meta.rules.cash}</dd>
+                <dd>{meta.rules.blitz ? `${BLITZ_DEAL} properties dealt, paid out of ${meta.rules.cash}` : meta.rules.cash}</dd>
               </div>
               <div>
                 <dt>Late player</dt>
