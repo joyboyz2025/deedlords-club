@@ -86,6 +86,16 @@ export type Player = {
 };
 
 export type Owned = { owner: string; houses: number; mortgaged: boolean };
+/** A special ticket (ENGINE-RULES §10.2), in the order a draw picks them: `below(4)`. */
+export const TICKETS = ["waiver", "steps", "takeover", "festival"] as const;
+export type Ticket = (typeof TICKETS)[number];
+/** Tickets a player may hold. */
+export const MAX_TICKETS = 2;
+/**
+ * The ticket state of a game with `settings.tickets`. `held`: per seated player, oldest first. `waiver`: the current
+ * player's Rent waiver is played and not used yet. `festival`: players whose Festival is on, in the order played.
+ */
+export type TicketState = { held: Record<string, Ticket[]>; waiver: boolean; festival: string[] };
 export type Payee = { id: string | null; amount: number };
 export type Trade = Offer & { from: string };
 export type Result = { reason: "last" | "time"; ranking: string[] };
@@ -99,6 +109,10 @@ export type Settings = {
   maxRounds?: number;
   /** Blitz rules (ENGINE-RULES §5). Missing: classic rules. */
   blitz?: boolean;
+  /** Special tickets (ENGINE-RULES §10.2). Missing: none. */
+  tickets?: boolean;
+  /** Whoever leads on net worth pays double rent (ENGINE-RULES §10.1). Missing: off. */
+  leaderRent?: boolean;
 };
 
 export type Game = {
@@ -140,6 +154,8 @@ export type Game = {
   minted: number;
   rolls: number;
   result: Result | null;
+  /** Only in a game with `settings.tickets`, from the start on (ENGINE-RULES §10.2). */
+  tickets?: TicketState | null;
 };
 
 /** Mặc định chờ người tới lượt chừng này giây rồi máy bấm hộ. */
@@ -303,7 +319,104 @@ export function startGame(game: Game, online: Set<string>, now: number, rng: Rng
   // Games saved before cards were drawn with replacement still carry their shuffled decks.
   delete (game as { decks?: unknown }).decks;
   if (isBlitz(game)) dealBlitz(game, rng);
+  // Tickets (ENGINE-RULES §10.2): one each, in turn order, after the deal.
+  delete game.tickets;
+  if (game.settings.tickets) {
+    game.tickets = { held: Object.fromEntries(seated.map((p) => [p.id, []])), waiver: false, festival: [] };
+    for (const id of game.order) drawTicket(game, find(game, id)!, rng);
+  }
   note(game, `${find(game, game.order[0])!.name} goes first.`);
+}
+
+export const TICKET_NAMES: Record<Ticket, string> = { waiver: "Rent waiver", steps: "Pick your steps", takeover: "Takeover", festival: "Festival" };
+
+/** One more ticket for the player, `below(4)`, unless they hold two (then nothing is drawn). */
+function drawTicket(game: Game, player: Player, rng: Rng): void {
+  if (!game.tickets) return;
+  const held = (game.tickets.held[player.id] ??= []);
+  if (held.length >= MAX_TICKETS) return;
+  const ticket = TICKETS[rng.below(TICKETS.length)];
+  held.push(ticket);
+  note(game, `${player.name} gets a ticket: ${TICKET_NAMES[ticket]}.`);
+}
+
+/** Tickets `playerId` holds, oldest first (none without the ticket rules). */
+export const ticketsOf = (game: Pick<Game, "tickets">, playerId: string): Ticket[] => game.tickets?.held[playerId] ?? [];
+
+/** Removes the first `ticket` the player holds. `false`: they hold none. */
+function takeTicket(game: Game, player: Player, ticket: Ticket): boolean {
+  const held = game.tickets?.held[player.id];
+  const at = held ? held.indexOf(ticket) : -1;
+  if (!held || at < 0) return false;
+  held.splice(at, 1);
+  return true;
+}
+
+/** "Before a throw": the same moment a roll is allowed. */
+const canThrow = (game: Game) => game.stage === "roll" || (game.stage === "end" && game.again);
+
+/** Whether the current player `playerId` may play `ticket` now, whatever it then needs (the steps, the city stood on). */
+export function canPlay(game: Game, playerId: string, ticket: Ticket): boolean {
+  const player = currentPlayer(game);
+  if (!player || player.id !== playerId || !game.tickets || !ticketsOf(game, playerId).includes(ticket)) return false;
+  if (ticket === "takeover") return canTakeover(game, playerId);
+  if (!canThrow(game)) return false;
+  if (ticket === "waiver") return !game.tickets.waiver;
+  if (ticket === "festival") return !game.tickets.festival.includes(playerId);
+  return player.jail === null;
+}
+
+/** Rent waiver: the next rent owed this turn is not charged. */
+export function playWaiver(game: Game, playerId: string): void {
+  const player = currentPlayer(game);
+  if (!player || !canPlay(game, playerId, "waiver") || !takeTicket(game, player, "waiver")) return;
+  game.tickets!.waiver = true;
+  note(game, `${player.name} plays a Rent waiver: the next rent this turn is not charged.`);
+}
+
+/** Festival: the player's cities charge double rent until their next turn starts. */
+export function playFestival(game: Game, playerId: string): void {
+  const player = currentPlayer(game);
+  if (!player || !canPlay(game, playerId, "festival") || !takeTicket(game, player, "festival")) return;
+  game.tickets!.festival.push(player.id);
+  note(game, `${player.name} plays a Festival: double rent in their cities until their next turn.`);
+}
+
+/** "Pick your steps": a throw whose dice are chosen, 2 to 12. No second throw for a double, and it does not count as one. */
+export function playSteps(game: Game, playerId: string, steps: unknown, rng: Rng = defaultRng): void {
+  const player = currentPlayer(game);
+  if (typeof steps !== "number" || !Number.isInteger(steps) || steps < 2 || steps > 12) return;
+  if (!player || !canPlay(game, playerId, "steps") || !takeTicket(game, player, "steps")) return;
+  const a = Math.min(6, steps - 1);
+  game.dice = [a, steps - a];
+  game.rolls += 1;
+  game.card = null;
+  game.again = false;
+  game.buildAt = null;
+  note(game, `${player.name} plays Pick your steps and moves ${steps}.`);
+  moveBy(game, player, steps, rng);
+}
+
+/** Whether the current player `playerId` holds a Takeover and stands on a city it can take: another's, no house, not mortgaged, twice its price in cash. */
+export function canTakeover(game: Game, playerId: string): boolean {
+  const player = currentPlayer(game);
+  if (!player || player.id !== playerId || !game.tickets || game.stage !== "end" || !ticketsOf(game, playerId).includes("takeover")) return false;
+  const square = SQUARES[player.position];
+  const owned = game.props[player.position];
+  return square.kind === "city" && !!owned && owned.owner !== playerId && owned.houses === 0 && !owned.mortgaged && player.cash >= 2 * square.price;
+}
+
+/** Takeover: the city stood on changes hands for twice its price, paid to its owner. */
+export function takeover(game: Game, playerId: string): void {
+  const player = currentPlayer(game);
+  if (!player || !canTakeover(game, playerId) || !takeTicket(game, player, "takeover")) return;
+  const square = SQUARES[player.position];
+  const owned = game.props[player.position];
+  const owner = find(game, owned.owner)!;
+  const amount = isOwnable(square) ? 2 * square.price : 0;
+  pay(game, player, owner, amount);
+  owned.owner = player.id;
+  note(game, `${player.name} plays a Takeover: ${square.name} from ${owner.name} for ${amount}.`);
 }
 
 /** Blitz: shuffle the ownable squares; the k-th player in turn order buys entries [5k, 5k+5) at full price. */
@@ -381,22 +494,23 @@ export function roll(game: Game, playerId: string, dice?: [number, number] | nul
 
 function moveBy(game: Game, player: Player, steps: number, rng: Rng): void {
   const to = (player.position + steps) % BOARD_SIZE;
-  if (to < player.position) passStart(game, player);
+  if (to < player.position) passStart(game, player, rng);
   player.position = to;
   land(game, player, rng);
 }
 
 /** Đi thẳng tới ô `to`, đi qua Xuất phát thì nhận lương. */
 function moveTo(game: Game, player: Player, to: number, rng: Rng, rent?: { double?: boolean; utility?: boolean }): void {
-  if (to < player.position) passStart(game, player);
+  if (to < player.position) passStart(game, player, rng);
   player.position = to;
   land(game, player, rng, rent);
 }
 
-function passStart(game: Game, player: Player): void {
+function passStart(game: Game, player: Player, rng: Rng): void {
   const salary = salaryOf(game);
   pay(game, null, player, salary);
   note(game, `${player.name} passes ${START_NAME} and collects ${salary}.`);
+  drawTicket(game, player, rng);
 }
 
 function sendToJail(game: Game, player: Player): void {
@@ -429,6 +543,40 @@ export function rentFor(game: Game, index: number, diceTotal: number, rent: { do
   return 0;
 }
 
+/** Why a rent is raised, as the log says it. */
+export const raiseLine = (payer: string, owner: string, raised: { festival: boolean; leader: boolean }): string =>
+  raised.festival && raised.leader
+    ? `Triple rent: ${owner}'s Festival is on and ${payer} leads.`
+    : raised.festival
+      ? `Double rent: ${owner}'s Festival is on.`
+      : `Double rent: ${payer} leads on net worth.`;
+
+/** Whether `playerId` leads: their net worth is strictly above that of every other player still in the game. */
+export function leads(game: Game, playerId: string): boolean {
+  const player = find(game, playerId);
+  if (!player || player.bankrupt) return false;
+  const others = activePlayers(game).filter((other) => other.id !== playerId);
+  const mine = netWorth(game, playerId);
+  return others.length > 0 && others.every((other) => netWorth(game, other.id) < mine);
+}
+
+/**
+ * What `payerId` owes landing on `index` (ENGINE-RULES §10.3): `rentFor`, once more on a city whose owner's Festival
+ * is on, once more when the leader's rent is on and the payer leads.
+ */
+export function rentDue(game: Game, payerId: string, index: number, diceTotal: number, rent: { double?: boolean; utility?: boolean } = {}): number {
+  const { festival, leader } = rentRaises(game, payerId, index);
+  return rentFor(game, index, diceTotal, rent) * (1 + (festival ? 1 : 0) + (leader ? 1 : 0));
+}
+
+/** Why `payerId` owes more than the base rent on `index`: the owner's Festival is on (a city), the payer leads. */
+export function rentRaises(game: Game, payerId: string, index: number): { festival: boolean; leader: boolean } {
+  const owned = game.props[index];
+  if (!owned) return { festival: false, leader: false };
+  const festival = SQUARES[index].kind === "city" && !!game.tickets?.festival.includes(owned.owner);
+  return { festival, leader: !!game.settings.leaderRent && leads(game, payerId) };
+}
+
 function land(game: Game, player: Player, rng: Rng, rent?: { double?: boolean; utility?: boolean }): void {
   const square = SQUARES[player.position];
   game.stage = "end";
@@ -444,8 +592,15 @@ function land(game: Game, player: Player, rng: Rng, rent?: { double?: boolean; u
       return;
     }
     if (owned.mortgaged) return;
-    const amount = rentFor(game, player.position, game.dice![0] + game.dice![1], rent);
+    const amount = rentDue(game, player.id, player.position, game.dice![0] + game.dice![1], rent);
     const owner = find(game, owned.owner)!;
+    const raised = rentRaises(game, player.id, player.position);
+    if (raised.festival || raised.leader) note(game, raiseLine(player.name, owner.name, raised));
+    if (game.tickets?.waiver) {
+      game.tickets.waiver = false;
+      note(game, `${player.name}'s Rent waiver covers ${amount} rent to ${owner.name} at ${square.name}.`);
+      return;
+    }
     note(game, `${player.name} pays ${owner.name} ${amount} rent at ${square.name}.`);
     charge(game, player, [{ id: owner.id, amount }]);
     return;
@@ -578,6 +733,10 @@ function nextTurn(game: Game): void {
   }
   // Thẻ vừa rút chỉ hiện trong lượt của người rút; diễn biến vẫn ghi lại.
   Object.assign(game, { turn: next, stage: "roll", doubles: 0, again: false, card: null, buildAt: null, builtThisTurn: [] });
+  if (game.tickets) {
+    game.tickets.waiver = false;
+    game.tickets.festival = game.tickets.festival.filter((id) => id !== game.order[next]);
+  }
 }
 
 // Tạm giữ
@@ -631,6 +790,10 @@ function goBankrupt(game: Game, player: Player, creditorId: string | null): void
   }
   pay(game, player, creditor, player.cash);
   if (creditor) creditor.freeCards.push(...player.freeCards);
+  if (game.tickets) {
+    if (game.tickets.held[player.id]) game.tickets.held[player.id] = [];
+    game.tickets.festival = game.tickets.festival.filter((id) => id !== player.id);
+  }
   const out = game.players.filter((p) => p.outAt !== null).length;
   Object.assign(player, { bankrupt: true, outAt: out + 1, jail: null, freeCards: [] });
   if (game.trade && (game.trade.from === player.id || game.trade.to === player.id)) game.trade = null;

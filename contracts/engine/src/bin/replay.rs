@@ -13,7 +13,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use deedlords_engine::{Action, Game, Rng, Rules};
+use deedlords_engine::{Action, Extras, Game, Rng, Rules};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -27,7 +27,8 @@ struct Trace {
     #[serde(default)]
     #[allow(dead_code)]
     seed: Value,
-    rules: Rules,
+    /// `{ salary, cash, blitz, maxRounds }`, and the opt-in rules of ENGINE-RULES §10 when on (`tickets`, `leaderRent`).
+    rules: Value,
     players: Vec<String>,
     steps: Vec<Step>,
 }
@@ -164,7 +165,15 @@ fn replay(path: &Path) -> Result<usize, String> {
     if trace.version != 1 {
         return Err(format!("unsupported trace version {}", trace.version));
     }
-    let mut game = Game::new(trace.rules, trace.players.clone());
+    let rules: Rules = match serde_json::from_value(trace.rules.clone()) {
+        Ok(rules) => rules,
+        Err(error) => return Err(format!("bad rules: {error}")),
+    };
+    let extras: Extras = match serde_json::from_value(trace.rules.clone()) {
+        Ok(extras) => extras,
+        Err(error) => return Err(format!("bad rules: {error}")),
+    };
+    let mut game = Game::new(rules, trace.players.clone()).with_extras(extras);
     for (number, step) in trace.steps.iter().enumerate() {
         let action = action_of(step).map_err(|e| format!("step {number}: {e}"))?;
         let mut rng = Scripted { calls: &step.rng, used: 0, error: None };

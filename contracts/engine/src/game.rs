@@ -19,6 +19,8 @@ pub const MAX_LOG: usize = 30;
 pub const BLITZ_DEAL: usize = 5;
 /// Houses on a square with a hotel.
 pub const HOTEL: u8 = 5;
+/// Tickets a player may hold (ENGINE-RULES §10.2).
+pub const MAX_TICKETS: usize = 2;
 
 /// The only source of randomness (ENGINE-RULES §2). The engine calls it only in `start`, `roll` (also via `auto`)
 /// and when a card is drawn (which can also happen in `pay`, when a pending jail move lands on a card square).
@@ -59,6 +61,53 @@ impl Default for Rules {
     fn default() -> Self {
         Rules { salary: board::SALARY, cash: board::START_CASH, blitz: false, max_rounds: 0 }
     }
+}
+
+/// Rules a match may switch on when it is created (ENGINE-RULES §10). Both are off by default, and a game with both
+/// off plays exactly as before they existed. They are kept outside [`Rules`], whose borsh layout is what deployed
+/// contracts have stored.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Extras {
+    /// Special tickets (ENGINE-RULES §10.2).
+    pub tickets: bool,
+    /// Whoever leads on net worth pays double rent (ENGINE-RULES §10.1).
+    pub leader_rent: bool,
+}
+
+impl Extras {
+    pub fn is_off(&self) -> bool {
+        !self.tickets && !self.leader_rent
+    }
+}
+
+/// A special ticket (ENGINE-RULES §10.2), in the order a draw picks them: `below(4)`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Ticket {
+    /// The next rent owed this turn is not charged.
+    Waiver,
+    /// Choose the steps of a throw, 2 to 12.
+    Steps,
+    /// Buy the city stood on from its owner at double its price (no house on it).
+    Takeover,
+    /// Own cities charge double rent until the player's next turn starts.
+    Festival,
+}
+
+impl Ticket {
+    pub const ALL: [Ticket; 4] = [Ticket::Waiver, Ticket::Steps, Ticket::Takeover, Ticket::Festival];
+}
+
+/// The ticket state of a game with `extras.tickets` (the snapshot's `tickets`, ENGINE-RULES §10.2).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+pub struct Tickets {
+    /// Tickets held by each seated player, oldest first; at most [`MAX_TICKETS`].
+    pub held: BTreeMap<String, Vec<Ticket>>,
+    /// The current player's Rent waiver is played and not used yet.
+    pub waiver: bool,
+    /// Players whose Festival is on, in the order they played it.
+    pub festival: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -175,6 +224,17 @@ pub enum Event {
     Auto { player: String },
     End { reason: Reason },
     Resign { player: String },
+    /// A ticket was drawn: at the start, or passing Departure.
+    Drew { player: String, ticket: Ticket },
+    /// A ticket was played. `value`: the steps chosen (`Steps`), the square taken over (`Takeover`), else 0.
+    Played { player: String, ticket: Ticket, value: u8 },
+    /// A rent of `amount` was not charged: the player's Rent waiver took it.
+    Waived { player: String, owner: String, square: u8, amount: i64 },
+    /// `player` bought `square` from `owner` for `amount` with a Takeover ticket.
+    Taken { player: String, owner: String, square: u8, amount: i64 },
+    /// The rent `player` owes on `square` is raised: the owner's Festival is on, the player leads, or both. It comes
+    /// right before the `Rent` (or `Waived`) it explains.
+    Raised { player: String, square: u8, festival: bool, leader: bool },
 }
 
 /// Rent modifier from a "nearest" card.
@@ -209,12 +269,22 @@ pub enum Action {
     Auto,
     /// Give up the game: any player still in it, at any time. The player goes bankrupt; see `resign`.
     Resign,
+    /// Tickets (ENGINE-RULES §10.2), only in a game with `extras.tickets`. Play a Rent waiver before a throw.
+    Waiver,
+    /// Play "Pick your steps": move this many steps (2..=12) instead of rolling.
+    Steps(u8),
+    /// Play a Takeover on the city stood on.
+    Takeover,
+    /// Play a Festival before a throw.
+    Festival,
 }
 
 impl Action {
     /// The op names used in trace files, in [`Action`] order.
-    pub const OPS: [&'static str; 15] =
-        ["start", "roll", "buy", "skip", "end", "bail", "card", "pay", "bankrupt", "build", "sell", "mortgage", "redeem", "auto", "resign"];
+    pub const OPS: [&'static str; 19] = [
+        "start", "roll", "buy", "skip", "end", "bail", "card", "pay", "bankrupt", "build", "sell", "mortgage", "redeem", "auto", "resign", "waiver",
+        "steps", "takeover", "festival",
+    ];
 
     /// Trace op name.
     pub fn op(&self) -> &'static str {
@@ -234,20 +304,24 @@ impl Action {
             Action::Redeem(_) => "redeem",
             Action::Auto => "auto",
             Action::Resign => "resign",
+            Action::Waiver => "waiver",
+            Action::Steps(_) => "steps",
+            Action::Takeover => "takeover",
+            Action::Festival => "festival",
         }
     }
 
-    /// Square index of `build`/`sell`/`mortgage`/`redeem`.
+    /// Square index of `build`/`sell`/`mortgage`/`redeem`; the steps of `steps`.
     pub fn index(&self) -> Option<u8> {
         match self {
-            Action::Build(i) | Action::Sell(i) | Action::Mortgage(i) | Action::Redeem(i) => Some(*i),
+            Action::Build(i) | Action::Sell(i) | Action::Mortgage(i) | Action::Redeem(i) | Action::Steps(i) => Some(*i),
             _ => None,
         }
     }
 
     /// Whether the op takes a square index.
     pub fn op_takes_index(op: &str) -> bool {
-        matches!(op, "build" | "sell" | "mortgage" | "redeem")
+        matches!(op, "build" | "sell" | "mortgage" | "redeem" | "steps")
     }
 
     /// Parses a trace op. `None` for an unknown op, or an indexed op without an index.
@@ -268,6 +342,10 @@ impl Action {
             "redeem" => Action::Redeem(index?),
             "auto" => Action::Auto,
             "resign" => Action::Resign,
+            "waiver" => Action::Waiver,
+            "steps" => Action::Steps(index?),
+            "takeover" => Action::Takeover,
+            "festival" => Action::Festival,
             _ => return None,
         })
     }
@@ -299,6 +377,8 @@ pub enum EngineError {
     NotOwner,
     /// Any other rule (no houses to sell, already mortgaged, cannot build here now, ...).
     NotAllowed,
+    /// The player does not hold that ticket.
+    NoTicket,
 }
 
 impl fmt::Display for EngineError {
@@ -316,6 +396,7 @@ impl fmt::Display for EngineError {
             EngineError::BadSquare => "wrong square for this action",
             EngineError::NotOwner => "you do not own this square",
             EngineError::NotAllowed => "not allowed",
+            EngineError::NoTicket => "you do not hold that ticket",
         })
     }
 }
@@ -370,6 +451,15 @@ pub struct Game {
     /// In seating order.
     pub players: Vec<Player>,
     pub log: Vec<Event>,
+    /// Opt-in rules (ENGINE-RULES §10). Not in the borsh form, which stays the one deployed contracts stored: whoever
+    /// stores a game with borsh keeps `extras` and `tickets` beside it (the contract appends them to its match).
+    #[borsh(skip)]
+    #[serde(default, skip_serializing_if = "Extras::is_off")]
+    pub extras: Extras,
+    /// `Some` from `start` on in a game with `extras.tickets`.
+    #[borsh(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tickets: Option<Tickets>,
 }
 
 /// The snapshot view (ENGINE-RULES §8): the game without `rules` and `log`.
@@ -394,6 +484,8 @@ struct Snapshot<'a> {
     rolls: u32,
     result: &'a Option<GameResult>,
     players: &'a [Player],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tickets: Option<&'a Tickets>,
 }
 
 /// The actions taking a square index, for `legal_actions`.
@@ -423,7 +515,15 @@ impl Game {
             result: None,
             players: players.into_iter().map(Player::new).collect(),
             log: Vec::new(),
+            extras: Extras::default(),
+            tickets: None,
         }
+    }
+
+    /// The same game with the opt-in rules of ENGINE-RULES §10 set. For a game still in the lobby.
+    pub fn with_extras(mut self, extras: Extras) -> Self {
+        self.extras = extras;
+        self
     }
 
     // ----- Queries -------------------------------------------------------------------------------------------------
@@ -449,6 +549,7 @@ impl Game {
             rolls: self.rolls,
             result: &self.result,
             players: &self.players,
+            tickets: self.tickets.as_ref(),
         };
         serde_json::to_value(snapshot).expect("the snapshot only holds strings, integers and integer map keys")
     }
@@ -523,6 +624,37 @@ impl Game {
         }
     }
 
+    /// Whether `id` leads: its net worth is strictly above that of every other player still in the game.
+    pub fn leads(&self, id: &str) -> bool {
+        if self.is_bankrupt(id) {
+            return false;
+        }
+        let mine = self.net_worth(id);
+        let mut others = self.active_players().into_iter().filter(|other| *other != id).peekable();
+        others.peek().is_some() && others.all(|other| self.net_worth(other) < mine)
+    }
+
+    /// What `payer` owes landing on `index` (ENGINE-RULES §10.3): [`Game::rent_for`], once more on a city whose owner's
+    /// Festival is on, once more when the leader's rent is on and `payer` leads.
+    pub fn rent_due(&self, payer: &str, index: u8, dice_total: i64, modifier: RentMod) -> i64 {
+        let (festival, leader) = self.rent_raises(payer, index);
+        self.rent_for(index, dice_total, modifier) * (1 + i64::from(festival) + i64::from(leader))
+    }
+
+    /// Why `payer` owes more than the base rent on `index`: (the owner's Festival is on and it is a city, the leader's
+    /// rent is on and `payer` leads).
+    pub fn rent_raises(&self, payer: &str, index: u8) -> (bool, bool) {
+        let Some(owned) = self.props.get(&index) else { return (false, false) };
+        let city = board::square(index).is_some_and(|square| square.is_city());
+        let festival = city && self.tickets.as_ref().is_some_and(|tickets| tickets.festival.contains(&owned.owner));
+        (festival, self.extras.leader_rent && self.leads(payer))
+    }
+
+    /// Tickets `id` holds, oldest first (empty without the ticket rules).
+    pub fn tickets_of(&self, id: &str) -> &[Ticket] {
+        self.tickets.as_ref().and_then(|tickets| tickets.held.get(id)).map_or(&[], Vec::as_slice)
+    }
+
     /// Checks an action without applying it. `Ok` exactly when [`Game::apply`] would succeed.
     pub fn check(&self, actor: Option<&str>, action: Action) -> Result<(), EngineError> {
         self.validate(actor, action).map(|_| ())
@@ -543,6 +675,9 @@ impl Game {
             Action::Pay,
             Action::Bankrupt,
             Action::Resign,
+            Action::Waiver,
+            Action::Takeover,
+            Action::Festival,
         ];
         for action in simple {
             if self.check(Some(actor), action).is_ok() {
@@ -556,6 +691,11 @@ impl Game {
                     if self.check(Some(actor), action).is_ok() {
                         actions.push(action);
                     }
+                }
+            }
+            for steps in 2..=12 {
+                if self.check(Some(actor), Action::Steps(steps)).is_ok() {
+                    actions.push(Action::Steps(steps));
                 }
             }
         }
@@ -600,6 +740,21 @@ impl Game {
             Action::Sell(index) => self.sell(p, index),
             Action::Mortgage(index) => self.mortgage(p, index),
             Action::Redeem(index) => self.redeem(p, index),
+            Action::Waiver => {
+                self.take_ticket(p, Ticket::Waiver, 0);
+                if let Some(tickets) = self.tickets.as_mut() {
+                    tickets.waiver = true;
+                }
+            }
+            Action::Festival => {
+                self.take_ticket(p, Ticket::Festival, 0);
+                let id = self.players[p].id.clone();
+                if let Some(tickets) = self.tickets.as_mut() {
+                    tickets.festival.push(id);
+                }
+            }
+            Action::Steps(steps) => self.steps(p, steps, rng),
+            Action::Takeover => self.takeover(p),
         }
         Ok(())
     }
@@ -696,6 +851,41 @@ impl Game {
                 let (p, owned) = self.own_square(actor, index, false)?;
                 ensure(owned.mortgaged, E::NotAllowed)?;
                 ensure(self.players[p].cash >= board::redeem_price(index), E::NotEnoughCash)?;
+                Ok(p)
+            }
+            Action::Waiver | Action::Festival | Action::Steps(_) => {
+                let p = self.turn_of(actor)?;
+                let tickets = self.tickets.as_ref().ok_or(E::NotAllowed)?;
+                ensure(self.can_roll(), E::WrongStage)?;
+                let id = &self.players[p].id;
+                match action {
+                    Action::Waiver => {
+                        ensure(self.tickets_of(id).contains(&Ticket::Waiver), E::NoTicket)?;
+                        ensure(!tickets.waiver, E::NotAllowed)?;
+                    }
+                    Action::Festival => {
+                        ensure(self.tickets_of(id).contains(&Ticket::Festival), E::NoTicket)?;
+                        ensure(!tickets.festival.contains(id), E::NotAllowed)?;
+                    }
+                    Action::Steps(steps) => {
+                        ensure(self.tickets_of(id).contains(&Ticket::Steps), E::NoTicket)?;
+                        ensure(self.players[p].jail.is_none(), E::WrongStage)?;
+                        ensure((2..=12).contains(&steps), E::NotAllowed)?;
+                    }
+                    _ => {}
+                }
+                Ok(p)
+            }
+            Action::Takeover => {
+                let p = self.turn_of(actor)?;
+                ensure(self.tickets.is_some(), E::NotAllowed)?;
+                ensure(self.stage == Stage::End, E::WrongStage)?;
+                let player = &self.players[p];
+                ensure(self.tickets_of(&player.id).contains(&Ticket::Takeover), E::NoTicket)?;
+                let Some(&Square::City { price, .. }) = board::square(player.position) else { return Err(E::BadSquare) };
+                let owned = self.props.get(&player.position).ok_or(E::BadSquare)?;
+                ensure(owned.owner != player.id && owned.houses == 0 && !owned.mortgaged, E::NotAllowed)?;
+                ensure(player.cash >= 2 * price, E::NotEnoughCash)?;
                 Ok(p)
             }
         }
@@ -842,6 +1032,70 @@ impl Game {
         if self.rules.blitz {
             self.deal(rng);
         }
+        // Tickets (ENGINE-RULES §10.2): one each, in turn order, after the deal.
+        self.tickets = None;
+        if self.extras.tickets {
+            let held = self.players[..seated].iter().map(|p| (p.id.clone(), Vec::new())).collect();
+            self.tickets = Some(Tickets { held, waiver: false, festival: Vec::new() });
+            for k in 0..self.order.len() {
+                if let Some(p) = self.index_of(&self.order[k]) {
+                    self.draw_ticket(p, rng);
+                }
+            }
+        }
+    }
+
+    /// One more ticket for the player, `below(4)`, unless they hold [`MAX_TICKETS`] (then nothing is drawn).
+    fn draw_ticket<R: Rng + ?Sized>(&mut self, p: usize, rng: &mut R) {
+        let id = self.players[p].id.clone();
+        let Some(tickets) = self.tickets.as_mut() else { return };
+        let held = tickets.held.entry(id.clone()).or_default();
+        if held.len() >= MAX_TICKETS {
+            return;
+        }
+        let ticket = Ticket::ALL[(rng.below(Ticket::ALL.len() as u32) as usize).min(Ticket::ALL.len() - 1)];
+        held.push(ticket);
+        self.note(Event::Drew { player: id, ticket });
+    }
+
+    /// Removes the first `ticket` the player holds and logs that it was played.
+    fn take_ticket(&mut self, p: usize, ticket: Ticket, value: u8) {
+        let id = self.players[p].id.clone();
+        if let Some(held) = self.tickets.as_mut().and_then(|tickets| tickets.held.get_mut(&id)) {
+            if let Some(at) = held.iter().position(|&one| one == ticket) {
+                held.remove(at);
+            }
+        }
+        self.note(Event::Played { player: id, ticket, value });
+    }
+
+    /// "Pick your steps": a throw whose dice are chosen. No second throw for a double, and it does not count as one.
+    fn steps<R: Rng + ?Sized>(&mut self, p: usize, steps: u8, rng: &mut R) {
+        self.take_ticket(p, Ticket::Steps, steps);
+        let a = (steps - 1).min(6);
+        let dice = [a, steps - a];
+        self.dice = Some(dice);
+        self.rolls += 1;
+        self.card = None;
+        self.again = false;
+        self.build_at = None;
+        self.note(Event::Roll { player: self.players[p].id.clone(), dice });
+        self.move_by(p, steps, rng);
+    }
+
+    /// Takeover: the city stood on changes hands for twice its price, paid to its owner.
+    fn takeover(&mut self, p: usize) {
+        let square = self.players[p].position;
+        self.take_ticket(p, Ticket::Takeover, square);
+        let amount = 2 * board::price(square).unwrap_or(0);
+        let id = self.players[p].id.clone();
+        let Some(owner) = self.props.get(&square).map(|owned| owned.owner.clone()) else { return };
+        let to = self.index_of(&owner);
+        self.pay(Some(p), to, amount);
+        if let Some(owned) = self.props.get_mut(&square) {
+            owned.owner = id.clone();
+        }
+        self.note(Event::Taken { player: id, owner, square, amount });
     }
 
     /// Blitz deal: shuffle the ownable squares, then `order[k]` buys entries `[5k, 5k+5)` at list price.
@@ -911,7 +1165,7 @@ impl Game {
         let from = self.players[p].position;
         let to = ((u32::from(from) + u32::from(steps)) % u32::from(BOARD_SIZE)) as u8;
         if to < from {
-            self.pass_start(p);
+            self.pass_start(p, rng);
         }
         self.players[p].position = to;
         self.land(p, RentMod::Normal, rng);
@@ -920,16 +1174,17 @@ impl Game {
     /// Straight to `to`, collecting the salary when passing Departure.
     fn move_to<R: Rng + ?Sized>(&mut self, p: usize, to: u8, rent: RentMod, rng: &mut R) {
         if to < self.players[p].position {
-            self.pass_start(p);
+            self.pass_start(p, rng);
         }
         self.players[p].position = to;
         self.land(p, rent, rng);
     }
 
-    fn pass_start(&mut self, p: usize) {
+    fn pass_start<R: Rng + ?Sized>(&mut self, p: usize, rng: &mut R) {
         let amount = self.rules.salary;
         self.pay(None, Some(p), amount);
         self.note(Event::Salary { player: self.players[p].id.clone(), amount });
+        self.draw_ticket(p, rng);
     }
 
     fn send_to_jail(&mut self, p: usize) {
@@ -960,7 +1215,16 @@ impl Game {
                     return;
                 }
                 let owner = owned.owner.clone();
-                let amount = self.rent_for(position, self.dice_total(), rent);
+                let amount = self.rent_due(&self.players[p].id, position, self.dice_total(), rent);
+                let (festival, leader) = self.rent_raises(&self.players[p].id, position);
+                if festival || leader {
+                    self.note(Event::Raised { player: self.players[p].id.clone(), square: position, festival, leader });
+                }
+                if let Some(tickets) = self.tickets.as_mut().filter(|tickets| tickets.waiver) {
+                    tickets.waiver = false;
+                    self.note(Event::Waived { player: self.players[p].id.clone(), owner, square: position, amount });
+                    return;
+                }
                 self.note(Event::Rent { player: self.players[p].id.clone(), owner: owner.clone(), square: position, amount });
                 self.charge(p, vec![Payee { id: Some(owner), amount }]);
             }
@@ -1100,6 +1364,11 @@ impl Game {
         self.card = None;
         self.build_at = None;
         self.built_this_turn.clear();
+        if let Some(tickets) = self.tickets.as_mut() {
+            tickets.waiver = false;
+            let starts = &self.order[next];
+            tickets.festival.retain(|id| id != starts);
+        }
     }
 
     // ----- Debt and bankruptcy -------------------------------------------------------------------------------------
@@ -1171,6 +1440,12 @@ impl Game {
         let cards = std::mem::take(&mut self.players[p].free_cards);
         if let Some(c) = creditor {
             self.players[c].free_cards.extend(cards);
+        }
+        if let Some(tickets) = self.tickets.as_mut() {
+            if let Some(held) = tickets.held.get_mut(&id) {
+                held.clear();
+            }
+            tickets.festival.retain(|one| *one != id);
         }
         let out = self.players.iter().filter(|player| player.out_at.is_some()).count();
         let player = &mut self.players[p];
