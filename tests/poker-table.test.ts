@@ -26,6 +26,7 @@ import {
   handStory,
   holeCards,
   hostIsSpent,
+  leaveState,
   nextDealt,
   toBase64,
   tookEffect,
@@ -412,4 +413,15 @@ test("a finished hand is told in a sentence: who took the pot, and with what", (
   assert.equal(handStory(won, name, (seat) => (seat === 1 ? "a pair" : "high card")), "You took the pot of 194 with a pair.");
   assert.equal(handStory({ ...hand, ending: "fold" as const, folded: [true, false], put: [1, 2], won: [0, 3] }, name, () => null), "You took the pot of 3: everyone else folded.");
   assert.equal(handStory({ ...hand, ending: "cancelled" as const, put: [12, 12], won: [112, 0], late: [1] }, name, () => null), "Called off: you did not answer in time.");
+});
+
+test("a seat that asked to leave between two hands is gone only when the table says so", () => {
+  // f-mwfqed34-zkvq on testnet, 2026-11-14: hand 2 was over, seat 1 pressed "Leave the table" while no hand had begun.
+  // The button's shuffle reached the contract first, so the seat was dealt into hand 3 and only marked as leaving; the
+  // page wrote "Left the table and cashed out" and went back to the tables, and nobody played the seat any more.
+  const raced = table({ players: ["free.testnet", "e19e.testnet", "8909.testnet", "pokerhouse.testnet", null, null], phase: "shuffle", hand: 2, dealt: [2, 3, 0, 1], shuffled: 1, awaited: [3], leaving: [false, true, false, false, false, false] });
+  assert.equal(leaveState(raced, "e19e.testnet"), "leaving");
+  // Had the request been first, the seat would have been paid and given up at once.
+  assert.equal(leaveState({ ...raced, players: ["free.testnet", null, "8909.testnet", "pokerhouse.testnet", null, null], leaving: [false, false, false, false, false, false] }, "e19e.testnet"), "gone");
+  assert.equal(leaveState({ ...raced, leaving: [false, false, false, false, false, false] }, "e19e.testnet"), "seated");
 });

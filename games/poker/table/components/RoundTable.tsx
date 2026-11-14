@@ -865,6 +865,12 @@ function ActionStub({
             )}
           </div>
           {body}
+          {mine && inHand && view.leaving[mySeat] && (
+            <p className="pk-fine" role="status">
+              You leave when this hand is over, and are paid then. Keep this page open until it is: it still plays your seat&apos;s part, and a seat that does not answer loses
+              its chips.
+            </p>
+          )}
           {doing && doing !== "shuffle" && (
             <p className="pk-fine" role="status">
               {doing}

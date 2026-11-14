@@ -44,7 +44,7 @@ import {
   viewResult,
 } from "../chain";
 import { FREE_TABLE_HANDS, FREE_TURN_SECONDS, RECORD_FEE } from "../contract";
-import { type TableResult, type TableView, betCall, callsTime, clockAhead, clockMove, duty, holeCards, movedOn, seated, tookEffect } from "../seat";
+import { type TableResult, type TableView, betCall, callsTime, clockAhead, clockMove, duty, holeCards, leaveState, movedOn, seated, tookEffect } from "../seat";
 import { useHouse } from "../useHouse";
 import { useSeatAgent } from "../useSeatAgent";
 import { type Tables, useTables } from "../useTables";
@@ -967,6 +967,15 @@ function LiveTable({
     void bet(move, undefined, move === "fold" ? "folds: its clock ran down" : "checks: its clock ran down");
   }, [now, clock, view, mySeat, locked, bet]);
 
+  // "Leave the table", pressed while the seat was in no hand: the page goes back to the tables once the table shows
+  // the seat given up (or is gone itself), not before. If the next hand's first shuffle reached the contract before
+  // the request, the seat is in that hand after all and is paid when it is over (seat.ts `leaveState`): the page
+  // stays and plays the seat's part until then.
+  const [wantsOut, setWantsOut] = useState(false);
+  useEffect(() => {
+    if (wantsOut && accountId && (view === null || (view && leaveState(view, accountId) === "gone"))) onBack();
+  }, [wantsOut, view, accountId, onBack]);
+
   // The NEAR for a seat that was asked for has arrived: the seat is taken.
   useEffect(() => {
     if (!wantSeat || !session || !view || mySeat !== null || holds < seatNeeds) return;
@@ -1047,12 +1056,13 @@ function LiveTable({
             session &&
             view &&
             void click("Started the table", undefined, "start", () => (isFreeStake(view) && view.host !== session.accountId ? startFreeTable(id) : startTable(session, id))),
-          // Off a table between hands the seat is cashed out at once, and the page goes back to the tables.
+          // Off a table between hands the seat is cashed out at once, if the request is there before the next hand
+          // begins: the page goes back to the tables when the table shows it.
           leave: () => {
             if (!session) return;
             const inHand = mySeat !== null && Boolean(view?.dealt.includes(mySeat));
-            void click(inHand ? "Asked to leave after this hand" : "Left the table and cashed out", mySeat ?? undefined, "leave", () => leaveTable(session, id)).then(
-              (left) => left && !inHand && onBack(),
+            void click(inHand ? "Asked to leave after this hand" : "Asked to leave the table", mySeat ?? undefined, "leave", () => leaveTable(session, id)).then(
+              (left) => left && !inHand && setWantsOut(true),
             );
           },
           back: onBack,

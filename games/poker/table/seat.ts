@@ -283,3 +283,16 @@ export function handStory(last: Hand, name: (seat: number) => string, made: (sea
   if (winners.length === 1) return `${list(winners)} took the pot of ${pot}${same ? ` with ${same}` : ""}.`;
   return `${list(winners)} shared the pot of ${pot}${same ? `, ${same} each` : ""}.`;
 }
+
+/**
+ * What became of an account that asked to leave a table: "gone", it was paid and its seat given up; "leaving", it is
+ * still in its seat and leaves when the hand it is in is over; "seated", nothing shows of the request.
+ *
+ * "Leave the table" pressed between two hands is paid at once only if it reaches the contract before the next hand's
+ * first shuffle. If the button was quicker the seat is dealt into that hand and still owes it its part: a page that
+ * walks off then leaves the seat to run out of time, and with it its chips.
+ */
+export function leaveState(view: Pick<TableView, "players" | "leaving">, account: string): "gone" | "leaving" | "seated" {
+  const seat = view.players.indexOf(account);
+  return seat < 0 ? "gone" : view.leaving[seat] ? "leaving" : "seated";
+}
