@@ -9,8 +9,8 @@ the repository and shown as a trailer.
 
 | | |
 |---|---|
-| Play on mainnet | https://deedlords-club.vercel.app |
-| The same app on testnet, where everything is free | https://deedlords-club-testnet.vercel.app (also https://www.deedlords.xyz) |
+| Play on mainnet | https://www.deedlords.xyz (also https://deedlords-club.vercel.app) |
+| The same app on testnet, where everything is free | https://testnet.deedlords.xyz (also https://deedlords-club-testnet.vercel.app) |
 | Check the claims below against mainnet, with no key | `npm ci && npm run check:live` |
 | For judges and AI screeners | [JUDGES.md](JUDGES.md): three minutes in the browser, three commands in a terminal, and what each shows |
 | Tracks | `games`, `privacy`, `open`: [how each brief is answered](#tracks) |
