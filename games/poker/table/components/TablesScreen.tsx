@@ -44,7 +44,7 @@ import {
   viewResult,
 } from "../chain";
 import { FREE_TABLE_HANDS, RECORD_FEE } from "../contract";
-import { type TableResult, type TableView, betCall, duty, holeCards, movedOn, seated, tookEffect } from "../seat";
+import { type TableResult, type TableView, betCall, callsTime, clockAhead, clockMove, duty, holeCards, movedOn, seated, tookEffect } from "../seat";
 import { useHouse } from "../useHouse";
 import { useSeatAgent } from "../useSeatAgent";
 import { type Tables, useTables } from "../useTables";
@@ -686,6 +686,9 @@ function LiveTable({
   /** After a click the buttons stay off until the page has read the table that click made. */
   const [lockUntil, setLockUntil] = useState(0);
   const [now, setNow] = useState(() => Date.now());
+  /** How far this device's clock runs ahead of the chain's (seat.ts `clockAhead`); `null` until a clock was seen to restart. */
+  const [ahead, setAhead] = useState<number | null>(null);
+  const lastDeadline = useRef<string | null>(null);
   const seq = useRef(firstSeq);
   /**
    * A call the node did not answer. Whether it landed is read from the table: `took` says whether a table shows what
@@ -751,6 +754,11 @@ function LiveTable({
           seq.current = at.seq;
           setView(at);
           setTrouble("");
+          if (lastDeadline.current !== null && at.deadline !== lastDeadline.current && at.deadline !== "0") {
+            const seen = clockAhead(at, Date.now());
+            setAhead((before) => (before === null ? seen : Math.min(before, seen)));
+          }
+          lastDeadline.current = at.deadline;
           settle(at);
           if (refusedAt.current !== null && at.seq > refusedAt.current + 1) {
             refusedAt.current = null;
@@ -929,9 +937,11 @@ function LiveTable({
   // player who walked away does not hold the others. Tried again every few seconds while the table stays late (the
   // chain's clock may be a little behind this one's, and somebody else's call may have been quicker).
   const calledTime = useRef<{ seq: number; at: number } | null>(null);
+  /** The time by the chain's clock, as near as this page can tell. */
+  const clock = now - (ahead ?? 0);
   useEffect(() => {
-    if (!session || !view || mySeat === null || view.phase === "lobby" || !view.awaited.some((seat) => seat !== mySeat)) return;
-    if (now < Number(view.deadline) / 1_000_000 + TIME_GRACE_MS) return;
+    // Never while this seat's own part is owed: it would be ruled late with the others.
+    if (!session || !view || mySeat === null || !callsTime(view, mySeat, clock, TIME_GRACE_MS)) return;
     const last = calledTime.current;
     if (last && last.seq === view.seq && now - last.at < TIME_RETRY_MS) return;
     calledTime.current = { seq: view.seq, at: now };
@@ -939,7 +949,19 @@ function LiveTable({
       (outcome) => say("Time was called on the late seats", outcome.hash),
       () => undefined,
     );
-  }, [now, view, mySeat, session, id, say]);
+  }, [now, clock, view, mySeat, session, id, say]);
+
+  // The seat's own bet with its clock nearly out: the page checks for it, or folds to a bet (seat.ts `clockMove`).
+  // Once per bet, and again a few seconds later if that did not go through.
+  const clocked = useRef<{ bets: number; at: number } | null>(null);
+  useEffect(() => {
+    if (!view || mySeat === null || locked) return;
+    const move = clockMove(view, mySeat, clock);
+    const last = clocked.current;
+    if (!move || (last && last.bets === view.bets && now - last.at < CLOCK_RETRY_MS)) return;
+    clocked.current = { bets: view.bets, at: now };
+    void bet(move, undefined, move === "fold" ? "folds: its clock ran down" : "checks: its clock ran down");
+  }, [now, clock, view, mySeat, locked, bet]);
 
   // The NEAR for a seat that was asked for has arrived: the seat is taken.
   useEffect(() => {
@@ -974,7 +996,7 @@ function LiveTable({
         myCards={myCards}
         locked={locked || !view}
         doing={sending ? "Sending to the contract…" : doing}
-        now={now}
+        now={clock}
         problems={[refused, trouble].filter(Boolean).map((problem) => (/NotEnoughBalance/.test(problem) ? LACKS_NEAR : problem))}
         log={log}
         link={`${typeof window === "undefined" ? "" : window.location.origin}${ROUTE}?t=${id}`}
@@ -1084,6 +1106,8 @@ const UNSURE_MS = 8_000;
 /** A seated page calls time this long after a step's deadline, and again this often while the table stays late. */
 const TIME_GRACE_MS = 4_000;
 const TIME_RETRY_MS = 12_000;
+/** A bet the page made because the clock ran down is tried again this often while it has not gone through. */
+const CLOCK_RETRY_MS = 5_000;
 /** Below this a seat at a table with a stake cannot send its shuffle: the call must be able to reserve 0.26 NEAR. */
 const PLAY_RESERVE = (27n * NEAR) / 100n;
 /** What a seat that ran low is brought back up to. */

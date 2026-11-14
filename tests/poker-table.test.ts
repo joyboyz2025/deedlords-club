@@ -9,7 +9,23 @@ import { winChance } from "../games/poker/agent/hands.ts";
 import { keyProof, newKeys, openDeck, tableKey } from "../games/poker/crypto.ts";
 import { shuffle } from "../games/poker/shuffle.ts";
 import { advise, briefFor, byTheBook } from "../games/poker/table/decide.ts";
-import { type SeatStore, type TableView, betCall, betOptions, contenders, duty, fromBase64, holeCards, nextDealt, toBase64, tookEffect } from "../games/poker/table/seat.ts";
+import {
+  type SeatStore,
+  type TableView,
+  betCall,
+  betOptions,
+  callsTime,
+  clockAhead,
+  clockMarginMs,
+  clockMove,
+  contenders,
+  duty,
+  fromBase64,
+  holeCards,
+  nextDealt,
+  toBase64,
+  tookEffect,
+} from "../games/poker/table/seat.ts";
 
 const card = (name: string): number => "23456789TJQKA".indexOf(name[0]) + 13 * "cdhs".indexOf(name[1]);
 const cards = (names: string): number[] => names.split(" ").map(card);
@@ -256,4 +272,45 @@ test("a call the node gave no receipt for landed only if the table shows what it
   assert.equal(tookEffect("start", "a.testnet", 0, table({ phase: "lobby" }), table({ phase: "shuffle", seq: 21 })), true);
   // Whatever it was, a table that is gone tells nothing about a bet or a share.
   assert.equal(tookEffect("act", "b.testnet", 1, table(), null), false);
+});
+
+test("with its clock nearly out a seat's page checks for it, or folds to a bet, rather than let it be ruled late", () => {
+  // The contract cannot fold a seat that lets its bet run out before the river: the hand is called off and the seat
+  // loses all it has at the table (contracts/poker-table `timeout`). The page makes the bet a clock makes anywhere.
+  const at = 1_800_000_000_000;
+  const until = (ms: number) => String(BigInt(at + ms) * 1_000_000n);
+  // A minute's clock (a free table): the page moves with twelve seconds left; half a minute's: with seven and a half.
+  assert.equal(clockMarginMs(table({ turnSeconds: 60 })), 12_000);
+  assert.equal(clockMarginMs(table({ turnSeconds: 30 })), 7_500);
+  // Seat 1 owes the big blind: time enough, then a fold.
+  assert.equal(clockMove(table({ turnSeconds: 60, deadline: until(40_000) }), 1, at), null);
+  assert.equal(clockMove(table({ turnSeconds: 60, deadline: until(12_000) }), 1, at), "fold");
+  // Nothing owed (the big blind after a call round): a check, never a fold.
+  const free = table({ turnSeconds: 60, deadline: until(5_000), toAct: 0, awaited: [0], bet: [2, 2, 0, 2, 2, 0], put: [2, 2, 0, 2, 2, 0] });
+  assert.equal(clockMove(free, 0, at), "call");
+  // Not this seat's bet, or not a bet at all: nothing.
+  assert.equal(clockMove(free, 1, at), null);
+  assert.equal(clockMove(table({ phase: "open", street: 1, turnSeconds: 60, deadline: until(1_000), awaited: [1] }), 1, at), null);
+  // Past the deadline it is still tried: time may not have been called yet.
+  assert.equal(clockMove(table({ turnSeconds: 60, deadline: until(-3_000) }), 1, at), "fold");
+
+  // A device whose clock is 50 seconds ahead reads a fresh minute as ten seconds: seen when the clock restarts, the
+  // 50 seconds are taken off its time, and the seat is not folded at the start of its turn.
+  const fresh = table({ turnSeconds: 60, deadline: until(60_000) });
+  const wrong = at + 50_000;
+  assert.equal(clockMove(fresh, 1, wrong), "fold");
+  assert.equal(clockAhead(fresh, wrong), 50_000);
+  assert.equal(clockMove(fresh, 1, wrong - clockAhead(fresh, wrong)), null);
+});
+
+test("a seat's page calls time on the others only when its own part is in", () => {
+  const at = 1_800_000_000_000;
+  const until = (ms: number) => String(BigInt(at + ms) * 1_000_000n);
+  const flop = table({ phase: "open", street: 1, awaited: [0, 1], deadline: until(-5_000) });
+  // Seats 0 and 1 both owe their shares: whichever calls time is ruled late with the other, and loses its chips too.
+  assert.equal(callsTime(flop, 0, at, 4_000), false);
+  assert.equal(callsTime(flop, 3, at, 4_000), true);
+  // Not before the deadline and its grace; never in the lobby.
+  assert.equal(callsTime({ ...flop, deadline: until(-3_000) }, 3, at, 4_000), false);
+  assert.equal(callsTime(table({ phase: "lobby", awaited: [], deadline: "0" }), 3, at, 4_000), false);
 });

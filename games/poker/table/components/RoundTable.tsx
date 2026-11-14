@@ -13,7 +13,7 @@ import { lookFromSeat } from "../../../ma-soi/look";
 import { CardPlace, PlayingCard } from "../../components/Cards";
 import { Ledger, type LogLine } from "../../components/TableView";
 import type { Advice } from "../../agent/decide";
-import { type TableView, betOptions, nextDealt, seated } from "../seat";
+import { type TableView, betOptions, clockMarginMs, nextDealt, seated } from "../seat";
 
 const FACE_PX = 112;
 const seatColour = (seat: number) => ({ "--seat": `var(--seat-${seat})` }) as CSSProperties;
@@ -614,7 +614,9 @@ function ActionStub({
   const options = toAct ? betOptions(view, mySeat) : null;
   const raise = options?.raise ?? null;
   const amount = raise ? Math.min(raise.max, Math.max(raise.min, Math.round(Number(raiseTo)) || raise.min)) : 0;
-  const late = !inLobby && left < 0 && view.awaited.some((seat) => seat !== mySeat);
+  // Not while this seat's own part is owed: time called then rules it late with the others.
+  const late = !inLobby && left < 0 && view.awaited.some((seat) => seat !== mySeat) && (mySeat === null || !view.awaited.includes(mySeat));
+  const clockSeconds = Math.round(clockMarginMs(view) / 1_000);
   const isHost = you !== null && view.host === you;
   // A table with a stake of nothing: its host is the server, which starts it when a seated player asks.
   const noStake = BigInt(view.stake) === 0n;
@@ -784,6 +786,11 @@ function ActionStub({
               All in {raise.max}
             </button>
           </div>
+        )}
+        {left <= clockSeconds + 10 && (
+          <p className="pk-fine pk-move__clock" role="status">
+            With {clockSeconds} seconds left this page {options.owed > 0 ? "folds" : "checks"} for you, so that your seat is not ruled late.
+          </p>
         )}
       </div>
     );

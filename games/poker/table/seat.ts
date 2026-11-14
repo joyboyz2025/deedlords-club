@@ -184,3 +184,36 @@ export function betOptions(view: TableView, seat: number): { owed: number; raise
   const answering = contenders(view).some((other) => other !== seat && view.chips[other] > 0);
   return { owed: Math.min(view.chips[seat], top - view.bet[seat]), raise: all > top && answering ? { min: Math.min(top + 2, all), max: all } : null };
 }
+
+/**
+ * How long before its deadline a seat's own bet is made for it (`clockMove`), in milliseconds: room for the bet to be
+ * signed, sent and taken into a block, and at a free table to wait its turn behind the sponsor's other transactions.
+ */
+export const clockMarginMs = (view: Pick<TableView, "turnSeconds">): number => Math.min(12_000, view.turnSeconds * 250);
+
+/**
+ * The bet a seat's page makes for it when its clock is nearly out: a check when nothing is owed, a fold when a bet
+ * is, as the clock does at any online table. `null`: not this seat's bet, or time enough. Left to run out, the bet
+ * costs far more than a fold: before the river the contract cannot fold the seat (a fold carries the seat's shares
+ * for the board), so the hand is called off and the seat loses all it has at the table.
+ */
+export function clockMove(view: TableView, seat: number, nowMs: number): "call" | "fold" | null {
+  if (view.phase !== "bet" || view.toAct !== seat) return null;
+  if (Number(view.deadline) / 1_000_000 - nowMs > clockMarginMs(view)) return null;
+  return betOptions(view, seat).owed > 0 ? "fold" : "call";
+}
+
+/**
+ * Read when a step's clock has just been restarted (the contract sets the deadline a whole `turnSeconds` ahead): how
+ * far this device's clock runs ahead of the chain's, in milliseconds, plus the moment the new table took to get here.
+ * The least of several readings is the nearest. Taken off the device's time, a countdown and `clockMove` no longer
+ * depend on a clock that is set wrong: one a minute ahead would otherwise fold every hand at once.
+ */
+export const clockAhead = (view: Pick<TableView, "turnSeconds" | "deadline">, nowMs: number): number => view.turnSeconds * 1_000 - (Number(view.deadline) / 1_000_000 - nowMs);
+
+/**
+ * Whether the page of `seat` calls time by itself: the deadline passed `graceMs` ago and the table waits for others,
+ * not for this seat. Time called while its own part is still owed would rule this seat late with them.
+ */
+export const callsTime = (view: TableView, seat: number, nowMs: number, graceMs: number): boolean =>
+  view.phase !== "lobby" && view.awaited.length > 0 && !view.awaited.includes(seat) && nowMs >= Number(view.deadline) / 1_000_000 + graceMs;

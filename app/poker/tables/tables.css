@@ -839,3 +839,9 @@
   font-size: 16px;
   font-weight: 600;
 }
+
+/* Under the bet buttons, when the seat's own clock is nearly out: what the page will do for it. */
+.pk-move__clock {
+  grid-column: 1 / -1;
+  margin: 0;
+}
