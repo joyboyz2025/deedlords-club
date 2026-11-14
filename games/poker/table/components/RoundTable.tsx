@@ -8,6 +8,7 @@
 // what it shows comes from a table view, every click goes back to whoever feeds it (the live table or the demo).
 
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import { Bot, Copy, Seat as SeatIcon } from "@/components/landing/icons";
 import type { Character } from "../../../chibi/chain";
 import { useLookPictures } from "../../../chibi/useChibi";
@@ -474,6 +475,14 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
               )}
               {inLobby && !reading ? (
                 <div className="pt-start">
+                  {/* While seats are free the table's own link lies on the cloth as a code: a friend beside the
+                      player points a phone at it and is at the table. */}
+                  {mine && link && view.players.includes(null) && (
+                    <figure className="pt-scan" title={link}>
+                      <QRCodeSVG value={link} size={160} marginSize={0} bgColor="transparent" fgColor="#2a1208" level="M" />
+                      <figcaption>Scan to sit</figcaption>
+                    </figure>
+                  )}
                   {mine && canStart && filled >= 2 ? (
                     <button
                       type="button"
@@ -488,7 +497,7 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
                       Start · {filled} seats
                     </button>
                   ) : (
-                    <p>{!mine ? "Tap a free seat to sit down." : canStart ? "Invite a friend, or tap a free seat to add an AI." : "Waiting for the host to start."}</p>
+                    <p>{!mine ? "Tap a free seat to sit down." : canStart ? "Or tap a free seat to add an AI." : "Waiting for the host to start."}</p>
                   )}
                 </div>
               ) : progress ? (
@@ -568,6 +577,22 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
               </span>
               {doing && doing !== "shuffle" && <span role="status">{doing}</span>}
             </p>
+            {link && view.players.includes(null) && (
+              <div className="pk-ticket">
+                <section className="pk-stub pt-invite" aria-label="Invite to this table">
+                  <figure className="pt-scan" title={link}>
+                    <QRCodeSVG value={link} size={160} marginSize={0} bgColor="transparent" fgColor="#2a1208" level="M" />
+                  </figure>
+                  <div>
+                    <h2 className="pk-stub__title">A seat is free</h2>
+                    <p className="pk-small">Scan the code with a phone, or send the link. {inLobby ? "" : "Whoever sits down is dealt in from the next hand."}</p>
+                    <p className="pk-invite" title={link}>
+                      {link}
+                    </p>
+                  </div>
+                </section>
+              </div>
+            )}
             {house && (house.canAdd || house.seating) && (
               <div className="pk-ticket">
                 <section className="pk-stub" aria-label="House seats">

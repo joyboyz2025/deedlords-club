@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import { Arrow, Bot, Copy, Seat } from "@/components/landing/icons";
 import { chainClient } from "@/lib/chain/shared";
 import { CHAIN } from "@/lib/chain/config";
@@ -447,6 +448,8 @@ function Lobby({
               {meta.seats.map((seat) => {
                 const empty = seat.backer === null;
                 const mine = !empty && seat.backer === accountId;
+                // The first open seat holds the invitation as a code, for whoever is seated to show a friend.
+                const scan = empty && seated && Boolean(invitation) && seat.seat === meta.seats.find((one) => one.backer === null)?.seat;
                 return (
                   <li
                     key={seat.seat}
@@ -456,11 +459,21 @@ function Lobby({
                     style={{ "--seat": TOKEN_COLORS[seat.seat] } as CSSProperties}
                   >
                     <span className="fd-guest__figure">
-                      {empty ? <i className="fd-guest__ghost" aria-hidden="true" /> : figures[seat.seat] ? <img src={figures[seat.seat]!} alt="" /> : <b>{seat.seat + 1}</b>}
+                      {scan ? (
+                        <span className="fd-guest__scan" title={invitation}>
+                          <QRCodeSVG value={invitation} size={160} marginSize={0} bgColor="transparent" fgColor="#2a1208" level="M" />
+                        </span>
+                      ) : empty ? (
+                        <i className="fd-guest__ghost" aria-hidden="true" />
+                      ) : figures[seat.seat] ? (
+                        <img src={figures[seat.seat]!} alt="" />
+                      ) : (
+                        <b>{seat.seat + 1}</b>
+                      )}
                     </span>
                     <p>
                       <small>Seat {seat.seat + 1}</small>
-                      <strong>{empty ? "Open seat" : mine ? `${names[seat.seat]} (you)` : names[seat.seat]}</strong>
+                      <strong>{scan ? "Scan to sit" : empty ? "Open seat" : mine ? `${names[seat.seat]} (you)` : names[seat.seat]}</strong>
                     </p>
                     <Flap text={empty ? "WAITING" : seat.house ? "THE HOUSE" : sponsored && seat.backer === sponsor ? "AI AGENT" : seat.backer === host ? "HOST" : "SEATED"} />
                   </li>
@@ -622,9 +635,21 @@ function Lobby({
                 <button type="button" className="fd-go" onClick={share}>
                   <Copy size={18} /> {copied ? "Link copied: send it to a friend" : open === 1 ? "Invite a friend" : "Invite friends"}
                 </button>
-                <p className="fd-invite" title={invitation}>
-                  {invitation}
-                </p>
+                {/* The boarding pass carries its own code: a friend beside the player scans it and is at the gate. */}
+                <div className="fd-scan">
+                  {invitation && (
+                    <span className="fd-scan__code" aria-hidden="true">
+                      <QRCodeSVG value={invitation} size={160} marginSize={0} bgColor="transparent" fgColor="#2a1208" level="M" />
+                    </span>
+                  )}
+                  <p>
+                    <b>Scan to board</b>
+                    <small>Point a phone at the code, or send the link.</small>
+                    <span className="fd-invite" title={invitation}>
+                      {invitation}
+                    </span>
+                  </p>
+                </div>
                 {mayAddAgent && (
                   <button type="button" className="fd-pill" disabled={adding} onClick={addAgent}>
                     <Bot size={16} /> {adding ? "The AI is taking a seat…" : "Add an AI to a free seat"}

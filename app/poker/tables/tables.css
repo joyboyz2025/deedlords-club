@@ -1404,3 +1404,55 @@
     display: none;
   }
 }
+
+/* The table's link as a code: a slip of cream paper lying on the cloth while seats are free. */
+.pt-scan {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  width: clamp(92px, 15cqw, 136px);
+  margin: 0;
+  padding: 8px 8px 6px;
+  border-radius: 10px;
+  background: var(--field);
+  box-shadow:
+    0 1px 0 rgb(10 2 1 / 30%),
+    0 6px 12px rgb(10 2 1 / 45%);
+  color: var(--ink);
+}
+
+.pt-scan svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.pt-scan figcaption {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* The same code among the table's details, beside the link itself. */
+.pt-invite {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+}
+
+.pt-invite .pt-scan {
+  width: 112px;
+  padding: 8px;
+  border: 1.5px solid rgb(42 18 8 / 30%);
+  box-shadow: none;
+}
+
+@container (max-width: 560px) {
+  .pt-scan {
+    width: clamp(88px, 27cqw, 112px);
+  }
+}
