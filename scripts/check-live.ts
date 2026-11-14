@@ -54,6 +54,8 @@ type Tx = {
 // What is found is kept and printed at the end: a public node or NEAR AI's report may fail to answer once, and then
 // everything is read a second time before anything is called a failure.
 let failed = 0;
+/** Checks that could be neither passed nor failed today (marked `!`): see `Check.unlisted`. */
+let unconfirmed = 0;
 let printed: string[] = [];
 const say = (text: string) => printed.push(text);
 const line = (ok: boolean, what: string, found = "") => {
@@ -163,7 +165,10 @@ async function aiTurn(one: { hash: string; signer: string }) {
     answered ? JSON.stringify(answered.plan) : "no plan in the response",
   );
   const attested = await checkAttestation(proof);
-  line(attested.ok, attested.label, attested.detail);
+  if (attested.unlisted) {
+    unconfirmed++;
+    say(`  ! ${attested.label}: not confirmed today\n      ${attested.detail}`);
+  } else line(attested.ok, attested.label, attested.detail);
   say(`      ${link(one.hash)}`);
 }
 
@@ -197,6 +202,7 @@ const steps: [string, () => Promise<void>][] = [
 ];
 for (let reading = 0; reading < 2; reading++) {
   failed = 0;
+  unconfirmed = 0;
   printed = [];
   for (const [name, step] of steps) {
     try {
@@ -205,9 +211,10 @@ for (let reading = 0; reading < 2; reading++) {
       line(false, `${name}: could not be read`, error instanceof Error ? error.message : String(error));
     }
   }
-  if (failed === 0) break;
+  if (failed === 0 && unconfirmed === 0) break;
   if (reading === 0) await new Promise((done) => setTimeout(done, 4_000));
 }
 console.log(printed.join("\n"));
-console.log(failed === 0 ? "\nEvery check passed." : `\n${failed} check${failed === 1 ? "" : "s"} did not pass.`);
+const open = unconfirmed > 0 ? ` ${unconfirmed} could not be confirmed today (marked !).` : "";
+console.log(failed === 0 ? (unconfirmed > 0 ? `\nNo check failed.${open}` : "\nEvery check passed.") : `\n${failed} check${failed === 1 ? "" : "s"} did not pass.${open}`);
 process.exit(failed === 0 ? 0 : 1);

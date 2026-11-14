@@ -197,7 +197,7 @@ const scenes = {
       await page.caption("All of it is <b>live on NEAR mainnet</b>. Real transactions, with what each one cost.");
       await sleep(2600);
       await page.hover(".lp-ledger--receipts li a", 900);
-      await page.caption("A real shuffle: 52 encrypted cards and their proof in <b>one transaction</b>, checked by the contract for about two cents.");
+      await page.caption("A real shuffle: 52 encrypted cards and their proof in <b>one transaction</b>, checked by the contract for 0.021 NEAR.");
       await sleep(4600);
       await page.cut(async () => {
         await page.goto("about:blank", 300);

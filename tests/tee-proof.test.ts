@@ -121,4 +121,9 @@ test("a signer that a second report names is attested; one that no report names 
   const refused = await checkAttestation(proof, never.get, 3, 1);
   assert.deepEqual([refused.ok, never.asked()], [false, 3]);
   assert.match(refused.detail, /not in today's report \(asked 3 times\)/);
+  // A report that was read and names other signers leaves the move unconfirmed; a report that could not be read is a plain failure.
+  assert.equal(refused.unlisted, true);
+  const down = (async () => new Response("", { status: 503 })) as unknown as typeof fetch;
+  const unread = await checkAttestation(proof, down, 2, 1);
+  assert.deepEqual([unread.ok, unread.unlisted], [false, undefined]);
 });

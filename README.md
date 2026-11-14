@@ -1,12 +1,20 @@
 # Deedlords Club
 
-Table games for real stakes that are **fully on chain**: the rules, the dice, the deck, the pot and the whole state of
-every game live in NEAR contracts. There is no game server. A property-trading board game and a Texas Hold'em table
-with no dealer are live on **NEAR mainnet**; an auto-battler is in the repository and shown as a trailer.
+Poker with no dealer and a property board game with no game server, **fully on chain**, for real stakes on **NEAR
+mainnet**. NEAR contracts are the dealer, the dice, the referee and the bank: the rules, the deck, the pot and the
+whole state of every game live in them, and every move is a transaction. At the poker table every seat shuffles the
+deck under its own key and proves the shuffle to the contract in zero knowledge, so nobody ever holds the deck: not a
+server, not an enclave, not us. A guest plays in about ten seconds with no wallet and no NEAR. An auto-battler is in
+the repository and shown as a trailer.
 
-- Live on mainnet: https://deedlords-club.vercel.app
-- The same app on testnet, where everything is free: https://deedlords-club-testnet.vercel.app
-- Built for NEAR HACKATHON, November 2026.
+| | |
+|---|---|
+| Play on mainnet | https://deedlords-club.vercel.app |
+| The same app on testnet, where everything is free | https://deedlords-club-testnet.vercel.app |
+| Check the claims below against mainnet, with no key | `npm ci && npm run check:live` |
+| For judges and AI screeners | [JUDGES.md](JUDGES.md): three minutes in the browser, three commands in a terminal, and what each shows |
+| Tracks | `games`, `privacy`, `open`: [how each brief is answered](#tracks) |
+| Built | for NEAR HACKATHON, November 2026. What predates it: [PROVENANCE.md](PROVENANCE.md) |
 
 ## The problem, and what this does about it
 
@@ -34,7 +42,7 @@ npm ci
 npm run check:live
 ```
 
-It prints sixteen checks in five groups and exits 0 when all pass (`scripts/check-live.ts`):
+It prints seventeen checks in five groups and exits 0 when all pass (`scripts/check-live.ts`):
 
 1. the three contracts are deployed on mainnet, with the code hashes listed below;
 2. a real poker `shuffle`: 22,555 bytes of deck and proof in the call, accepted by the contract, 221 Tgas;
@@ -67,6 +75,38 @@ Real transactions to open without playing:
 | A guest's move relayed by the sponsor (4.3 Tgas, 0.0004 NEAR paid by the sponsor) | [`2jesymTA…`](https://nearblocks.io/txns/2jesymTABFtwPkeVX29Sc6DFhFvWQX9Rq2jyEAhTcLUx) |
 | An AI move signed inside a TEE (3.9 Tgas, 0.0004 NEAR) | [`2af7dAbW…`](https://nearblocks.io/txns/2af7dAbW4rBsDSKKhXAdyTXB35FrxcoXttPiE2swuXEc) |
 | The last move of a staked match: the contract pays both seats in the same transaction | [`Ci1p7yj2…`](https://nearblocks.io/txns/Ci1p7yj2tqF3LXhMNrEjAYQbyuk416u6zcNPVXi3TADJ) |
+
+## Tracks
+
+Each row quotes the track's brief. A "no" is said here first, because a reader finds it anyway.
+
+### `games`: Games With Real Economies
+
+| The brief says | Here | Check |
+|---|---|---|
+| "NPCs with wallets" | Every AI seat is a NEAR account that pays its own stake and wins or loses it like any player. At poker the house seats sit at 0.1 NEAR tables with their own NEAR | `pokerhouse.deedlords.near` and `pokerhouse2.deedlords.near` on the explorer |
+| "player-owned markets" | Not built. Players own their character and its pieces (NEP-171) and stake their own seats; there is no market yet. Roadmap 4 and 5 | |
+| "economies that evolve without a dev patch" | Inside a match, yes: who owns what, every rent, every mortgage and every bankruptcy is decided by the contract's rules and the players' moves, and a match keeps the fee and the rules it was opened with. Between matches nothing carries over yet | `get_match` on `game.deedlords.near` |
+| "Judged on the game loop, not the token" | There is no token. Every few seconds: a bet, or a roll and a purchase. Every few minutes: a hand or a match is settled and paid by the contract. Every session: a character, an agent with instructions of your own, a stake | steps 1 to 5 above |
+| "bonus if players never notice the chain" | A guest has no wallet, no seed phrase and no NEAR, and no pop-up opens for a move. About 2 s a move, measured on testnet | steps 1 to 3; the guest's relayed move in the table of transactions |
+| Hints: agent NPCs, social login, NEAR Intents, NEP-245 | Agent NPCs: yes, on NEAR AI Cloud. Social login: Google through NEAR Auth is built and runs on localhost only; the public sites offer a guest account or one signature of an EVM wallet. NEAR Intents: a live 1Click quote for a missing stake (no real deposit completed yet). NEP-245: not used; the tokens are NEP-171 | "Known limits" |
+
+### `privacy`: Privacy & Private AI
+
+| The brief says | Here | Check |
+|---|---|---|
+| "confidential computation" | A deck of 52 cards stays hidden on a public chain with no trusted party: each seat re-encrypts and shuffles it under its own key and proves the shuffle in zero knowledge, and the contract is the verifier. A card opens only when every seat gives a proved share of the key | `contracts/poker/src/shuffle.rs`; the shuffle transaction above; `cargo test --manifest-path contracts/poker/Cargo.toml` |
+| "AI that protects sensitive data" | With the owner's own NEAR AI key the browser asks the enclave directly: the owner's instructions and, at poker, the seat's two cards go there and nowhere else. On chain there is only the hash of the request | `lib/agentKey.ts`, `games/poker/table/useSeatAgent.ts` |
+| A "Verified" panel that lists what was checked, with a fresh nonce | `/verify`: five checks computed in the browser from the transaction and NEAR AI's attestation report, asked for with a fresh random nonce | step 4 above; `lib/teeProof.ts`; `tests/tee-proof.test.ts` |
+| "Keep nothing server-side" | The server keeps no game state and stores no request or answer. An agent on the server's own key does send its request through this site's server | "Fully on chain: what that means here" |
+| Not done | The Intel and NVIDIA quote is not parsed here (the page links NEAR AI's Verification Center). The contract does not check the enclave's signature: the browser and `check:live` do. Poker bets by an agent carry no proof on chain yet | |
+
+### `open`: Open Innovation
+
+One game account from any wallet. One signature of an EVM wallet gives the same NEAR game account every time
+(`lib/chain/evmKey.ts`); a guest's account is a key made in the browser; a sponsor pays the gas of free tables
+(NEP-366); a stake the account cannot pay is quoted in USDC or ETH from Base, Arbitrum or Ethereum through NEAR
+Intents (`lib/chain/oneclick.ts`). The player's own chain is where they start, not something they have to leave first.
 
 ## The games
 
@@ -101,6 +141,13 @@ contracts directly, and every finished one stays readable.
 ## What NEAR does here
 
 ### 1. Public by default, private where it matters
+
+What is new here and what is not. Poker with no dealer is an old idea (Shamir, Rivest and Adleman, 1979), and shuffles
+proved in zero knowledge have been verified by contracts on other chains before, with SNARK circuits (zkShuffle on
+Ethereum, 2023, is the best known). What this repository adds: the verifier of a Terelius-Wikström shuffle written
+directly on NEAR's `alt_bn128` host functions, with no circuit and no trusted setup, checked in one transaction of
+221 Tgas; tables of two to nine seats with clocks, side pots and timeouts; live on mainnet; and free play for a guest
+who holds nothing. We know of no other verifiable shuffle inside a NEAR contract.
 
 - Cards are ElGamal ciphertexts over BN254 G1 under the sum of the keys of the seats in the hand. Each seat proves it
   knows its key when it sits down (Schnorr), so the table key belongs to nobody alone.
@@ -276,6 +323,9 @@ no testnet, so on the testnet site the same form shows a real price and nothing 
 - **Google sign-in** runs on localhost only, as said above.
 - **The sponsor's balance is finite.** A free poker hand for two seats costs it about 0.07 NEAR, nearly all for
   checking shuffles; when it runs low the page says so and staked tables keep working.
+- **A TEE proof is confirmed against NEAR AI's report of the day.** When NEAR AI restarts a model's enclave its key
+  changes, and a move made before the restart can no longer be confirmed: `/verify` and `npm run check:live` then mark
+  that one check `!` (not confirmed today) and the other four still hold.
 - **Arena** is not playable on the site.
 - **Latency on mainnet** was not measured separately; the figures above are from testnet.
 - **The contracts can still be upgraded** by `deedlords.near` (a full-access key exists). An upgrade keeps state:
@@ -286,9 +336,10 @@ no testnet, so on the testnet site the same form shows a real price and nothing 
 - **Baseline.** The board game's rules, its 3D scene and the chibi characters were written by the same author for an
   earlier party-game platform and copied into this repository's first commit (`6d3275f`, 2026-11-10) together with
   the first changes made for the hackathon. [PROVENANCE.md](PROVENANCE.md) lists every copied file, with hashes and
-  dates. That earlier game had a server as its referee and no chain.
+  dates. That earlier game had a server as its referee and no chain. Its room server is still in the repository
+  (`server/`, `worker/`, `wrangler.jsonc`, the route `app/co-ty-phu/`); nothing on chain uses it.
 - **Written during the hackathon** (2026-11-10 to 2026-11-14, everything after that commit:
-  `git log 6d3275f..hackathon-submission`): the Rust port of the rules, all NEAR contracts, the poker cryptography
+  `git log pre-hackathon..hackathon-submission`; the tag `pre-hackathon` is that commit): the Rust port of the rules, all NEAR contracts, the poker cryptography
   in Rust and TypeScript, the chain client, session keys, the relayer and free play, the agents and their TEE proofs,
   1Click, the characters as NFTs, Arena, and every page except the board's own screen.
 - **Libraries.** Web: Next.js 16, React 19, three.js, `@noble/curves` and `@noble/hashes` (BN254, secp256k1, SHA-2,
@@ -330,10 +381,15 @@ contracts/poker-table/  Poker for 2 to 9 seats
 contracts/chibi/        Characters and items (NEP-171)
 contracts/arena*/       Arena rules and contract
 contracts/sandbox/      Local chain tests, deploy scripts for testnet and mainnet
+server/ worker/         The board game as it was before the hackathon, refereed by a room server (with wrangler.jsonc
+                        and the route app/co-ty-phu/). Kept as the baseline. Nothing under /play, /poker or the
+                        contracts uses it
 scripts/check-live.ts   npm run check:live
 tests/                  245 unit tests
 docs/ENGINE-RULES.md    The exact contract between the TypeScript and Rust rules engines
 PROVENANCE.md           What predates the hackathon, what was written during it, how art was generated
+PRODUCT.md DESIGN.md    Design briefs as they were written during the week (also .impeccable/, docs/design/). Where
+                        they differ from this README, for instance "testnet only", the README is current
 ```
 
 ## License

@@ -82,12 +82,14 @@ export function VerifyTurn() {
     : [];
   const all = attested ? [...checks, attested] : checks;
   const passed = all.length > 0 && all.every((check) => check.ok);
+  // Every check on the proof holds and NEAR AI's report of today does not list the signer: not confirmed, not refuted.
+  const unlisted = Boolean(attested?.unlisted) && checks.every((check) => check.ok);
 
   return (
     <Hall page="play">
       <div className="fd-hall">
         <section className="fd-wall">
-          <h1 className="fd-line">{proof ? (attested ? (passed ? "Signed in a TEE, and it holds." : "This proof does not hold.") : "Checking…") : "Verify an AI move."}</h1>
+          <h1 className="fd-line">{proof ? (attested ? (passed ? "Signed in a TEE, and it holds." : unlisted ? "Signed, but its enclave cannot be confirmed today." : "This proof does not hold.") : "Checking…") : "Verify an AI move."}</h1>
           <p className="fd-lede">
             An AI agent at a Deedlords table writes a plan for its turn. When the plan comes from a model NEAR AI runs in a Trusted Execution Environment, the model&rsquo;s enclave
             signs its answer, and the turn&rsquo;s transaction carries that signature. Everything below is checked in your browser, from the transaction and NEAR AI&rsquo;s public
@@ -102,7 +104,7 @@ export function VerifyTurn() {
               <ul className="fd-verify">
                 {all.map((check) => (
                   <li key={check.label} data-ok={check.ok || undefined}>
-                    <b aria-hidden="true">{check.ok ? "✓" : "✗"}</b>
+                    <b aria-hidden="true">{check.ok ? "✓" : check.unlisted ? "!" : "✗"}</b>
                     <span>
                       {check.label}
                       <small>{check.detail}</small>

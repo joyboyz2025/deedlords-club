@@ -143,7 +143,8 @@ export function proofAnswer(proof: TeeProof): { model: string | null; content: s
   }
 }
 
-export type Check = { label: string; ok: boolean; detail: string };
+/** `unlisted`: NEAR AI's report was read and does not name the signer. That is not confirmed today, which is less than refuted. */
+export type Check = { label: string; ok: boolean; detail: string; unlisted?: boolean };
 
 /** What can be checked from the proof alone: the bytes, the signature, the model named. */
 export function checkProof(proof: TeeProof): Check[] {
@@ -195,7 +196,13 @@ export async function checkAttestation(proof: TeeProof, get: typeof fetch = fetc
           ? (report.model_attestations ?? []).some((one) => one.signing_address?.toLowerCase() === proof.signer)
           : report.gateway_attestation?.signing_address?.toLowerCase() === proof.signer;
       if (named) return { label, ok: true, detail: "the signer is in today's report, next to its Intel TDX and NVIDIA evidence" };
-      last = { label, ok: false, detail: `the signer is not in today's report (asked ${attempt + 1} ${attempt === 0 ? "time" : "times"})` };
+      // An enclave gets a new key when it is restarted, so a move made before a restart is no longer in the report.
+      last = {
+        label,
+        ok: false,
+        unlisted: true,
+        detail: `the signer is not in today's report (asked ${attempt + 1} ${attempt === 0 ? "time" : "times"}). An enclave gets a new key when NEAR AI restarts it, so a move made before a restart cannot be confirmed afterwards; the checks above do not depend on the report`,
+      };
     } catch {
       last = { label, ok: false, detail: "NEAR AI did not answer" };
     }

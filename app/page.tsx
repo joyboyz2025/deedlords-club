@@ -22,7 +22,7 @@ import { alfaSlab, beVietnam } from "@/lib/fonts";
 import "./landing.css";
 
 export const metadata: Metadata = {
-  title: "Deedlords Club: no dealer, no server, no wallet pop-ups",
+  title: "Deedlords Club: no dealer, no game server, no wallet pop-ups",
   description:
     "Table games for real stakes, fully on chain. NEAR contracts roll the dice, hold a deck nobody can read and pay the pot. Play free as a guest in seconds, or stake NEAR from any chain.",
 };
@@ -95,7 +95,7 @@ export default function LandingPage() {
               Deedlords Club
             </h1>
             <div>
-              <p className="lp-line">No dealer. No server. No wallet pop-ups.</p>
+              <p className="lp-line">No dealer. No game server. No wallet pop-ups.</p>
               <p className="lp-copy">
                 Table games for real stakes, fully on chain. NEAR contracts roll the dice, hold a deck nobody can read and pay the pot, and every move is a transaction anyone can
                 open. Play free as a guest in seconds. Pick a gate.
@@ -571,7 +571,7 @@ export default function LandingPage() {
             </li>
           </ul>
           <p className="lp-judges__cli">
-            Prefer a terminal? <code>npm ci &amp;&amp; npm run check:live</code> reads mainnet and runs sixteen checks without a key.{" "}
+            Prefer a terminal? <code>npm ci &amp;&amp; npm run check:live</code> reads mainnet and runs seventeen checks without a key.{" "}
             <a href={REPO} target="_blank" rel="noreferrer">
               The repository
             </a>
