@@ -81,7 +81,8 @@ const scenes = {
   /**
    * A free room of four: the filmed guest opens it, two more guests join by its link from their own browsers, an AI
    * agent on a NEAR AI model takes the last seat, and the host starts. Leaves the page at the board, the game begun.
-   * Taken again (up to three times) when the host is dealt only a Takeover, which can almost never be played.
+   * Taken again (up to four times) until the host is dealt "Pick your steps", the ticket that shows best on film; the
+   * fourth take is kept with whatever ticket it has.
    */
   async room(page) {
     await page.style(BOARD_ROOM);
@@ -94,7 +95,7 @@ const scenes = {
       await friend.until(`window.__demo.find({ text: "^Play vs" })`, 60_000, "a friend's desk");
       table.friends.push(friend);
     }
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; attempt <= 4; attempt++) {
       await page.goto(`${PLAY}/play`, 3000);
       await page.take(dir, "2-room", async () => {
         await page.caption(`No wallet, no seed phrase, no NEAR: a guest gets a <b>NEAR account</b> in one tap. <span style="opacity:.7">(${NET} site)</span>`, "C3");
@@ -157,8 +158,8 @@ const scenes = {
       const held = match.game.tickets?.held[match.meta.seats[table.seat].player] ?? [];
       table.ticket = ["steps", "festival", "waiver"].find((ticket) => held.includes(ticket)) ?? null;
       console.log(`room ${table.id}: the host sits in seat ${table.seat + 1} and holds ${JSON.stringify(held)}`);
-      if (table.ticket || attempt === 3) break;
-      console.log("only a Takeover in hand: the room is taken again");
+      if (table.ticket === "steps" || attempt === 4) break;
+      console.log("no Pick your steps in hand: the room is taken again");
     }
   },
 
@@ -172,7 +173,7 @@ const scenes = {
       void (async () => {
         await friend.evaluate("window.confirm = () => false").catch(() => undefined);
         while (table.playing) {
-          for (const spec of [BUY, ROLL, END]) {
+          for (const spec of [BUY, BUILD, ROLL, END]) {
             if (await has(friend, spec)) {
               await friend.click(spec, { ms: 120, after: 200 }).catch(() => undefined);
               break;
@@ -192,7 +193,7 @@ const scenes = {
       const started = Date.now();
       const filmed = () => (Date.now() - started) / 1000;
       const beats = {
-        C9: "The middle of the board is the world: every roll is a <b>flight</b>, every pin a city somebody owns.",
+        C9: "Buy the city you land on and it takes its first house. The middle of the board is the world: every roll is a <b>flight</b>.",
         C11: "Whoever leads on net worth <b>pays double rent</b>, so the table stays open to the last round.",
         C12: "The AI agent plays its whole turn in <b>one transaction</b> of its own.",
       };
@@ -224,8 +225,9 @@ const scenes = {
           await press(PLAY_TICKET, { ms: 500, after: 900 });
           if (table.ticket === "steps") {
             await press({ text: "^Choose the steps", tag: "button" }, { ms: 500, after: 900 });
-            // An own city if one is in reach (a house can then go up there), else a city for sale, else seven steps.
-            await page.evaluate(`(() => { const tiles = [...document.querySelectorAll(".tp-step")]; const pick = tiles.find((t) => /yours/.test(t.innerText)) ?? tiles.find((t) => /for sale/.test(t.innerText)) ?? tiles[5]; pick?.setAttribute("data-pick", "1"); })()`);
+            // A city for sale if one is in reach (it is then bought, and takes its first house), else an own city, else seven steps.
+            await page.evaluate(`(() => { const tiles = [...document.querySelectorAll(".tp-step")]; const city = (t) => !/Canal|Bosphorus|Malacca|Grid|Works/.test(t.innerText);
+              const pick = tiles.find((t) => /for sale/.test(t.innerText) && city(t)) ?? tiles.find((t) => /yours/.test(t.innerText)) ?? tiles[5]; pick?.setAttribute("data-pick", "1"); })()`);
             await sleep(1500);
             await press(".tp-step[data-pick]", { ms: 700, after: 600 });
           } else await press({ text: "^Play (Rent waiver|Festival)", tag: "button" }, { ms: 700, after: 600 });
