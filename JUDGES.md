@@ -35,8 +35,8 @@ The same app on testnet: https://deedlords-club-testnet.vercel.app.
 | 1:45 | Open `/poker/tables`, press **Play vs the House**                                                                                                                      | A table opens. Both seats shuffle the deck and prove it to the contract; then your two cards are face up for you alone                        |
 | 2:30 | Check or call once, then open a `shuffle` row on the explorer                                                                                                          | A call of about 22 KB that `poker.deedlords.near` accepted: 52 encrypted cards and the proof that they are the same cards in another order    |
 
-A TEE-signed tag appears on a move when the AI seat's model is one NEAR AI runs in a TEE; the README's step 2 says how
-to pick one.
+The AI seat plays by a model NEAR AI runs in a TEE unless you choose another, so its moves carry a **TEE-signed** tag.
+A move the model did not answer in time is played by rules and has no tag.
 
 ## Real transactions, without playing
 

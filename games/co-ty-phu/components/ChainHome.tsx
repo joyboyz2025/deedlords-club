@@ -193,15 +193,17 @@ function FlightStub({
   const offered = useOfferedModels();
   const [agentModels, setAgentModels] = useState<string[]>([RULES_MODEL]);
   const pickable = [...offered, RULES_MODEL];
-  // Until the visitor picks, the agents take the offered models in turn, so that two agents play two models.
+  // Until the visitor picks, the agents take the offered models in turn, so that two agents play two models: first
+  // the ones NEAR AI runs in a TEE (`near:`), whose moves carry a proof anyone can check on /verify.
+  const inTurn = [...offered.filter((model) => model.startsWith("near:")), ...offered.filter((model) => !model.startsWith("near:"))];
   const [pickedModels, setPickedModels] = useState(false);
   useEffect(() => {
-    if (!pickedModels && offered.length > 0) setAgentModels((now) => now.map((_, i) => offered[i % offered.length]));
+    if (!pickedModels && offered.length > 0) setAgentModels((now) => now.map((_, i) => inTurn[i % inTurn.length]));
   }, [offered, pickedModels]);
-  const setAgentCount = (count: number) => setAgentModels((now) => Array.from({ length: count }, (_, i) => now[i] ?? (offered.length ? offered[i % offered.length] : RULES_MODEL)));
+  const setAgentCount = (count: number) => setAgentModels((now) => Array.from({ length: count }, (_, i) => now[i] ?? (offered.length ? inTurn[i % inTurn.length] : RULES_MODEL)));
   // A free room of friends may seat the house's agents too: the host, at least one seat for a friend, agents in the rest.
   const [roomBots, setRoomBots] = useState<string[]>([]);
-  const setRoomBotCount = (count: number) => setRoomBots((now) => Array.from({ length: count }, (_, i) => now[i] ?? (offered.length ? offered[i % offered.length] : RULES_MODEL)));
+  const setRoomBotCount = (count: number) => setRoomBots((now) => Array.from({ length: count }, (_, i) => now[i] ?? (offered.length ? inTurn[i % inTurn.length] : RULES_MODEL)));
   const [opening, setOpening] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
