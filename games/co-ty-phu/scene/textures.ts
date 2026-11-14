@@ -6,6 +6,7 @@ import { paint } from "../../ma-soi/scene/textures";
 import { DECK_NAMES, GROUPS, SQUARES } from "../board";
 import type { BoardArt, CornerKind } from "./art";
 import { BAND, CORNER, HALF, SIDE, TILE, VIEW_YAW, tileCenter, tileYaw } from "./layout";
+import { drawLand, drawWorld, type WorldState } from "./worldmap";
 
 /** Cạnh tấm ảnh mặt bàn, đủ nét để đọc tên ô khi camera theo sát quân. */
 export const BOARD_PX = 2048;
@@ -207,12 +208,13 @@ function drawCorner(ctx: CanvasRenderingContext2D, index: number, fonts: { text:
 }
 
 /** Khu phố giữa bàn: ảnh công viên và hai con đường cắt nhau, mâm xúc xắc đặt trên vòng xuyến ở giữa. Chưa có ảnh thì vẽ bãi cỏ và đường. */
-// The middle of the table, kept plain: felt of one quiet colour, the game's name as a watermark, and the places of the
-// two decks. A picture here (a little city, drawn in full colour) was the loudest thing on the table, and the pieces
+// The middle of the table, kept plain: felt of one quiet colour, the world as faint dots, and the places of the two
+// decks. A picture here (a little city, drawn in full colour) was the loudest thing on the table, and the pieces
 // and the owners' colours were lost against it. Whatever stands out now is something that is being played.
 const FELT = "#e7efe9";
 const FELT_EDGE = "#cbd8d0";
-const FELT_MARK = "#c4d2ca";
+/** The world's dots: a shade darker than the old watermark, so that the land reads under the pins. */
+const LAND_DOT = "#b9cbc1";
 const DECK_PAPER: Record<"chance" | "chest", { fill: string; edge: string; ink: string }> = {
   chance: { fill: "#f7ecd0", edge: "#e2cc93", ink: "#8a713a" },
   chest: { fill: "#f6dcd5", edge: "#e3b3a8", ink: "#93584c" },
@@ -239,12 +241,11 @@ function drawCenter(ctx: CanvasRenderingContext2D, fonts: { text: string; title:
   ctx.arc(0, 0, 3.05 * u, 0, Math.PI * 2);
   ctx.stroke();
   ctx.setLineDash([]);
-  // The name, twice, so that it reads above the tray and below it.
+  // The world, as dots, above the tray: the squares are its cities, and their pins go on a layer above this picture
+  // (worldmap.ts), drawn again as the game changes.
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = FELT_MARK;
-  fitText(ctx, "DEEDLORDS", 0, -5.35 * u, 1.5 * u, 11.5 * u, fonts.title, "400");
-  fitText(ctx, "CLUB", 0, 5.4 * u, 1.05 * u, 6 * u, fonts.title, "400");
+  drawLand(ctx, u, LAND_DOT);
   // Where each deck lies: a card's shape, its picture, its name.
   for (const [deck, side] of [
     ["chance", -1],
@@ -388,4 +389,24 @@ export function moneyTexture(amount: number, family: string): { texture: THREE.C
     ctx.fillText(text, width / 2, height / 2 + 2);
   });
   return { texture, aspect: width / height };
+}
+
+/** Pixels of the layer over the middle of the board (worldmap.ts): its side, for the middle's whole width. */
+export function worldCanvasSize(coarse: boolean): number {
+  return coarse ? 1024 : 1440;
+}
+
+/**
+ * The layer over the middle of the board: pins, the last flight, the bar of net worth, on a transparent canvas that
+ * covers the middle exactly (`2 * (HALF - CORNER)` units a side). Drawn again into the same canvas when the game changes.
+ */
+export function paintWorld(canvas: HTMLCanvasElement, state: WorldState, font: string): void {
+  const ctx = canvas.getContext("2d")!;
+  const side = canvas.width;
+  const u = side / (2 * (HALF - CORNER));
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, side, side);
+  ctx.translate(side / 2, side / 2);
+  ctx.rotate(LEVEL);
+  drawWorld(ctx, u, state, font);
 }

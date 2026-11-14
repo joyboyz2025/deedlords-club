@@ -34,7 +34,8 @@ import {
   tileYaw,
   type Point,
 } from "./layout";
-import { arrowTexture, boardTexture, diceTexture, moneyTexture, windowTexture } from "./textures";
+import { arrowTexture, boardTexture, diceTexture, moneyTexture, paintWorld, windowTexture, worldCanvasSize } from "./textures";
+import { PINS, type WorldState, worldKey } from "./worldmap";
 
 /** Camera luôn nhìn chéo từ góc Xuất phát, không xoay. `follow`: lại gần người đang tới lượt. `board`: nhìn cả bàn. */
 export type CameraMode = "follow" | "board";
@@ -174,6 +175,14 @@ export class TycoonScene {
   private arrow: THREE.Sprite;
   private floaters: Floater[] = [];
   private fonts: { text: string; title: string };
+  /** The layer over the middle of the board: the cities' pins, the last flight, the bar of net worth (worldmap.ts). */
+  private worldCanvas: HTMLCanvasElement;
+  private worldTexture: THREE.CanvasTexture;
+  private worldDrawn = "";
+  private worldState: WorldState | null = null;
+  /** The last square with a place on the map that each seat stood on, and the last roll between two of them. */
+  private lastPlace = new Map<string, number>();
+  private trip: { from: number; to: number; playerId: string } | null = null;
 
   private dice: THREE.Mesh[];
   private diceShadows: THREE.Mesh[];
@@ -242,6 +251,11 @@ export class TycoonScene {
       title: style.getPropertyValue("--font-alfa").trim() || "serif",
     };
     this.kit = new ChibiKit(this.fonts.text);
+    this.worldCanvas = document.createElement("canvas");
+    this.worldCanvas.width = this.worldCanvas.height = worldCanvasSize(coarse);
+    this.worldTexture = this.own(new THREE.CanvasTexture(this.worldCanvas));
+    this.worldTexture.colorSpace = THREE.SRGBColorSpace;
+    this.worldTexture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
 
     const solid = this.own(new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
     this.boardMaterial = this.own(new THREE.MeshLambertMaterial({ map: this.makeBoardTexture() }));
@@ -300,6 +314,10 @@ export class TycoonScene {
       if (!this.frame) return;
       this.redrawBoard();
       for (const { chibi } of this.tokens.values()) chibi.redrawLabel();
+      if (this.worldState) {
+        paintWorld(this.worldCanvas, this.worldState, this.fonts.text);
+        this.worldTexture.needsUpdate = true;
+      }
       this.busy = true;
     });
     this.frame = requestAnimationFrame(this.tick);
@@ -341,7 +359,15 @@ export class TycoonScene {
     // Bàn cờ là một tấm dày màu xanh đen, mặt trên dán ảnh bàn cờ.
     const slab = new THREE.Mesh(this.own(new THREE.BoxGeometry(SIDE + 0.5, 0.5, SIDE + 0.5).translate(0, -0.26, 0)), this.own(new THREE.MeshLambertMaterial({ color: "#22384d" })));
     const top = new THREE.Mesh(this.own(new THREE.PlaneGeometry(SIDE, SIDE).rotateX(-Math.PI / 2)), this.boardMaterial);
-    scene.add(ground, slab, top);
+    // Just above the felt, under the dice: the world's pins and the bar of net worth.
+    const middle = 2 * (HALF - CORNER);
+    const world = new THREE.Mesh(
+      this.own(new THREE.PlaneGeometry(middle, middle).rotateX(-Math.PI / 2)),
+      this.own(new THREE.MeshLambertMaterial({ map: this.worldTexture, transparent: true, depthWrite: false })),
+    );
+    world.position.y = 0.004;
+    world.renderOrder = 1;
+    scene.add(ground, slab, top, world);
 
     const city = cityGeometry();
     const towers = new THREE.Mesh(this.own(city.towers), this.own(new THREE.MeshLambertMaterial({ map: this.own(windowTexture()), vertexColors: true })));
@@ -387,7 +413,42 @@ export class TycoonScene {
     }
     for (const player of playing) this.placeToken(player, view);
     this.placeBuildings(view);
+    this.drawWorld(view, playing);
     this.busy = true;
+  }
+
+  /** The middle of the board again, when what it shows has changed: who owns which city, the last flight, the bar. */
+  private drawWorld(view: View, playing: PublicPlayer[]): void {
+    const colorOf = (id: string) => TOKEN_COLORS[view.players.find((p) => p.id === id)?.color ?? 0];
+    for (const player of playing) {
+      if (!PINS.has(player.position)) continue;
+      const before = this.lastPlace.get(player.id);
+      // A move seen while the page watches is a flight; where everybody stood when the page opened is not.
+      if (before !== undefined && before !== player.position) this.trip = { from: before, to: player.position, playerId: player.id };
+      this.lastPlace.set(player.id, player.position);
+    }
+    const state: WorldState = {
+      owned: Object.entries(view.props)
+        .filter(([square]) => PINS.has(Number(square)))
+        .map(([square, owned]) => ({ square: Number(square), color: colorOf(owned.owner), mortgaged: owned.mortgaged })),
+      flight: this.trip ? { from: this.trip.from, to: this.trip.to, color: colorOf(this.trip.playerId) } : null,
+      share:
+        view.phase === "playing" || view.phase === "ended"
+          ? view.players
+              .filter((p) => p.color !== null && !p.bankrupt)
+              .map((p) => {
+                const cities = Object.values(view.props).filter((owned) => owned.owner === p.id).length;
+                const lead = view.leader === p.id ? " · leads, pays ×2" : "";
+                return { name: p.id === view.you.id ? "You" : p.name, worth: p.worth, color: colorOf(p.id), note: `${cities} ${cities === 1 ? "square" : "squares"}${lead}` };
+              })
+          : [],
+    };
+    const key = worldKey(state);
+    if (key === this.worldDrawn) return;
+    this.worldDrawn = key;
+    this.worldState = state;
+    paintWorld(this.worldCanvas, state, this.fonts.text);
+    this.worldTexture.needsUpdate = true;
   }
 
   private actorOf(player: PublicPlayer, view: View): Actor {
