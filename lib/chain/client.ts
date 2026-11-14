@@ -220,6 +220,13 @@ export class ChainClient {
 /** A transaction the chain still does not know after this long, while its key's nonce has moved on, was passed over. */
 const PASSED_OVER_AFTER_MS = 6_000;
 const passedOver = (error: unknown): boolean => error instanceof RpcError && error.code === "INVALID_TRANSACTION" && /passed over/.test(error.detail);
+/**
+ * Asked to wait for a transaction, the node has no result yet: it does not know the transaction, or it held the
+ * question as long as it would and gave up, or it never answered. A public node gives up with HTTP 408 (the
+ * TIMEOUT_ERROR is in a body `rpc` does not read for a refused request).
+ */
+const notYet = (error: unknown): boolean =>
+  error instanceof RpcError && (error.code === "TIMEOUT_ERROR" || error.code === "UNKNOWN_TRANSACTION" || error.code === "TIMEOUT" || (error.code === "HTTP" && error.http === 408));
 
 export class Session {
   readonly accountId: string;
@@ -414,6 +421,12 @@ export class Session {
    * late). So once it has been unknown for a while, the key is looked at: if its nonce has reached ours and the chain
    * still does not know our transaction, another one took its place, and this throws the error a stale nonce throws,
    * for the caller to sign again.
+   *
+   * A real node asked to wait for a transaction it does not know says nothing for ten seconds and then answers HTTP
+   * 408, or says nothing at all (test.rpc.fastnear.com, 2026-11-14: two questions in three got no answer in half a
+   * minute). So each question is given up after `passedOverAfterMs` and neither ends the wait: with a question that
+   * could hang for half a minute, asked again by `rpc` itself, the key was never looked at and the sponsor's relay
+   * answered nobody for over a minute.
    */
   private async wait(hash: string, nonce?: bigint): Promise<TxResult> {
     const { rpcUrl } = this.client.config;
@@ -422,9 +435,10 @@ export class Session {
     let looked = 0;
     for (;;) {
       try {
-        return await rpc<TxResult>(rpcUrl, "tx", { tx_hash: hash, sender_account_id: this.accountId, wait_until: "EXECUTED_OPTIMISTIC" }, { timeoutMs: 30_000 });
+        const asking = { timeoutMs: this.passedOverAfterMs, retryTimeout: false };
+        return await rpc<TxResult>(rpcUrl, "tx", { tx_hash: hash, sender_account_id: this.accountId, wait_until: "EXECUTED_OPTIMISTIC" }, asking);
       } catch (error) {
-        const pending = error instanceof RpcError && (error.code === "TIMEOUT_ERROR" || error.code === "UNKNOWN_TRANSACTION" || error.code === "TIMEOUT");
+        const pending = notYet(error);
         if (!pending || Date.now() > until) {
           this.nonce = null;
           throw error;
