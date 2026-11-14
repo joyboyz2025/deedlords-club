@@ -40,7 +40,7 @@ import { type Keys, ORDER, keyProof, keysFromSecret } from "../crypto";
 import { FREE_TABLE_DEPOSIT, FREE_TABLE_HANDS, MAX_SEATS, RECORD_FEE, STAKE, TABLE_CHAIN, TABLE_CONTRACT, gasFor } from "./contract";
 import { advise } from "./decide";
 import { type Thought, handIsOver, readThought, sealThought } from "./sealed";
-import { type SeatStore, type TableView, betCall, betOptions, coldLobby, duty, fromBase64, holeCards, toBase64 } from "./seat";
+import { type SeatStore, type TableView, betCall, betOptions, coldLobby, duty, fromBase64, holeCards, hostIsSpent, toBase64 } from "./seat";
 
 export type Played =
   /** `sealed`: what the seat thought when it bet, which says what it holds: readable only through `openThought`, once the hand is over. */
@@ -346,7 +346,7 @@ async function step(id: string, options: StepOptions): Promise<Played> {
   // No player is left: the house's seats ask to leave, each paid what it holds, and the table closes. A hand under
   // way is played to its end first, which is what the rest of this step does.
   // A free table's host has played its hands: it asks to leave too, and the table closes when this hand is over.
-  const spent = isFree(view) && view.hand >= FREE_TABLE_HANDS - 1 ? here.filter((one) => one.accountId === view.host && !view.leaving[seatOf(one)]) : [];
+  const spent = isFree(view) ? here.filter((one) => one.accountId === view.host && hostIsSpent(view, seatOf(one), FREE_TABLE_HANDS)) : [];
   const staying = view.players.some((player) => player && !isHouse(player)) ? spent : here.filter((one) => !view.leaving[seatOf(one)]);
   if (staying.length) {
     const outcomes = await Promise.all(staying.map((one) => one.session.call("leave", { id }, gasFor("leave"))));

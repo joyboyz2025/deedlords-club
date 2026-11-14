@@ -24,6 +24,7 @@ import {
   fromBase64,
   handNets,
   holeCards,
+  hostIsSpent,
   nextDealt,
   toBase64,
   tookEffect,
@@ -383,4 +384,17 @@ test("a house that does not answer is not waited for longer than its step can ta
     clearTimeout(awake);
     globalThis.fetch = real;
   }
+});
+
+test("the host of a free table asks to leave in its last hand, not before that hand is dealt", () => {
+  // Ten hands: the host leaves with the tenth (hand number 9, counted from 0).
+  const between = table({ hand: 9, phase: "shuffle", dealt: [], shuffled: 0, awaited: [1] });
+  // Between the ninth and the tenth nobody is dealt in yet: a seat that leaves now is given up at once by the
+  // contract, and the tenth hand is never played.
+  assert.equal(hostIsSpent(between, 0, 10), false);
+  // Once the button has shuffled the host is in the hand: it asks, and is paid when the hand is over.
+  const dealt = table({ hand: 9, phase: "shuffle", dealt: [1, 3, 4, 0], shuffled: 1, awaited: [3] });
+  assert.equal(hostIsSpent(dealt, 0, 10), true);
+  assert.equal(hostIsSpent({ ...dealt, leaving: [true, false, false, false, false, false] }, 0, 10), false);
+  assert.equal(hostIsSpent(table({ hand: 8 }), 0, 10), false);
 });

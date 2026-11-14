@@ -252,3 +252,12 @@ export const FREE_ROOM_MS = 30 * 60_000;
  */
 export const coldLobby = (table: Pick<TableView, "id" | "phase" | "players">, isHouse: (account: string) => boolean, now: number): boolean =>
   table.phase === "lobby" && now > openedAt(table.id) + (table.players.some((player) => player !== null && !isHouse(player)) ? FREE_ROOM_MS : FREE_LOBBY_MS);
+
+/**
+ * Whether the host of a free table, which plays `hands` hands there, asks to leave now: during the last of them, once
+ * it is dealt into it. The contract then gives the seat up when that hand is over. Asked between two hands, before
+ * the button has shuffled, the contract gives the seat up at once: the last hand was never played, and a table of two
+ * closed under a guest whose page was shuffling for it.
+ */
+export const hostIsSpent = (view: Pick<TableView, "hand" | "dealt" | "leaving">, seat: number, hands: number): boolean =>
+  view.hand >= hands - 1 && view.dealt.includes(seat) && !view.leaving[seat];
