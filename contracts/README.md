@@ -327,7 +327,7 @@ call. Stakes 0.05 NEAR per seat. Times run from sending the transaction until th
 every stored match reads as before. `sandbox/upgrade.js dry` rehearses exactly this on a local sandbox, starting from
 the code fetched from testnet, with a lobby and a game in progress opened on it; `sandbox/upgrade.js run` deploys.
 
-### Tickets and the leader's rent (2026-11-14, not deployed yet)
+### Tickets and the leader's rent (2026-11-14; on testnet, not on mainnet yet)
 
 Two rules a match may be opened with (docs/ENGINE-RULES.md section 10), both off unless asked for:
 
@@ -352,6 +352,27 @@ and 4 settled, a match without the rules) and `node upgrade.js dry <wasm>` from 
 `DEEDLORDS_PARENT=deedlords.near NEAR_RPC=https://free.rpc.fastnear.com`, from the code live on mainnet (both are
 `Ha6nhaKn…`, 534,311 bytes): matches opened before the deploy read the same after it and play on to their settlement.
 The new build is 583,211 bytes: **the game account must hold about 0.49 NEAR more for its code before the deploy.**
+
+### Later the same day: building where one stops, and tables nobody is left waiting at (on testnet, not on mainnet yet)
+
+- **`buildHere`** (a third opt-in rule, docs/ENGINE-RULES.md section 10.5): in a Blitz match a house goes up only on
+  the own city just stopped on, one per stop. Building on several cities in one turn read to players as buying many
+  places at once. Stored in a tail of version 2 that only such a match has.
+- **The host's grace.** A full hosted room its host does not start can be started by anyone seated 30 seconds after
+  the last seat was taken (`start`, or `play` with `["Start"]`). Before: only the host, so a host who walked away
+  left the others in a room nobody could start for 15 minutes.
+- **Seats that are away.** A seat that lets its whole clock run out without throwing is marked away: that `timeout`
+  plays its whole turn, and its next turns get 5 seconds instead of the match's clock. It is here again when it moves
+  (`play`, `turn`) or says so with `play` and no actions, which the page does by itself when it is opened again.
+  `meta.away` lists such seats. Measured on testnet with two browsers, one closed after the start: before, the absent
+  seat held the table 35 to 39 s every round; after, 29 s the first time and 8 to 9 s from then on, and the mark was
+  gone 2 s after the page was opened again.
+- **`close(id)`.** Anyone, when nothing has moved at a table under way for 15 minutes: the game ends as it stands,
+  ranked by net worth, and is settled like any other. The free-table desk calls it for tables everybody left, a few
+  each time somebody opens a table (`app/api/free/route.ts`); a staked testnet match that had stood on the board for
+  83 hours was settled this way.
+- `get_config` lists `"features": ["tickets", "leaderRent", "buildHere", "hostGrace", "away", "close"]`. None of this
+  changes how a stored match is read: which seats are away is kept under a key of its own (`away:<id>`), like the host.
 
 ## Known limits
 
