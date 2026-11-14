@@ -43,7 +43,7 @@ import {
   takeSeat,
   viewResult,
 } from "../chain";
-import { FREE_TABLE_HANDS, RECORD_FEE } from "../contract";
+import { FREE_TABLE_HANDS, FREE_TURN_SECONDS, RECORD_FEE } from "../contract";
 import { type TableResult, type TableView, betCall, callsTime, clockAhead, clockMove, duty, holeCards, movedOn, seated, tookEffect } from "../seat";
 import { useHouse } from "../useHouse";
 import { useSeatAgent } from "../useSeatAgent";
@@ -507,7 +507,9 @@ export function TablesLobby({
                 </div>
                 <div>
                   <dt>Clock</dt>
-                  <dd>{TURN_SECONDS} seconds a step; a seat that is late is folded or given up</dd>
+                  <dd>
+                    {gratis ? FREE_TURN_SECONDS : TURN_SECONDS} seconds a step; a seat that does not answer in time is given up, and before the river loses its chips to the others
+                  </dd>
                 </div>
                 <div>
                   <dt>Starts</dt>
@@ -1199,18 +1201,21 @@ export function TableSettled({
   // A long account id is cut short here as at the table; the whole of it is in the title of each line.
   const who = (account: string) => (account === you ? "You" : houses.includes(account) ? `House ${houses.indexOf(account) + 1}` : shortAccount(account));
   const fees = result.cashed.reduce((sum, seat) => sum + BigInt(seat.fee), 0n);
+  // A free table staked nothing and paid nothing: its seats left with chips, and that is all there is to show.
+  const free = BigInt(result.stake) === 0n;
   return (
     <div className="pk-hall">
       <div>
         <h1 className="pk-line">Table settled.</h1>
         <p className="pk-lede">
-          Table <span className="pk-code">{id}</span> closed after {result.hands} {result.hands === 1 ? "hand" : "hands"}. Every seat was paid the chips it held when it left, by
-          the contract
-          {result.feeBps ? `, less a fee of ${result.feeBps / 100}% of what it won` : ", with no fee"}.
+          Table <span className="pk-code">{id}</span> closed after {result.hands} {result.hands === 1 ? "hand" : "hands"}.{" "}
+          {free
+            ? "It was a free table: the chips were only chips, and no NEAR was staked or paid."
+            : `Every seat was paid the chips it held when it left, by the contract${result.feeBps ? `, less a fee of ${result.feeBps / 100}% of what it won` : ", with no fee"}.`}
         </p>
-        <section className="pk-board" aria-label="What the table paid">
+        <section className="pk-board" aria-label={free ? "The chips each seat left with" : "What the table paid"}>
           <h2 className="pk-board__title">
-            <Seat size={22} /> <span>Paid by the contract</span>
+            <Seat size={22} /> <span>{free ? "Chips at the end" : "Paid by the contract"}</span>
           </h2>
           <ul className="pk-result pt-paid">
             {result.cashed.map((seat, at) => (
@@ -1219,13 +1224,13 @@ export function TableSettled({
                   {at + 1}
                 </span>
                 <span>
-                  <small className="pk-label">{seat.chips} chips</small>
+                  <small className="pk-label">{free ? "started with 100" : `${seat.chips} chips`}</small>
                   <strong title={seat.account}>{who(seat.account)}</strong>
                 </span>
                 <Flap text={seat.chips > 100 ? "AHEAD" : seat.chips === 100 ? "EVEN" : "BEHIND"} />
                 <span className="pk-result__paid">
-                  <b>{asNear(seat.payout).replace(" NEAR", "")}</b>
-                  <small className="pk-label">{BigInt(seat.fee) > 0n ? `NEAR · fee ${asNear(seat.fee, 3).replace(" NEAR", "")}` : "NEAR"}</small>
+                  <b>{free ? seat.chips : asNear(seat.payout).replace(" NEAR", "")}</b>
+                  <small className="pk-label">{free ? "chips" : BigInt(seat.fee) > 0n ? `NEAR · fee ${asNear(seat.fee, 3).replace(" NEAR", "")}` : "NEAR"}</small>
                 </span>
               </li>
             ))}
@@ -1237,7 +1242,9 @@ export function TableSettled({
         <div className="pk-ticket">
           <section className="pk-stub">
             <h2 className="pk-stub__title">Play again</h2>
-            <p className="pk-small">A new table takes a new stake; what this one paid is already in the accounts above.</p>
+            <p className="pk-small">
+              {free ? "Another free table costs nothing: open one at the desk." : "A new table takes a new stake; what this one paid is already in the accounts above."}
+            </p>
             {back}
           </section>
         </div>
