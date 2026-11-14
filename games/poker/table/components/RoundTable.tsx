@@ -14,7 +14,7 @@ import { CardPlace, PlayingCard } from "../../components/Cards";
 import { Ledger, type LogLine } from "../../components/TableView";
 import type { Advice } from "../../agent/decide";
 import { madeHand } from "../../agent/hands";
-import { type TableView, betOptions, clockMarginMs, handNets, nextDealt, seated } from "../seat";
+import { type TableView, betOptions, clockMarginMs, handNets, handStory, nextDealt, seated } from "../seat";
 
 const FACE_PX = 112;
 const seatColour = (seat: number) => ({ "--seat": `var(--seat-${seat})` }) as CSSProperties;
@@ -214,7 +214,22 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
   const waitingFor = view.awaited.map(named);
   const waitingText = waitingFor.length > 3 ? `${waitingFor.length} seats` : waitingFor.join(" and ");
 
+  // Between two hands, while the next one is shuffled and dealt, the felt keeps the one before: its board, the cards
+  // that were shown and who took the pot. The contract goes on to the next hand in the very call that ends one, so a
+  // showdown was gone from the table the moment its last seat showed, and could only be read off the stub beside it.
+  const before = !inLobby && !reading && (view.phase === "shuffle" || view.phase === "deal") && view.last?.number === view.hand - 1 ? view.last : null;
+  const shownBefore = (seat: number): number[] | null => (before && view.players[seat] && before.hole[seat]?.length === 2 ? before.hole[seat] : null);
+  /** How it ended, in a sentence. A seat given up since is named by its number: who sits there now did not play it. */
+  const told = before
+    ? handStory(
+        before,
+        (seat) => (view.players[seat] ? named(seat) : `seat ${seat + 1}`),
+        (seat) => (shownBefore(seat) && before.board.length === 5 ? madeHand(shownBefore(seat)!, before.board) : null),
+      )
+    : null;
+
   const cardsOf = (seat: number): (number | null | undefined)[] => {
+    if (before) return shownBefore(seat) ?? [];
     if (!inHand || !view.dealt.includes(seat) || view.phase === "shuffle" || view.phase === "deal") return [];
     if (view.hole[seat]?.length === 2) return view.hole[seat];
     if (seat === mySeat && myCards) return myCards;
@@ -230,6 +245,7 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
       filled < 2
         ? `${filled} of ${count} seats taken. The table starts when it is full, or when its host starts it with two or more.`
         : `${filled} of ${count} seats taken. The host can start now, or wait for the table to fill.`;
+  else if (told) say = `${told} Next hand: ${view.phase === "deal" ? `dealing, waiting for ${waitingText}` : doing === "shuffle" ? "this page is shuffling for you" : `waiting for ${waitingText} to shuffle`}.`;
   else if (view.phase === "shuffle")
     say = (
       <>
@@ -306,7 +322,13 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
         {cards.length > 0 && (
           <span className="pt-pod__cards" role="group" aria-label={`${name(seat)}'s cards`}>
             {cards.map((card, index) => (
-              <PlayingCard key={`${view.hand}:${seat}:${index}`} card={card} dealt={live} order={order.indexOf(seat) * 2 + index} dim={seat === mySeat && view.folded[seat]} />
+              <PlayingCard
+                key={`${before ? "before" : view.hand}:${seat}:${index}`}
+                card={card}
+                dealt={live && !before}
+                order={order.indexOf(seat) * 2 + index}
+                dim={!before && seat === mySeat && view.folded[seat]}
+              />
             ))}
           </span>
         )}
@@ -370,6 +392,13 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
                   </span>
                   <span className="pk-label">{bets > 0 && bets < pot ? `pot · ${bets} bet this round` : "pot"}</span>
                 </div>
+                {before && before.board.length > 0 && (
+                  <div className="pt-board" role="group" aria-label={`The board of hand ${before.number + 1}`}>
+                    {before.board.map((card, index) => (
+                      <PlayingCard key={`before:${before.number}:${index}`} card={card} />
+                    ))}
+                  </div>
+                )}
                 {progress ? (
                   <p className="pt-readying" role="status">
                     {progress}
@@ -390,7 +419,7 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
                 className="pk-deck pt-deck"
                 data-pk-deck
                 data-shuffling={(view.phase === "shuffle" && !reading) || undefined}
-                data-away={inLobby || reading || (view.phase !== "shuffle" && view.phase !== "deal") || undefined}
+                data-away={inLobby || reading || (view.phase !== "shuffle" && view.phase !== "deal") || Boolean(before?.board.length) || undefined}
                 style={{ "--ddx": deckAt ? Math.cos(deckAt.angle).toFixed(3) : "-0.8", "--ddy": deckAt ? Math.sin(deckAt.angle).toFixed(3) : "0" } as CSSProperties}
                 aria-hidden="true"
               >

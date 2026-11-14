@@ -23,6 +23,7 @@ import {
   duty,
   fromBase64,
   handNets,
+  handStory,
   holeCards,
   hostIsSpent,
   nextDealt,
@@ -397,4 +398,18 @@ test("the host of a free table asks to leave in its last hand, not before that h
   assert.equal(hostIsSpent(dealt, 0, 10), true);
   assert.equal(hostIsSpent({ ...dealt, leaving: [true, false, false, false, false, false] }, 0, 10), false);
   assert.equal(hostIsSpent(table({ hand: 8 }), 0, 10), false);
+});
+
+test("a finished hand is told in a sentence: who took the pot, and with what", () => {
+  const name = (seat: number) => (seat === 1 ? "you" : `House ${seat + 1}`);
+  const hand = { number: 0, dealt: [0, 1], board: [26, 41, 33, 8, 2], hole: [[], []] as number[][], folded: [false, false], put: [16, 16], won: [0, 0], ending: "showdown" as const, late: [] as number[] };
+  // Hand 1 of f-mwfp6rwj-kqta on testnet, 2026-11-14: both seats held a nine and a queen. The felt was cleared the
+  // moment the second seat showed, and the two rows of cards with "0" beside them were all there was to read.
+  const split = { ...hand, hole: [cards("9c Qh"), cards("9d Qc")], won: [16, 16] };
+  assert.equal(handStory(split, name, () => "two pair"), "House 1 and you shared the pot of 32, two pair each.");
+  // Hand 4 there: the guest went all in with jack-four, was called, and a four came.
+  const won = { ...hand, put: [97, 97], won: [0, 194] };
+  assert.equal(handStory(won, name, (seat) => (seat === 1 ? "a pair" : "high card")), "You took the pot of 194 with a pair.");
+  assert.equal(handStory({ ...hand, ending: "fold" as const, folded: [true, false], put: [1, 2], won: [0, 3] }, name, () => null), "You took the pot of 3: everyone else folded.");
+  assert.equal(handStory({ ...hand, ending: "cancelled" as const, put: [12, 12], won: [112, 0], late: [1] }, name, () => null), "Called off: you did not answer in time.");
 });

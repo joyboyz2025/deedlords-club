@@ -261,3 +261,25 @@ export const coldLobby = (table: Pick<TableView, "id" | "phase" | "players">, is
  */
 export const hostIsSpent = (view: Pick<TableView, "hand" | "dealt" | "leaving">, seat: number, hands: number): boolean =>
   view.hand >= hands - 1 && view.dealt.includes(seat) && !view.leaving[seat];
+
+/**
+ * How a finished hand ended, in a sentence for the table: who took the pot and with what. `name`: a seat inside a
+ * sentence ("you", "House 1"). `made`: what the cards a seat showed made with the board ("two pair"), `null` when it
+ * showed none.
+ */
+export function handStory(last: Hand, name: (seat: number) => string, made: (seat: number) => string | null): string {
+  const list = (seats: number[]): string => {
+    const names = seats.map(name);
+    const said = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? "nobody");
+    return said.charAt(0).toUpperCase() + said.slice(1);
+  };
+  const pot = last.put.reduce((sum, chips) => sum + chips, 0);
+  if (last.ending === "void") return "The hand was void: every chip went back.";
+  if (last.ending === "cancelled") return `Called off: ${list(last.late).replace(/^./, (first) => first.toLowerCase())} did not answer in time.`;
+  const winners = last.dealt.filter((seat) => (last.won[seat] ?? 0) > 0 && !last.folded[seat]);
+  if (last.ending === "fold") return `${list(winners)} took the pot of ${pot}: everyone else folded.`;
+  const hands = winners.map(made);
+  const same = hands[0] !== null && hands.every((hand) => hand === hands[0]) ? hands[0] : null;
+  if (winners.length === 1) return `${list(winners)} took the pot of ${pot}${same ? ` with ${same}` : ""}.`;
+  return `${list(winners)} shared the pot of ${pot}${same ? `, ${same} each` : ""}.`;
+}
