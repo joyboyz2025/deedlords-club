@@ -11,7 +11,7 @@
 
 import { clientKey } from "@/games/co-ty-phu/agent/rateLimit";
 import { RULES_MODEL, llmModels } from "@/games/co-ty-phu/agent/llm";
-import { freeTableCalls, inTransactions, joinCalls, newMatchId, ROUND_CHOICES, SEAT_COUNTS, TURN_SECONDS } from "@/games/co-ty-phu/chain/calls";
+import { freeTableCalls, inTransactions, joinCalls, newMatchId, ROUND_CHOICES, roundsFor, SEAT_COUNTS, TURN_SECONDS } from "@/games/co-ty-phu/chain/calls";
 import {
   MAX_FREE_TABLES,
   MAX_HOUSE_AGENTS,
@@ -66,8 +66,6 @@ export async function POST(request: Request): Promise<Response> {
     // No body: the defaults.
   }
   if (body.seatAgentAt !== undefined) return seatAgent(paying, body.seatAgentAt, request);
-  const rounds = body.rounds === undefined ? 6 : body.rounds;
-  if (typeof rounds !== "number" || !ROUND_CHOICES.includes(rounds)) return jsonAnswer(400, { error: `rounds: one of ${ROUND_CHOICES.join(", ")}` });
   if (body.opponent !== undefined && body.opponent !== "agent" && body.opponent !== "friend") return jsonAnswer(400, { error: "opponent: agent or friend" });
   const withAgent = body.opponent !== "friend";
   // Against the house: one agent per model asked for (one with the house model when none is), each in its own seat.
@@ -80,6 +78,8 @@ export async function POST(request: Request): Promise<Response> {
   // A table for friends is a room: whoever asked for it hosts it, and it may seat up to four.
   const seats = withAgent ? 1 + (agents as string[]).length : body.seats === undefined ? 2 : body.seats;
   if (typeof seats !== "number" || !SEAT_COUNTS.includes(seats)) return jsonAnswer(400, { error: "seats: 2, 3 or 4" });
+  const rounds = body.rounds === undefined ? roundsFor(seats) : body.rounds;
+  if (typeof rounds !== "number" || !ROUND_CHOICES.includes(rounds)) return jsonAnswer(400, { error: `rounds: one of ${ROUND_CHOICES.join(", ")}` });
   if (body.host !== undefined && (typeof body.host !== "string" || !ACCOUNT_ID.test(body.host))) return jsonAnswer(400, { error: "host: a NEAR account" });
   const room = !withAgent && typeof body.host === "string" ? { host: body.host, seats } : null;
   if (!withAgent && seats !== 2 && !room) return jsonAnswer(400, { error: "a table of more than two seats needs a host" });

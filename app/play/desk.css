@@ -1580,6 +1580,18 @@ a.fd-row:hover .fd-row__go {
   font-weight: 600;
 }
 
+/* How the match is won: a sentence, across the whole row. */
+.fd-terms__wide {
+  grid-column: 1 / -1;
+}
+
+.fd-terms__wide dd {
+  max-width: 70ch;
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
 .fd-back {
   display: inline-flex;
   align-items: center;

@@ -4,7 +4,27 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MOVE_HOLD, SESSION_METHODS, STORAGE_DEPOSIT, joinCalls, near, newMatchId, openDuelCalls, upfront } from "../games/co-ty-phu/chain/calls.ts";
+import { readFileSync } from "node:fs";
+import {
+  MOVE_HOLD,
+  ROUND_CHOICES,
+  RULES,
+  SEAT_COUNTS,
+  SESSION_METHODS,
+  SPLITS,
+  STORAGE_DEPOSIT,
+  TO_THE_END,
+  TURN_SECONDS,
+  createDuelCall,
+  joinCalls,
+  near,
+  newMatchId,
+  openDuelCalls,
+  roundOf,
+  roundsFor,
+  upfront,
+  winLine,
+} from "../games/co-ty-phu/chain/calls.ts";
 import { encodeBase58, toBase64 } from "../lib/chain/base58.ts";
 import { gameKeyMessage, hexOfText, implicitAccountId, keyFromSignature, sameSignature } from "../lib/chain/evmKey.ts";
 import { parseSecretKey, publicKeyText } from "../lib/chain/keys.ts";
@@ -29,8 +49,50 @@ test("opening a duel is one transaction a wallet can read: create_match, then jo
   };
   assert.equal(
     toBase64(encodeTransaction(transaction)),
-    "DQAAAGFsaWNlLnRlc3RuZXQA6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iwqUJoW7vsAABYAAABnYW1lLmRlZWRsb3Jkcy50ZXN0bmV0//z59vPw7ern5OHe29jV0s/MycbDwL26t7SxrquopaICAAAAAgwAAABjcmVhdGVfbWF0Y2i5AAAAeyJpZCI6Im0tdGVzdC1hYmNkIiwic2VhdHMiOjIsInN0YWtlIjoiNTAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLCJzcGxpdCI6WzcwMDAsMzAwMF0sInJ1bGVzIjp7InNhbGFyeSI6MjAwLCJjYXNoIjoxNTAwLCJibGl0eiI6ZmFsc2UsIm1heF9yb3VuZHMiOjZ9LCJzb2xvX3BsYXllciI6bnVsbCwidHVybl9zZWNvbmRzIjo2MH0AQOWcMBIAAAAAgC1gukSbtAwAAAAAAAACBAAAAGpvaW4dAAAAeyJpZCI6Im0tdGVzdC1hYmNkIiwic2VhdCI6MH0AQHoQ81oAAAAAQHul8GOBlgoAAAAAAAA=",
+    "DQAAAGFsaWNlLnRlc3RuZXQA6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iwqUJoW7vsAABYAAABnYW1lLmRlZWRsb3Jkcy50ZXN0bmV0//z59vPw7ern5OHe29jV0s/MycbDwL26t7SxrquopaICAAAAAgwAAABjcmVhdGVfbWF0Y2i4AAAAeyJpZCI6Im0tdGVzdC1hYmNkIiwic2VhdHMiOjIsInN0YWtlIjoiNTAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLCJzcGxpdCI6WzcwMDAsMzAwMF0sInJ1bGVzIjp7InNhbGFyeSI6MjAwLCJjYXNoIjoyMDAwLCJibGl0eiI6dHJ1ZSwibWF4X3JvdW5kcyI6Nn0sInNvbG9fcGxheWVyIjpudWxsLCJ0dXJuX3NlY29uZHMiOjYwfQBA5ZwwEgAAAACALWC6RJu0DAAAAAAAAAIEAAAAam9pbh0AAAB7ImlkIjoibS10ZXN0LWFiY2QiLCJzZWF0IjowfQBAehDzWgAAAABAe6XwY4GWCgAAAAAAAA==",
   );
+});
+
+test("every match the page can open is one the contract takes: its rules, rounds, seats and clock, against the contract's own limits", () => {
+  // The limits are read from the contract's source, and the Blitz rules from its tests, so that neither can drift from here unseen.
+  const contract = readFileSync(new URL("../contracts/deedlords/src/lib.rs", import.meta.url), "utf8");
+  const limit = (name: string) => Number(new RegExp(`pub const ${name}: \\w+ = ([\\d_]+);`).exec(contract)![1].replaceAll("_", ""));
+  const [minSeats, maxSeats, blitzCash, maxCash, maxSalary, maxTurn] = ["MIN_SEATS", "MAX_SEATS", "BLITZ_MIN_CASH", "MAX_CASH", "MAX_SALARY", "MAX_TURN_SECONDS"].map(limit);
+  assert.deepEqual([minSeats, maxSeats, blitzCash], [2, 4, 1670]);
+  assert.match(contract, /require!\(rules\.max_rounds >= 1, "rules\.max_rounds must be 1\.\.=255"\)/);
+  assert.match(contract, /pub max_rounds: u8,/);
+
+  for (const seats of SEAT_COUNTS) {
+    assert.ok(ROUND_CHOICES.includes(roundsFor(seats)), `the rounds a table of ${seats} opens with are among those offered`);
+    for (const maxRounds of ROUND_CHOICES) {
+      const args = JSON.parse(new TextDecoder().decode(createDuelCall("m-1", { stake: 0n, maxRounds, turnSeconds: TURN_SECONDS, seats }).args));
+      const { rules } = args;
+      assert.deepEqual(Object.keys(rules).sort(), ["blitz", "cash", "max_rounds", "salary"]);
+      assert.ok(Number.isInteger(rules.salary) && rules.salary >= 0 && rules.salary <= maxSalary);
+      assert.ok(Number.isInteger(rules.cash) && rules.cash >= (rules.blitz ? blitzCash : 1) && rules.cash <= maxCash);
+      assert.ok(Number.isInteger(rules.max_rounds) && rules.max_rounds >= 1 && rules.max_rounds <= 255);
+      assert.ok(args.seats >= minSeats && args.seats <= maxSeats);
+      assert.ok(args.turn_seconds >= 1 && args.turn_seconds <= maxTurn);
+      assert.ok(args.split.length >= 1 && args.split.length <= args.seats);
+      assert.equal(args.split.reduce((sum: number, share: number) => sum + share, 0), 10_000);
+      assert.deepEqual(args.split, SPLITS[seats]);
+    }
+  }
+  // Blitz as the contract's own tests play it (contracts/deedlords/src/tests.rs `fn blitz`).
+  const tests = readFileSync(new URL("../contracts/deedlords/src/tests.rs", import.meta.url), "utf8");
+  assert.match(tests, /fn blitz\(max_rounds: u8\) -> RulesArg \{\s*RulesArg \{ salary: 200, cash: 2000, blitz: true, max_rounds \}/);
+  assert.deepEqual(RULES, { salary: 200, cash: 2000, blitz: true });
+  // About the same number of turns whatever the seats: a table of four is not twice as long as a table of two.
+  assert.deepEqual(SEAT_COUNTS.map((seats) => seats * roundsFor(seats)), [40, 48, 48]);
+});
+
+test("a table says which round it is in and what wins it", () => {
+  assert.equal(roundOf(0, 20), "1/20");
+  assert.equal(roundOf(19, 20), "20/20");
+  assert.equal(roundOf(36, TO_THE_END), "37");
+  assert.match(winLine({ blitz: true, maxRounds: 20 }), /^The last seat standing wins; after round 20 the highest net worth wins: cash, squares at their price \(half when mortgaged\) and houses at three quarters of their cost\.$/);
+  assert.match(winLine({ blitz: false, maxRounds: 12 }), /houses at their cost\.$/);
+  assert.match(winLine({ blitz: true, maxRounds: TO_THE_END }), /^The last seat standing wins\. Should round 255 ever end/);
 });
 
 test("a node holds the price of all the gas attached, so the calls attach no more than the contract asks", () => {

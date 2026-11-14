@@ -6,8 +6,9 @@ import { Arrow, Bot, Copy, Seat } from "@/components/landing/icons";
 import { CHAIN } from "@/lib/chain/config";
 import { PLAYBOOK_DRIVER } from "../agent/advise";
 import { TOKEN_COLORS } from "../board";
+import { BLITZ_DEAL } from "../engine";
 import { accountLabel, formatBps, formatNear, playerName, seatNames } from "../chain/adapt";
-import { MOVE_HOLD, joinCalls, near, roundsLabel, startCall, upfront } from "../chain/calls";
+import { MOVE_HOLD, joinCalls, near, roundsLabel, startCall, upfront, winLine } from "../chain/calls";
 import { devJoin, devSeatAgent, useDevConfig, type DevConfig } from "../chain/devSession";
 import type { ChainMatch, ChainResult } from "../chain/types";
 import { armAgent, useAgent } from "../chain/useAgent";
@@ -447,12 +448,16 @@ function Lobby({
                 <dd>{meta.turn_seconds} s</dd>
               </div>
               <div>
-                <dt>{meta.rules.blitz ? "Blitz start" : "Cash to start"}</dt>
-                <dd>{meta.rules.cash}</dd>
+                <dt>{meta.rules.blitz ? "To start" : "Cash to start"}</dt>
+                <dd>{meta.rules.blitz ? `${BLITZ_DEAL} squares dealt, paid out of ${meta.rules.cash}` : meta.rules.cash}</dd>
               </div>
               <div>
                 <dt>Late player</dt>
                 <dd>moved by the contract</dd>
+              </div>
+              <div className="fd-terms__wide">
+                <dt>How it is won</dt>
+                <dd>{winLine(meta.rules)}</dd>
               </div>
             </dl>
           </section>

@@ -15,13 +15,16 @@ import {
   openDuelCalls,
   ownStake,
   ROUND_CHOICES,
+  roundsFor,
   roundsLabel,
+  RULES,
   SEAT_COUNTS,
   SMALLEST_STAKE,
   SPLITS,
   STORAGE_DEPOSIT,
   TO_THE_END,
   TURN_SECONDS,
+  winLine,
 } from "../chain/calls";
 import { devCreateMatch, useDevConfig, type DevConfig, type NewMatch } from "../chain/devSession";
 import { openFreeTable, requestFreeTable, type FreeOpponent } from "../chain/free";
@@ -183,7 +186,8 @@ function FlightStub({
   // A stake of the visitor's own, typed in NEAR: it stands instead of the chips while it is filled in.
   const [typed, setTyped] = useState("");
   const [typing, setTyping] = useState(false);
-  const [rounds, setRounds] = useState(TO_THE_END);
+  // `null`: not chosen, so the table is opened with the rounds that suit its seats.
+  const [pickedRounds, setRounds] = useState<number | null>(null);
   const [seatCount, setSeatCount] = useState(SEAT_COUNTS[0]);
   // The house's agents at a free table: one model each, picked from what this server offers.
   const offered = useOfferedModels();
@@ -228,6 +232,7 @@ function FlightStub({
   // hosts it, the seats fill as people come, and the game starts when the host says so.
   const room = mode !== "ai";
   const seats = room ? seatCount : 1 + agentModels.length;
+  const rounds = pickedRounds ?? roundsFor(seats);
   const bots = mode === "friends" ? roomBots.slice(0, Math.max(0, seatCount - 2)) : [];
   const terms = {
     stake: near(stake),
@@ -470,6 +475,7 @@ function FlightStub({
               ))}
             </div>
           </div>
+          <p className="fd-fine">{winLine({ blitz: RULES.blitz, maxRounds: rounds })}</p>
         </div>
       </details>
       {/* Too little on the account for this stake: the way to the missing NEAR, right here. */}
