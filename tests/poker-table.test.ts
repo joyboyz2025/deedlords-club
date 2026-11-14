@@ -21,6 +21,7 @@ import {
   contenders,
   duty,
   fromBase64,
+  handNets,
   holeCards,
   nextDealt,
   toBase64,
@@ -313,4 +314,16 @@ test("a seat's page calls time on the others only when its own part is in", () =
   // Not before the deadline and its grace; never in the lobby.
   assert.equal(callsTime({ ...flop, deadline: until(-3_000) }, 3, at, 4_000), false);
   assert.equal(callsTime(table({ phase: "lobby", awaited: [], deadline: "0" }), 3, at, 4_000), false);
+});
+
+test("the hand before shows what a seat ruled late really lost", () => {
+  // Hand 2 of f-mwf7vvqq-vmzn on testnet, 2026-11-14: seat 2 had put in 12 and held 88 more when it was ruled late on
+  // the river's shares; the hand was called off and seat 0 took its own 12 back and all 100 of seat 2. The page showed
+  // "-12" for the seat that had just lost its whole stack.
+  const last = { number: 1, dealt: [2, 3, 0], board: [20, 13, 32, 44], hole: [[], [], [], [], [], []], folded: [false, false, false, true, false, false], put: [12, 0, 12, 1, 0, 0], won: [112, 0, 0, 1, 0, 0], ending: "cancelled" as const, late: [2] };
+  assert.deepEqual(handNets(last), [100, 0, -100, 0, 0, 0]);
+  // Two late seats: what each had behind cannot be told from the hand.
+  assert.deepEqual(handNets({ ...last, put: [12, 0, 12, 12, 0, 0], won: [212, 0, 0, 0, 0, 0], folded: [false, false, false, false, false, false], late: [2, 3] }), [200, 0, null, null, 0, 0]);
+  // A showdown, and a seat folded by the clock at it: what it put in, no more.
+  assert.deepEqual(handNets({ ...last, ending: "showdown" as const, put: [16, 0, 16, 0, 0, 0], won: [32, 0, 0, 0, 0, 0], late: [2] }), [16, 0, -16, 0, 0, 0]);
 });

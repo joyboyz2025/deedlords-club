@@ -13,7 +13,8 @@ import { lookFromSeat } from "../../../ma-soi/look";
 import { CardPlace, PlayingCard } from "../../components/Cards";
 import { Ledger, type LogLine } from "../../components/TableView";
 import type { Advice } from "../../agent/decide";
-import { type TableView, betOptions, clockMarginMs, nextDealt, seated } from "../seat";
+import { madeHand } from "../../agent/hands";
+import { type TableView, betOptions, clockMarginMs, handNets, nextDealt, seated } from "../seat";
 
 const FACE_PX = 112;
 const seatColour = (seat: number) => ({ "--seat": `var(--seat-${seat})` }) as CSSProperties;
@@ -465,6 +466,7 @@ function LastHand({ view, name: nameNow }: { view: TableView; name: (seat: numbe
   const name = (seat: number): string => (view.players[seat] ? nameNow(seat) : `Seat ${seat + 1}`);
   const ending =
     last.ending === "fold" ? "everyone else folded" : last.ending === "showdown" ? "showdown" : last.ending === "cancelled" ? "called off: a seat did not answer in time" : "void";
+  const nets = handNets(last);
   return (
     <div className="pk-ticket">
       <section className="pk-stub pk-last" aria-label="The hand before">
@@ -482,17 +484,20 @@ function LastHand({ view, name: nameNow }: { view: TableView; name: (seat: numbe
         )}
         <ul className="pt-results">
           {last.dealt.map((seat) => {
-            const net = (last.won[seat] ?? 0) - (last.put[seat] ?? 0);
+            const net = nets[seat];
+            // What the cards a seat showed made with the board, as the contract ranked them.
+            const made = last.hole[seat]?.length === 2 && last.board.length === 5 ? madeHand(last.hole[seat], last.board) : null;
             return (
-              <li key={seat} style={seatColour(seat)} data-won={net > 0 || undefined}>
+              <li key={seat} style={seatColour(seat)} data-won={(net !== null && net > 0) || undefined}>
                 <span>
                   <i className="pk-seal" data-given />
                   {name(seat)}
                   {last.late.includes(seat) && <em> late</em>}
                   {last.folded[seat] && <em> folded</em>}
+                  {made && <em> {made}</em>}
                 </span>
                 <span className="pk-last__cards">{last.hole[seat]?.length === 2 && last.hole[seat].map((card, at) => <PlayingCard key={at} card={card} />)}</span>
-                <b>{net > 0 ? `+${net}` : net}</b>
+                <b title={net === null ? "It lost the chips it had at the table" : undefined}>{net === null ? "out" : net > 0 ? `+${net}` : net}</b>
               </li>
             );
           })}

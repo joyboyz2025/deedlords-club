@@ -186,6 +186,20 @@ export function betOptions(view: TableView, seat: number): { owed: number; raise
 }
 
 /**
+ * What each seat won or lost by a finished hand, by seat. A seat that ran out of time in a hand that was called off
+ * also lost the chips it had behind, which went to the seats still in: with one late seat that is what the others
+ * took beyond what was put in; with several, their shares cannot be told apart and `null` stands for each.
+ */
+export function handNets(last: Hand): (number | null)[] {
+  const fined = last.won.reduce((sum, chips) => sum + chips, 0) - last.put.reduce((sum, chips) => sum + chips, 0);
+  return last.won.map((won, seat) => {
+    const net = won - (last.put[seat] ?? 0);
+    if (fined <= 0 || !last.late.includes(seat)) return net;
+    return last.late.length === 1 ? net - fined : null;
+  });
+}
+
+/**
  * How long before its deadline a seat's own bet is made for it (`clockMove`), in milliseconds: room for the bet to be
  * signed, sent and taken into a block, and at a free table to wait its turn behind the sponsor's other transactions.
  */
