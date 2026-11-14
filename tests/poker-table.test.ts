@@ -104,6 +104,19 @@ test("a seat may bet what the contract takes", () => {
   assert.deepEqual(betOptions(table({ chips: [0, 0, 0, 100, 100, 0], bet: [40, 40, 0, 0, 40, 0], folded: [false, false, false, false, true, false] }), 3), { owed: 40, raise: null });
 });
 
+test("the least raise is the size of the raise it answers, as at any no-limit table", () => {
+  // The contract takes any raise of the big blind or more. Seat 1 made it 6 over a big blind of 2, a raise of 4: the
+  // page offered seat 3 "Raise to 8"; the least re-raise is another 4, to 10.
+  const raised = table({ toAct: 3, awaited: [3], chips: [98, 94, 0, 100, 99, 0], bet: [2, 6, 0, 0, 1, 0], put: [2, 6, 0, 0, 1, 0] });
+  assert.deepEqual(betOptions(raised, 3), { owed: 6, raise: { min: 10, max: 100 } });
+  // A bet of 8 into an unopened flop is raised to 16 at least; the first bet of a street is the big blind at least.
+  const flop = { phase: "bet" as const, street: 1, board: [1, 2, 3], put: [10, 10, 0, 2, 2, 0] };
+  assert.deepEqual(betOptions(table({ ...flop, toAct: 1, awaited: [1], chips: [82, 90, 0, 98, 98, 0], bet: [8, 0, 0, 0, 0, 0], put: [18, 10, 0, 2, 2, 0] }), 1).raise, { min: 16, max: 90 });
+  assert.deepEqual(betOptions(table({ ...flop, toAct: 0, awaited: [0], chips: [90, 90, 0, 98, 98, 0], bet: [0, 0, 0, 0, 0, 0] }), 0).raise, { min: 2, max: 90 });
+  // A seat that cannot make the full raise may still go all in.
+  assert.deepEqual(betOptions(table({ toAct: 3, awaited: [3], chips: [98, 94, 0, 9, 99, 0], bet: [2, 6, 0, 0, 1, 0], put: [2, 6, 0, 0, 1, 0] }), 3).raise, { min: 9, max: 9 });
+});
+
 test("a seat owes its shuffle, then its shares for the cards it must not see alone", async () => {
   const names = ["a.testnet", "b.testnet", "d.testnet", "e.testnet"];
   const keys = names.map(() => newKeys());
@@ -197,7 +210,8 @@ test("an agent is told what its seat can see at a table of several", () => {
         { chips: 98, bet: 2, allIn: false },
         { chips: 92, bet: 8, allIn: false },
       ],
-      raiseTo: { min: 10, max: 100 },
+      // Seat 1's 8 raised the big blind by 6: the least raise over it is 6 more.
+      raiseTo: { min: 14, max: 100 },
       blinds: [1, 2],
     },
   );

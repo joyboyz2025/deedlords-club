@@ -177,12 +177,17 @@ export function holeCards(view: TableView, seat: number, keys: Keys, deck: Uint8
  * What the seat to act may do: what a call costs it (all it has, when that is less than it owes), and the smallest
  * and largest bet it may raise to. `null`: no raise, because it cannot pay more than the bet it answers or because
  * nobody is left who could answer one.
+ *
+ * The smallest raise adds what the bet it answers added to the one before it, and the big blind at least, as at any
+ * no-limit table; less only all in. The contract itself asks for the big blind and no more, so every raise offered
+ * here is one it takes.
  */
 export function betOptions(view: TableView, seat: number): { owed: number; raise: { min: number; max: number } | null } {
   const top = Math.max(...view.bet);
   const all = view.bet[seat] + view.chips[seat];
   const answering = contenders(view).some((other) => other !== seat && view.chips[other] > 0);
-  return { owed: Math.min(view.chips[seat], top - view.bet[seat]), raise: all > top && answering ? { min: Math.min(top + 2, all), max: all } : null };
+  const before = Math.max(0, ...view.bet.filter((chips) => chips < top));
+  return { owed: Math.min(view.chips[seat], top - view.bet[seat]), raise: all > top && answering ? { min: Math.min(top + Math.max(2, top - before), all), max: all } : null };
 }
 
 /**
