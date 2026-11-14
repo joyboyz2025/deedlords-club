@@ -40,7 +40,7 @@ import { type Keys, ORDER, keyProof, keysFromSecret } from "../crypto";
 import { FREE_TABLE_DEPOSIT, FREE_TABLE_HANDS, MAX_SEATS, RECORD_FEE, STAKE, TABLE_CHAIN, TABLE_CONTRACT, gasFor } from "./contract";
 import { advise } from "./decide";
 import { type Thought, handIsOver, readThought, sealThought } from "./sealed";
-import { type SeatStore, type TableView, betCall, betOptions, duty, fromBase64, holeCards, toBase64 } from "./seat";
+import { type SeatStore, type TableView, betCall, betOptions, coldLobby, duty, fromBase64, holeCards, toBase64 } from "./seat";
 
 export type Played =
   /** `sealed`: what the seat thought when it bet, which says what it holds: readable only through `openThought`, once the hand is over. */
@@ -55,8 +55,6 @@ export const MAX_HOUSE_TABLES = 4;
 export const MAX_FREE_TABLES = intEnv(process.env.POKER_FREE_TABLES, 4);
 /** What an account must hold for a node to take a shuffle with its 260 Tgas attached: about 0.3 NEAR. */
 const SHUFFLE_RESERVE = 3n * 10n ** 23n;
-/** A free table nobody came to is closed by its host this long after it was opened. */
-const FREE_LOBBY_MS = 10 * 60_000;
 const ACCOUNT_ID = /^(?=.{2,64}$)[a-z0-9]+(?:[-_.][a-z0-9]+)*$/;
 const client = new ChainClient(TABLE_CHAIN);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -200,8 +198,6 @@ export function seats(): House[] {
 
 const isHouse = (accountId: string | null): boolean => seats().some((playing) => playing.accountId === accountId);
 const isFree = (table: Pick<TableView, "stake">): boolean => BigInt(table.stake) === 0n;
-/** When a free table was opened, from its id (`f-<time in base 36>-…`); 0 for any other id. */
-const openedAt = (id: string): number => (/^f-([0-9a-z]{6,9})-/.test(id) ? parseInt(id.split("-")[1], 36) : 0);
 /** The model a free table's host bets by is written in its id, for a server that remembers nothing between requests. */
 const modelInId = (id: string): string | null => {
   const letter = /^f-[0-9a-z]+-[0-9a-z]{4}-([0-9a-z])$/.exec(id)?.[1];
@@ -338,9 +334,9 @@ async function step(id: string, options: StepOptions): Promise<Played> {
 
   if (!here.length) return { played: false, why: "the house does not sit at this table" };
   if (view.phase === "lobby") {
-    // A free table nobody came to: its host closes it, and the deposit comes back.
+    // A free table nobody came to, or that those who came never started: its host closes it, and the deposit comes back.
     const host = here.find((one) => one.accountId === view.host);
-    if (host && isFree(view) && !view.players.some((player) => player && !isHouse(player)) && Date.now() > openedAt(id) + FREE_LOBBY_MS) {
+    if (host && isFree(view) && coldLobby(view, isHouse, Date.now())) {
       const outcome = await host.session.call("leave", { id }, gasFor("leave"));
       return { played: true, what: "leave", hash: outcome.hash };
     }
@@ -428,7 +424,7 @@ export async function openFreeTable(seatCount: number, model: string | undefined
   if (held === null || held < FREE_TABLE_DEPOSIT + 2n * SHUFFLE_RESERVE)
     throw new Error("the house is out of NEAR for free tables right now: try a table with a stake, or come back later");
   const mine = (await everyTable()).filter((table) => isFree(table) && table.host === host.accountId);
-  const stale = mine.filter((table) => table.phase === "lobby" && !table.players.some((player) => player && !isHouse(player)) && Date.now() > openedAt(table.id) + FREE_LOBBY_MS);
+  const stale = mine.filter((table) => coldLobby(table, isHouse, Date.now()));
   const closed = await Promise.allSettled(stale.slice(0, 3).map((table) => host.session.call("leave", { id: table.id }, gasFor("leave"))));
   if (mine.length - closed.filter((one) => one.status === "fulfilled").length >= MAX_FREE_TABLES)
     throw new Error("every free table is taken right now: join one from the wall, or try again in a few minutes");

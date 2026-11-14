@@ -18,6 +18,7 @@ import {
   clockAhead,
   clockMarginMs,
   clockMove,
+  coldLobby,
   contenders,
   duty,
   fromBase64,
@@ -326,4 +327,23 @@ test("the hand before shows what a seat ruled late really lost", () => {
   assert.deepEqual(handNets({ ...last, put: [12, 0, 12, 12, 0, 0], won: [212, 0, 0, 0, 0, 0], folded: [false, false, false, false, false, false], late: [2, 3] }), [200, 0, null, null, 0, 0]);
   // A showdown, and a seat folded by the clock at it: what it put in, no more.
   assert.deepEqual(handNets({ ...last, ending: "showdown" as const, put: [16, 0, 16, 0, 0, 0], won: [32, 0, 0, 0, 0, 0], late: [2] }), [16, 0, -16, 0, 0, 0]);
+});
+
+test("a free table left in the lobby is closed by its host, with or without a guest at it", () => {
+  const house = (account: string) => account === "free.deedlords.testnet" || account.startsWith("pokerhouse");
+  const minutes = (n: number) => n * 60_000;
+  // f-mweoyifp-psxr on testnet: opened 2026-11-13 08:04 UTC, one guest sat down and never started it. Seventeen hours
+  // later it still held one of the four free tables: only a lobby nobody but the house sat in was ever closed.
+  const opened = parseInt("mweoyifp", 36);
+  const room = { id: "f-mweoyifp-psxr", phase: "lobby" as const, players: ["free.deedlords.testnet", "ea8b89aec73629abb5326ca2c835d90df1fcf72a33bc3421cbeb5e9e1fde12ea", null] };
+  assert.equal(coldLobby(room, house, opened + minutes(17 * 60)), true);
+  // Half an hour is left for friends to come and the table to start; a house seat asked to sit changes nothing.
+  assert.equal(coldLobby(room, house, opened + minutes(29)), false);
+  assert.equal(coldLobby({ ...room, players: [...room.players.slice(0, 2), "pokerhouse.deedlords.testnet"] }, house, opened + minutes(31)), true);
+  // Nobody came: ten minutes, as before.
+  const empty = { ...room, players: ["free.deedlords.testnet", null, null] };
+  assert.equal(coldLobby(empty, house, opened + minutes(9)), false);
+  assert.equal(coldLobby(empty, house, opened + minutes(11)), true);
+  // A table that started has a clock of its own: never closed from here.
+  assert.equal(coldLobby({ ...room, phase: "bet" as const }, house, opened + minutes(17 * 60)), false);
 });

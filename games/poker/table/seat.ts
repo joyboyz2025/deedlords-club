@@ -231,3 +231,19 @@ export const clockAhead = (view: Pick<TableView, "turnSeconds" | "deadline">, no
  */
 export const callsTime = (view: TableView, seat: number, nowMs: number, graceMs: number): boolean =>
   view.phase !== "lobby" && view.awaited.length > 0 && !view.awaited.includes(seat) && nowMs >= Number(view.deadline) / 1_000_000 + graceMs;
+
+/** When a free table was opened, from its id (`f-<time in base 36>-…`); 0 for any other id. */
+export const openedAt = (id: string): number => (/^f-([0-9a-z]{6,9})-/.test(id) ? parseInt(id.split("-")[1], 36) : 0);
+/** A free table nobody came to is closed by its host this long after it was opened. */
+export const FREE_LOBBY_MS = 10 * 60_000;
+/** One somebody did sit at, and that still has not started this long after it was opened: whoever sat there walked away. */
+export const FREE_ROOM_MS = 30 * 60_000;
+
+/**
+ * Whether the host of a free table closes it in the lobby: nobody came, or those who came never started it. A table
+ * in the lobby has no clock, so nothing else ever ends it, and every one left open holds one of the few free tables
+ * the sponsor keeps open at once (and a house seat, if one was asked to sit): on 2026-11-14 three rooms, 8 to 17
+ * hours old, each with one guest long gone, held three of the testnet site's four.
+ */
+export const coldLobby = (table: Pick<TableView, "id" | "phase" | "players">, isHouse: (account: string) => boolean, now: number): boolean =>
+  table.phase === "lobby" && now > openedAt(table.id) + (table.players.some((player) => player !== null && !isHouse(player)) ? FREE_ROOM_MS : FREE_LOBBY_MS);
