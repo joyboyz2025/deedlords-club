@@ -5,6 +5,8 @@
 # The script names the folders its clips are in (`clips`), a `pace` for the voice, and the beats in order:
 #   {"card": "Title", "sub": "smaller line", "over": "clip", "at": 3.0, "seconds": 1.4}     a chapter card over a blurred picture
 #   {"id": "A1", "clip": "n1-wallets", "from": 0.5, "say": [...], "show": "words with <b>stress</b>", "tech": "LABEL"}
+#   {"id": "T1", "slide": "Title", "over": "clip", "at": 1.0, "say": [...], "table": {"head": [...], "rows": [[...], ...]}}   a table
+#   {"id": "U1", "slide": "Title", "over": "clip", "at": 1.0, "say": [...], "points": ["...", ...]}                         a list
 # A beat lasts as long as its line takes to say (plus `pad`, at least `min`); `"from": "+"` goes on where the last beat
 # of the same clip stopped. Nothing is sped up: a beat is a piece of a clip at the speed it was filmed. The clips were
 # filmed with captions of their own at the bottom; the band covers that strip, so the words under the picture are
@@ -30,6 +32,12 @@ Style: Cap,Avenir Next Demi Bold,48,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,
 Style: Tech,Avenir Next Demi Bold,26,&H003FC9F8,&H003FC9F8,&H00000000,&H00000000,0,0,0,0,100,100,3,0,1,0,0,5,60,60,0,1
 Style: Title,Rockwell,132,&H003FC9F8,&H003FC9F8,&H00060A17,&H00000000,1,0,0,0,100,100,0,0,1,0,3,5,120,120,0,1
 Style: Sub,Avenir Next Demi Bold,46,&H00CFE6F3,&H00CFE6F3,&H00000000,&H00000000,0,0,0,0,100,100,1,0,1,0,2,5,160,160,0,1
+Style: Head,Rockwell,84,&H003FC9F8,&H003FC9F8,&H00060A17,&H00000000,1,0,0,0,100,100,0,0,1,0,2,5,100,100,0,1
+Style: Col,Avenir Next Demi Bold,27,&H003FC9F8,&H003FC9F8,&H00000000,&H00000000,0,0,0,0,100,100,3,0,1,0,0,4,40,40,0,1
+Style: Label,Avenir Next Demi Bold,38,&H00CFE6F3,&H00CFE6F3,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,4,40,40,0,1
+Style: Dim,Avenir Next Medium,37,&H0097AEBB,&H0097AEBB,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,4,40,40,0,1
+Style: Cell,Avenir Next Demi Bold,38,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,4,40,40,0,1
+Style: Point,Avenir Next Demi Bold,50,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,4,40,40,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -80,7 +88,33 @@ def main():
         part = os.path.join(work, "part-%02d.mp4" % n)
         ass = os.path.join(work, "part-%02d.ass" % n)
         look = "libx264 -preset veryfast -crf 18 -pix_fmt yuv420p -r 30".split()
-        if "card" in beat:
+        if "slide" in beat:
+            seconds = beat.get("len") or max(beat.get("min", 3.0), beat.get("said", 0) + LEAD + beat.get("pad", 0.5))
+            still = os.path.join(work, "part-%02d.png" % n)
+            run(["ffmpeg", "-y", "-loglevel", "error", "-ss", "%.2f" % beat.get("at", 0), "-i", clip_path(beat["over"]), "-frames:v", "1", still])
+            lines, boxes = [("Head", WIDTH // 2, 150, beat["slide"])], []
+            if beat.get("table"):
+                xs, top, step = [150, 640, 1230], 300, 122
+                rows = beat["table"]["rows"]
+                boxes.append("drawbox=x=1190:y=255:w=640:h=%d:color=0xf8c93f@0.10:t=fill" % (step * len(rows) + 90))
+                for x, words in zip(xs, beat["table"]["head"]):
+                    lines.append(("Col", x, top, words.upper()))
+                for r, row in enumerate(rows):
+                    y = top + 105 + r * step
+                    boxes.append("drawbox=x=130:y=%d:w=1700:h=2:color=0xf8c93f@0.28:t=fill" % (y - step // 2))
+                    for x, style, words in zip(xs, ("Label", "Dim", "Cell"), row):
+                        lines.append((style, x, y, ass_words(words)))
+            for i, point in enumerate(beat.get("points", [])):
+                y = 330 + i * (640 // max(len(beat["points"]), 4))
+                lines.append(("Point", 290, y, "{\\c" + GOLD + "}" + str(i + 1) + "{\\c" + WHITE + "}     " + ass_words(point)))
+            write_ass(ass, lines)
+            see = "scale=%d:%d,boxblur=26:3,eq=brightness=-0.42:saturation=0.6,%sass=%s,fade=t=in:d=0.2,fade=t=out:st=%.2f:d=0.2" % (WIDTH, HEIGHT, "".join(box + "," for box in boxes), ass, seconds - 0.2)
+            run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-t", "%.2f" % seconds, "-i", still, "-vf", see, "-an", "-c:v"] + look + [part])
+            if beat.get("say"):
+                beat["at"] = clock + LEAD
+                captions.append({"id": beat["id"], "at": round(clock, 2), "clip": "slide", "from": 0, "text": beat["slide"]})
+            print("%-4s %6.1f  %4.1f s  slide: %s  %s" % (beat.get("id", ""), clock, seconds, beat["slide"], "said %.1f" % beat["said"] if beat.get("say") else ""))
+        elif "card" in beat:
             seconds = beat.get("seconds", 1.15)
             still = os.path.join(work, "part-%02d.png" % n)
             run(["ffmpeg", "-y", "-loglevel", "error", "-ss", "%.2f" % beat.get("at", 0), "-i", clip_path(beat["over"]), "-frames:v", "1", still])
