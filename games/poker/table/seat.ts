@@ -231,6 +231,14 @@ export function clockMove(view: TableView, seat: number, nowMs: number): "call" 
 export const clockAhead = (view: Pick<TableView, "turnSeconds" | "deadline">, nowMs: number): number => view.turnSeconds * 1_000 - (Number(view.deadline) / 1_000_000 - nowMs);
 
 /**
+ * What a page takes off its device's time, from the least `clockAhead` it has read (`null`: none yet). A reading is
+ * the clock's error plus the second or two a new table takes to get here, so up to five seconds ahead is taken for
+ * none: a device that keeps time keeps its own, and its countdown never shows more time than there is. A clock that
+ * is behind, or far ahead, is put right.
+ */
+export const clockSkew = (ahead: number | null): number => (ahead === null || (ahead >= 0 && ahead <= 5_000) ? 0 : ahead);
+
+/**
  * Whether the page of `seat` calls time by itself: the deadline passed `graceMs` ago and the table waits for others,
  * not for this seat. Time called while its own part is still owed would rule this seat late with them.
  */

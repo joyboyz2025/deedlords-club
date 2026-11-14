@@ -51,6 +51,7 @@ import {
   callsTime,
   clockAhead,
   clockMove,
+  clockSkew,
   duty,
   holeCards,
   houseName,
@@ -706,7 +707,8 @@ function LiveTable({
   const [now, setNow] = useState(() => Date.now());
   /** How far this device's clock runs ahead of the chain's (seat.ts `clockAhead`); `null` until a clock was seen to restart. */
   const [ahead, setAhead] = useState<number | null>(null);
-  const lastDeadline = useRef<string | null>(null);
+  /** The deadline of the table as last read, and when that was: a restart counts only if the table was read just before it. */
+  const lastDeadline = useRef<{ deadline: string; at: number } | null>(null);
   const seq = useRef(firstSeq);
   /**
    * A call the node did not answer. Whether it landed is read from the table: `took` says whether a table shows what
@@ -772,11 +774,14 @@ function LiveTable({
           seq.current = at.seq;
           setView(at);
           setTrouble("");
-          if (lastDeadline.current !== null && at.deadline !== lastDeadline.current && at.deadline !== "0") {
+          // A page that was not reading (a tab put away, a node that did not answer) learns of a restart long after
+          // it happened: that reading would say the clock is ahead by as long as it was away.
+          const read = lastDeadline.current;
+          if (read !== null && at.deadline !== read.deadline && at.deadline !== "0" && Date.now() - read.at < FRESH_READ_MS) {
             const seen = clockAhead(at, Date.now());
             setAhead((before) => (before === null ? seen : Math.min(before, seen)));
           }
-          lastDeadline.current = at.deadline;
+          lastDeadline.current = { deadline: at.deadline, at: Date.now() };
           settle(at);
           if (refusedAt.current !== null && at.seq > refusedAt.current + 1) {
             refusedAt.current = null;
@@ -964,7 +969,7 @@ function LiveTable({
   // chain's clock may be a little behind this one's, and somebody else's call may have been quicker).
   const calledTime = useRef<{ seq: number; at: number } | null>(null);
   /** The time by the chain's clock, as near as this page can tell. */
-  const clock = now - (ahead ?? 0);
+  const clock = now - clockSkew(ahead);
   useEffect(() => {
     // Never while this seat's own part is owed: it would be ruled late with the others.
     if (!session || !view || mySeat === null || !callsTime(view, mySeat, clock, TIME_GRACE_MS)) return;
@@ -1144,6 +1149,8 @@ const TIME_GRACE_MS = 4_000;
 const TIME_RETRY_MS = 12_000;
 /** A bet the page made because the clock ran down is tried again this often while it has not gone through. */
 const CLOCK_RETRY_MS = 5_000;
+/** A clock's restart tells how the device's clock stands only if the table had been read this short a while before. */
+const FRESH_READ_MS = 4_000;
 /** Below this a seat at a table with a stake cannot send its shuffle: the call must be able to reserve 0.26 NEAR. */
 const PLAY_RESERVE = (27n * NEAR) / 100n;
 /** What a seat that ran low is brought back up to. */

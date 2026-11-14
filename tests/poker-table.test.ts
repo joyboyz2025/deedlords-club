@@ -18,6 +18,7 @@ import {
   clockAhead,
   clockMarginMs,
   clockMove,
+  clockSkew,
   coldLobby,
   contenders,
   duty,
@@ -323,7 +324,12 @@ test("with its clock nearly out a seat's page checks for it, or folds to a bet, 
   const wrong = at + 50_000;
   assert.equal(clockMove(fresh, 1, wrong), "fold");
   assert.equal(clockAhead(fresh, wrong), 50_000);
-  assert.equal(clockMove(fresh, 1, wrong - clockAhead(fresh, wrong)), null);
+  assert.equal(clockMove(fresh, 1, wrong - clockSkew(clockAhead(fresh, wrong))), null);
+  // A device that keeps time reads the two seconds the new table took to arrive: nothing is taken off, and its
+  // countdown shows no more time than there is. A device that is behind is put right too.
+  assert.equal(clockSkew(clockAhead(fresh, at + 2_000)), 0);
+  assert.equal(clockSkew(clockAhead(fresh, at - 20_000)), -20_000);
+  assert.equal(clockSkew(null), 0);
 });
 
 test("a seat's page calls time on the others only when its own part is in", () => {
