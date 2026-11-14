@@ -91,6 +91,12 @@ merged after review and a run of the tests:
   (`chain/room.ts`), and `scripts/co-ty-phu-sim.ts` simulates whole matches to choose the limits. The contracts were
   not changed. The short-game recipe (properties dealt at the start, a limit, the winner by total assets) is the one
   published board games of this kind use; the rules and the code are this project's own.
+- **Special tickets and the leader's rent in Deedlords**, opt-in per match (`docs/ENGINE-RULES.md` §10): four
+  tickets (Rent waiver, Pick your steps, Takeover, Festival) and double rent for whoever leads on net worth, in both
+  engines (`games/co-ty-phu/engine.ts`, `contracts/engine/src/game.rs`), the contract (a match with them is stored
+  beside the ones without, so the upgrade needs no migration), the agents (`games/co-ty-phu/agent/tickets.ts`) and the
+  table. 2,400 recorded traces replay to the same state in both engines. Cards held in hand and a handicap on the
+  leader are common devices of board games; these four tickets, their rules and the code are this project's own.
 - **A review of poker** as played on the live testnet site: a sponsor's transaction that the chain passed over is
   signed again (`lib/chain/client.ts`), leaving between two hands, a clock that runs down, abandoned free rooms, and
   what the table shows after a hand (`games/poker/table/`).
