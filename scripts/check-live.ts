@@ -22,7 +22,7 @@ const NODES = {
 };
 const EXPLORER = "https://nearblocks.io/txns";
 
-/** The contracts and the code each ran on 2026-11-13. An upgrade changes the hash: the README says which is current. */
+/** The contracts and the code each ran on 2026-11-14. An upgrade changes the hash: the README says which is current. */
 const CONTRACTS: [string, string, string][] = [
   ["game.deedlords.near", "HB5ibsB7g2iR5ht2kWjKMDjpMfhwVd1tJgQn5WzHNY5T", "Deedlords, the board game"],
   ["poker.deedlords.near", "7gBmMKnAkiroQJsMa1NnEoogPTotqsnEHiFzk6KRPb5Y", "Poker, tables of 2 to 9 seats"],

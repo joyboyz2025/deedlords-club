@@ -102,8 +102,17 @@ merged after review and a run of the tests:
   what the table shows after a hand (`games/poker/table/`).
 - **For readers:** `JUDGES.md`, the README's "Tracks" section, and a labelled warning instead of a failure when NEAR
   AI's report no longer lists an old move's signer (`lib/teeProof.ts`, `scripts/check-live.ts`).
+- **Later the same day, the match as it is played now.** The first point above was overtaken in the evening, and the
+  contract did change: building rules a match opts into (`buildHere`, `buildOne`, `buildOnBuy`), a host's grace,
+  seats marked away and `close` for tables everybody left (`contracts/README.md`, the sections of 2026-11-14). The
+  page now opens matches in which no property is dealt and a city takes a house when it is bought. The owner
+  upgraded the mainnet contract to this build the same evening (transaction `4DGjbAEo…`, in the README).
+- **At the tables:** the round poker table for two to nine seats as the play screen, a short handle instead of 64
+  hex digits for a guest's seat (`lib/seatName.ts`), a code to scan on an invitation, the switch between the
+  mainnet and the testnet site in the header, and a `near:` model that plays on the server's key when the player
+  has none (`lib/agentKey.ts`).
 
-## The demo film (in-window, 2026-11-13)
+## The demo film (in-window, 2026-11-13 and 14)
 
 `tools/demo/rec.mjs` drives a headless Chrome over the DevTools protocol and films it with the browser's own
 screencast; `tools/demo/film.mjs` is the film, scene by scene. Every picture is the live site, clicked through with
@@ -114,6 +123,14 @@ that are cut out are named in the captions; a move's own two seconds are left in
 the first cut is silence. A second cut carries a narration: `tools/demo/narrate.py` has a text-to-speech model read
 one line per caption on the author's machine (Kokoro-82M, Apache-2.0 by its model card, run through the VoiceStudio
 app). The lines are the captions, shortened; no person's voice was recorded or imitated.
+
+The film posted with the submission on 2026-11-14 is a third cut, a presentation of three minutes.
+`tools/demo/cut.py` cuts the clips filmed by `tools/demo/rec.mjs` (the scenes are `tools/demo/film.mjs` and
+`tools/demo/extra.mjs`) to the lines of a script, `tools/demo/present.json`, and draws the slides between them: the
+problem, a comparison table, an example payout, what is next. Its narration is synthetic speech from ElevenLabs: a
+voice from that service's own library reads the script, and nobody was recorded for this film. The figures on its
+research slide are other people's, as the slide says: Hasbro's for Monopoly and the World Poker Tour's estimate for
+poker.
 
 ## Deedlords Arena (in-window, 2026-11-11)
 

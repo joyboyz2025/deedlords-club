@@ -11,7 +11,8 @@ the repository and shown as a trailer.
 |---|---|
 | Play on mainnet | https://www.deedlords.xyz (also https://deedlords-club.vercel.app) |
 | The same app on testnet, where everything is free | https://testnet.deedlords.xyz (also https://deedlords-club-testnet.vercel.app) |
-| Check the claims below against mainnet, with no key | `npm ci && npm run check:live` |
+| Demo video, three minutes | https://x.com/hoangalt/status/2121687720829587954 |
+| Check it against mainnet, with no key | `npm ci && npm run check:live` |
 | For judges and AI screeners | [JUDGES.md](JUDGES.md): three minutes in the browser, three commands in a terminal, and what each shows |
 | Tracks | `games`, `privacy`, `open`: [how each brief is answered](#tracks) |
 | Built | for NEAR HACKATHON, November 2026. What predates it: [PROVENANCE.md](PROVENANCE.md). Everything written during the hackathon: [`pre-hackathon...hackathon-submission`](https://github.com/joyboyz2025/deedlords-club/compare/pre-hackathon...hackathon-submission) |
@@ -29,13 +30,13 @@ player who has to buy a token, install a wallet and approve a pop-up for every m
 | Somebody has to roll the dice | The contract draws them from the chain's own randomness in the same transaction as the move | `env::random_seed`, contract state |
 | A wallet pop-up for every move | One approval for a whole match: a key that can only call the game contract signs the moves | Function-call access keys |
 | A new player has no NEAR | A guest plays free tables holding nothing: the guest signs each move, a sponsor account sends it and pays the gas | Implicit accounts, meta-transactions (NEP-366) |
-| The player's money is on another chain | A stake that the account cannot pay is topped up from USDC or ETH on Base, Arbitrum or Ethereum | NEAR Intents (1Click) |
+| The player's money is on another chain | A stake that the account cannot pay is quoted in USDC or ETH on Base, Arbitrum or Ethereum and paid from the player's own wallet; NEAR arrives on the game account. NEAR can leave to another chain the same way | NEAR Intents, the 1Click Swap API: [how it is used](#5-money-from-any-chain-near-intents-1click) |
 | An AI opponent is a black box | An agent's move carries a signature from the hardware enclave its model ran in. Anyone can check which model made the move; nobody can read the owner's instructions | NEAR AI Cloud (TEE inference and attestation) |
 
 ## Check it in one command
 
-Nothing to configure, no key, nothing is sent. This reads NEAR mainnet from public nodes and checks the claims above
-against real transactions:
+Nothing to configure, no key, nothing is sent. This reads NEAR mainnet from public nodes and checks five things said
+above against real transactions:
 
 ```bash
 npm ci
@@ -55,17 +56,18 @@ ten seconds, no network).
 
 ## Try it in the browser: do X, see Y
 
-Use either site. On mainnet a free table costs you nothing (a sponsor pays the gas); a staked table uses real NEAR.
+Use either site: https://www.deedlords.xyz (mainnet; the links below open it) or https://testnet.deedlords.xyz. On
+mainnet a free table costs you nothing (a sponsor pays the gas); a staked table uses real NEAR.
 
 | # | Do | See |
 |---|---|---|
-| 1 | Open [`/play`](https://deedlords-club.vercel.app/play), press **Play as a guest** | A 64-character account name at the top right: a NEAR account whose key was just made in this browser. No wallet, no NEAR |
+| 1 | Open [`/play`](https://www.deedlords.xyz/play), press **Play as a guest** | Your account at the top right, shortened like `4b57da…105f` (hover it for all 64 characters): a NEAR implicit account whose key was just made in this browser. No wallet, no seed phrase, no NEAR. At a table the other players see a short handle worked out from the account, like `Otter27` (`lib/seatName.ts`) |
 | 2 | Keep the **vs AI** tile and press **Play vs AI**. Unless you choose another under **Table options**, the AI seat plays by a model NEAR AI runs in a TEE (its name starts with `near:`), so its moves can be verified | A board of 40 world cities opens in about ten seconds: the sponsor first opens the table and seats its AI on chain. The dice roll by themselves after five seconds; the AI seat answers on its turns |
 | 3 | Press the chain-link button at the left of the board (**Transactions**) | One row per move, each a link to the explorer. There your moves are calls of `play` on `game.deedlords.near` by your account, inside transactions signed and paid by `free.deedlords.near`. A row with a **TEE-signed** tag is an AI move that carries a proof |
-| 4 | Click a **TEE-signed** tag, or open [this real one](https://deedlords-club.vercel.app/verify?tx=2af7dAbW4rBsDSKKhXAdyTXB35FrxcoXttPiE2swuXEc&from=free.deedlords.near) | "Signed in a TEE, and it holds." with five ticks, computed in your browser from the transaction and NEAR AI's public attestation report |
-| 5 | Open [`/poker/tables`](https://deedlords-club.vercel.app/poker/tables), keep **vs House**, press **Play vs the House** | A table opens and a hand is dealt: both seats shuffle, then your two cards are face up for you only. Every step is a call on [`poker.deedlords.near`](https://nearblocks.io/address/poker.deedlords.near): `shuffle`, `deal`, `act`, `open`, `show` |
-| 6 | On `/play` sign in with an **EVM wallet** instead, choose **Stake**, type a stake larger than the account holds | A panel under the stake with a live 1Click quote: "Pay … USDC from your wallet", for exactly the missing NEAR |
-| 7 | Open [`/character`](https://deedlords-club.vercel.app/character) | The character that sits at every table. It and each piece it wears are NEP-171 tokens of `chibi.deedlords.near` |
+| 4 | Click a **TEE-signed** tag, or open [this real one](https://www.deedlords.xyz/verify?tx=2af7dAbW4rBsDSKKhXAdyTXB35FrxcoXttPiE2swuXEc&from=free.deedlords.near) | "Signed in a TEE, and it holds." with five ticks, computed in your browser from the transaction and NEAR AI's public attestation report |
+| 5 | Open [`/poker/tables`](https://www.deedlords.xyz/poker/tables), keep **vs House**, press **Play vs the House** | A table opens and a hand is dealt: both seats shuffle, then your two cards are face up for you only. Every step is a call on [`poker.deedlords.near`](https://nearblocks.io/address/poker.deedlords.near): `shuffle`, `deal`, `act`, `open`, `show`. **Table details** under the table lists the hand's transactions |
+| 6 | On the mainnet site's `/play` sign in with an **EVM wallet** instead and choose **Stake**. A new game account holds no NEAR, so it cannot pay any stake | A panel under the stake, "Add … NEAR to play this stake", with a live quote from NEAR Intents' 1Click and one button: "Pay … USDC from your wallet". Nothing is sent unless you approve the transfer in the wallet. 1Click has no testnet: there the price is shown on `/account` under **Other chains**, with nothing to send ([section 5](#5-money-from-any-chain-near-intents-1click)) |
+| 7 | Open [`/character`](https://www.deedlords.xyz/character) | The character that sits at every table. It and each piece it wears are NEP-171 tokens of `chibi.deedlords.near` |
 
 Real transactions to open without playing:
 
@@ -75,6 +77,9 @@ Real transactions to open without playing:
 | A guest's move relayed by the sponsor (4.3 Tgas, 0.0004 NEAR paid by the sponsor) | [`2jesymTA…`](https://nearblocks.io/txns/2jesymTABFtwPkeVX29Sc6DFhFvWQX9Rq2jyEAhTcLUx) |
 | An AI move signed inside a TEE (3.9 Tgas, 0.0004 NEAR) | [`2af7dAbW…`](https://nearblocks.io/txns/2af7dAbW4rBsDSKKhXAdyTXB35FrxcoXttPiE2swuXEc) |
 | The last move of a staked match: the contract pays both seats in the same transaction | [`Ci1p7yj2…`](https://nearblocks.io/txns/Ci1p7yj2tqF3LXhMNrEjAYQbyuk416u6zcNPVXi3TADJ) |
+
+The explorer answers a script with HTTP 403. In a terminal, `npm run check:live` reads the same four transactions
+from public RPC nodes.
 
 ## Tracks
 
@@ -89,7 +94,7 @@ Each row quotes the track's brief. A "no" is said here first, because a reader f
 | "economies that evolve without a dev patch" | Inside a match, yes: who owns what, every rent, every mortgage and every bankruptcy is decided by the contract's rules and the players' moves, and a match keeps the fee and the rules it was opened with. Between matches nothing carries over yet | `get_match` on `game.deedlords.near` |
 | "Judged on the game loop, not the token" | There is no token. Every few seconds: a bet, or a roll and a purchase. Every few minutes: a hand or a match is settled and paid by the contract. Every session: a character, an agent with instructions of your own, a stake | steps 1 to 5 above |
 | "bonus if players never notice the chain" | A guest has no wallet, no seed phrase and no NEAR, and no pop-up opens for a move. About 2 s a move, measured on testnet | steps 1 to 3; the guest's relayed move in the table of transactions |
-| Hints: agent NPCs, social login, NEAR Intents, NEP-245 | Agent NPCs: yes, on NEAR AI Cloud. Social login: Google through NEAR Auth is built and runs on localhost only; the public sites offer a guest account or one signature of an EVM wallet. NEAR Intents: a live 1Click quote for a missing stake (no real deposit completed yet). NEP-245: not used; the tokens are NEP-171 | "Known limits" |
+| Hints: agent NPCs, social login, NEAR Intents, NEP-245 | Agent NPCs: yes, on NEAR AI Cloud. Social login: Google through NEAR Auth is built and runs on localhost only; the public sites offer a guest account or one signature of an EVM wallet. NEAR Intents: 1Click quotes and the wallet payment for a missing stake, and NEAR in or out of a game account from `/account` (no swap with real funds completed yet; [section 5](#5-money-from-any-chain-near-intents-1click)). NEP-245: not used; the tokens are NEP-171 | "Known limits" |
 
 ### `privacy`: Privacy & Private AI
 
@@ -112,7 +117,7 @@ Intents (`lib/chain/oneclick.ts`). The player's own chain is where they start, n
 
 | | Deedlords | Poker | Arena |
 |---|---|---|---|
-| What it is | An original property-trading board game. 40 squares of world cities ranked by real prime-property prices; buy, build, collect rent, go bankrupt. 2 to 4 seats. A match is short: after 12 to 20 rounds (by seat count) the highest net worth wins. Nothing is dealt: the board is bought by landing on it, a city takes its first house in the stop it is bought in, and one more each time its owner stops there again. (Mainnet runs this build since 2026-11-14, upgraded in place: transaction `4DGjbAEo2cLY5Mz7ALJ3A8Pd8wvT6oN3rBLrmKCk16X2`.) A match may also be opened with two more rules, when the contract lists them in `get_config` (`features`): four special tickets (Rent waiver, Pick your steps, Takeover, Festival; one dealt at the start, one more passing Departure, two in hand at most), and double rent for whoever leads on net worth ([`docs/ENGINE-RULES.md`](docs/ENGINE-RULES.md) §10). In 1,000 simulated two-seat matches the seat behind at half-time then wins 31% of the time instead of 23%. The testnet contract has both since 2026-11-14; the mainnet contract is the build from before them, so matches there play without. A free match of two seats against the AI took 10.5 minutes on testnet on 2026-11-14; `scripts/co-ty-phu-sim.ts` plays thousands of whole matches to measure length and how often the seat behind at half-time wins | Texas Hold'em for 2 to 9 seats with no dealer. Cash-game chips: 100 chips per stake, blinds 1 and 2 | An original auto-battler: a shared market, sealed first-price bids, a hex-grid fight with no randomness |
+| What it is | An original property-trading board game. 40 squares of world cities ranked by real prime-property prices; buy, build, collect rent, go bankrupt. 2 to 4 seats. A match is short: after 12 to 20 rounds (by seat count) the highest net worth wins. No property is dealt: the board is bought by landing on it, a city takes its first house in the stop it is bought in, and one more each time its owner stops there again. The page opens every match with two more rules: four special tickets (Rent waiver, Pick your steps, Takeover, Festival; one dealt at the start, one more passing Departure, two in hand at most), and double rent for whoever leads on net worth ([`docs/ENGINE-RULES.md`](docs/ENGINE-RULES.md) §10). Each rule is asked for only from a contract that lists it in `get_config` (`features`). Both networks' contracts list all of them since 2026-11-14, when mainnet was upgraded in place to the build testnet runs (transaction `4DGjbAEo2cLY5Mz7ALJ3A8Pd8wvT6oN3rBLrmKCk16X2`). `scripts/co-ty-phu-sim.ts` plays whole matches under these rules with seeded dice: over 400 two-seat matches a match is 20 rounds and about 12 houses, an estimated 7 minutes against agents and 10 between two people, and the seat behind at half-time still wins 29% of the time | Texas Hold'em for 2 to 9 seats with no dealer. Cash-game chips: 100 chips per stake, blinds 1 and 2 | An original auto-battler: a shared market, sealed first-price bids, a hex-grid fight with no randomness |
 | Mainnet | `game.deedlords.near` | `poker.deedlords.near` | not deployed |
 | Testnet | `game.deedlords.testnet` | `pokertable.deedlords.testnet` (`poker.deedlords.testnet` is the first, heads-up contract) | `arena.deedlords.testnet` |
 | Web route | `/play` | `/poker/tables` | `/arena` (trailer) |
@@ -213,15 +218,69 @@ Six TEE-signed turns by `Qwen/Qwen3.6-35B-A3B-FP8` are on mainnet as of 2026-11-
 | **Play as a guest** | A NEAR implicit account, key kept in the browser. Free tables at both games | Nothing |
 | **EVM wallet** (MetaMask, Rabby, Coinbase) | A NEAR game account derived from one signature of the wallet; the same account every time | The wallet |
 | **NEAR wallet** (through NEAR Connect) | The player's own account; poker adds a game account funded in one approval | The wallet |
-| **Short of NEAR for a stake** | A 1Click quote for exactly the missing amount, paid in USDC or ETH from the EVM wallet on Base, Arbitrum or Ethereum; NEAR arrives on the game account | Funds on that chain |
+| **Short of NEAR for a stake** | A 1Click quote for the missing NEAR, paid in USDC or ETH from the EVM wallet on Base, Arbitrum or Ethereum; NEAR arrives on the game account | Funds on that chain |
 
-`lib/chain/oneclick.ts`, `lib/chain/evmPay.ts`, `games/co-ty-phu/components/TopUp.tsx`. The quote is live and the
-wallet request is built and tested (`tests/evm-pay.test.ts`, `tests/oneclick.test.ts`); see "Known limits" for what
-has not been exercised with real funds.
+The last row is NEAR Intents' 1Click. The next section says how it is used and what has not been done with it.
+
+### 5. Money from any chain: NEAR Intents (1Click)
+
+The pot of every game is plain NEAR, held by the contract. What a player holds may be USDC on Base or ETH on Arbitrum.
+The way from one to the other is NEAR Intents' [1Click Swap API](https://docs.near-intents.org): the app asks for a
+quote, 1Click answers with a deposit address on the token's own chain, the player sends the token there from their own
+wallet, and NEAR Intents delivers NEAR to the game account. This project has no bridge contract and no wrapped token
+in a pot, and it never holds the player's token or signs for them.
+
+It sits at the edges of the games, in three places:
+
+| Where | What happens | Code |
+|---|---|---|
+| A stake the account cannot pay (`/play`, `/poker/tables`), signed in with an EVM wallet on mainnet | The page asks what the missing NEAR costs in a token of that wallet and shows one button, "Pay … USDC from your wallet". The wallet is switched to the token's chain and shown one ordinary transfer to 1Click's deposit address, which its owner approves there. The page follows the swap, and the stake opens when the NEAR has arrived | `games/co-ty-phu/components/TopUp.tsx`, `lib/chain/evmPay.ts` |
+| `/account`, **Other chains**, **Bring NEAR in** | For any game account, a guest's included: pick a token (USDC on Base, Arbitrum, Ethereum or Solana; USDT on Ethereum; ETH on Base or Arbitrum; SOL; BTC) and how much NEAR is wanted, and get the address and the exact amount to send, as text and as a QR code | `games/co-ty-phu/components/CrossChain.tsx` |
+| `/account`, **Other chains**, **Take NEAR out** | The other way: the game account sends NEAR to the address 1Click names, and the token arrives at the address the player typed on the other chain | the same file |
+
+A top-up, step by step:
+
+1. The browser posts `{ kind: "in", asset, near, recipient, refundTo }` to this site's own `/api/oneclick`
+   (`app/api/oneclick/route.ts`). The server checks the request before 1Click hears of it: a token from the short list
+   in `lib/chain/oneclick.ts`, 0.1 to 100 NEAR, a NEAR account as the recipient, an address of the token's own chain
+   for refunds, and at most 30 quotes from one IP address in ten minutes.
+2. The server asks `POST https://1click.chaindefuser.com/v0/quote` with `swapType: "EXACT_OUTPUT"` (the player gets
+   exactly the NEAR asked for, and the token amount follows), `originAsset` the token, `destinationAsset`
+   `nep141:wrap.near`, `depositType` and `refundType` `"ORIGIN_CHAIN"`, `recipientType: "DESTINATION_CHAIN"`,
+   `slippageTolerance: 100` (1%), a deadline one hour ahead and `referral: "deedlords-club"`.
+3. The answer carries the deposit address, the amount to send, its value in dollars and the time 1Click expects. The
+   NEAR asked for is what the account is short of plus a twentieth (gas prices move), rounded up to a hundredth, and
+   never under the smallest swap taken here, 0.1 NEAR (`topUpAmount` in the same `TopUp.tsx`).
+4. The page builds the wallet's request itself (`paymentRequest` in `lib/chain/evmPay.ts`: an ERC-20 `transfer`, or a
+   plain transfer for ETH) and sends it with `eth_sendTransaction`. A wallet account other than the one the game
+   account was made from is refused, so that a refund goes back where the quote said.
+5. The transaction's hash goes to `POST /v0/deposit/submit` so that 1Click looks for it sooner, and the page reads
+   `GET /v0/status` every four seconds: `PENDING_DEPOSIT`, `KNOWN_DEPOSIT_TX`, `PROCESSING`, then `SUCCESS`,
+   `REFUNDED` or `FAILED`, each said to the player in a sentence (`statusLine`). The payment is kept in the browser's
+   storage, so a reload goes on following it. A swap that cannot go through is refunded by 1Click on the token's chain.
+
+Do this, see that. 1Click has no testnet, so off mainnet every quote is asked with `dry: true`: a real price, no
+deposit address. The testnet site answers with no key (the refund address below is Hardhat's well-known test account):
+
+```bash
+curl -s https://testnet.deedlords.xyz/api/oneclick -H 'content-type: application/json' -d '{"kind":"in","asset":"nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near","near":"1000000000000000000000000","recipient":"deedlords.near","refundTo":"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"}'
+```
+
+On 2026-11-14 it answered `"amountInFormatted":"3.123294"` (USDC on Base) for `"amountOutFormatted":"1.0"` (NEAR), with
+`"timeEstimate":37` (seconds), `"live":false` and `"depositAddress":null`. In the browser the same price is on the
+testnet site's `/account` under **Other chains**, with the line "A price only: on testnet there is nothing to send."
+
+What is not done. The team has not completed a swap with real funds, in either direction: quotes are live on the
+mainnet site, the wallet request is tested against a simulated wallet (`tests/evm-pay.test.ts` and
+`tests/oneclick.test.ts`, nine tests), and the reading of a swap's status is written from 1Click's documentation, not
+from a swap we watched. No partner key is set on the public sites, so 1Click charges what it charges a request without
+one (0.25% on top of the protocol's 0.0001%, by its [fee page](https://docs.near-intents.org/resources/fees));
+`ONECLICK_JWT` on the server would switch to the partner rate. NEAR Intents is not used inside a game: pots and
+payouts are NEAR, and a winner who wants another chain goes through `/account` after the payout (Roadmap 2).
 
 ## Deployed contracts
 
-Mainnet, owner `deedlords.near`, read on 2026-11-13:
+Mainnet, owner `deedlords.near`, read on 2026-11-14:
 
 | Account | What | Code hash |
 |---|---|---|
@@ -233,14 +292,22 @@ Mainnet, owner `deedlords.near`, read on 2026-11-13:
 | `pokerhouse.deedlords.near`, `pokerhouse2.deedlords.near` | AI seats at poker tables, each with its own account and its own NEAR: they sit at free tables and at tables with the 0.1 NEAR stake, and win or lose it like anybody | no contract |
 
 Testnet, owner `deedlords.testnet`: `game.deedlords.testnet`, `pokertable.deedlords.testnet`, `poker.deedlords.testnet`,
-`chibi.deedlords.testnet`, `arena.deedlords.testnet`, sponsor `free.deedlords.testnet`.
+`chibi.deedlords.testnet`, `arena.deedlords.testnet`, sponsor `free.deedlords.testnet`. The board game and the poker
+tables run the same code there as on mainnet (the same two hashes).
+
+The three mainnet contracts are builds of this repository; the command is in
+[`contracts/README.md`](contracts/README.md), "Build". On the author's machine a fresh clone of the submitted commit
+builds to files with exactly the three hashes above (checked on 2026-11-14 with rustc 1.99.1). This is not a
+reproducible build in the strict sense: the compiler writes the absolute path of the local cargo registry into panic
+messages, so a build under another home directory has other bytes and another hash.
 
 Fees: none for now. Each contract's owner may set one, at most 5% (`MAX_FEE_BPS`); a match or table keeps the fee in
 force when it was opened, so a change never reaches money already staked.
 
 ## Run it yourself
 
-Needs Node 22.6 or newer (tested on 22.12). Rust is needed only to rebuild or test the contracts.
+Needs Node 22.6 or newer (tested on 22.12). Rust is needed only to rebuild or test the contracts (tested with rustc
+1.99.1 and its `wasm32-unknown-unknown` target).
 
 ```bash
 npm ci
@@ -262,10 +329,14 @@ The contracts (see [`contracts/README.md`](contracts/README.md) for the build fl
 
 ```bash
 cd contracts
-cargo test --workspace                                        # Deedlords, its engine, Arena, the characters
-cargo test --manifest-path poker/Cargo.toml                   # the shuffle proof and heads-up poker
-cargo test --manifest-path poker-table/Cargo.toml             # tables of 2 to 9 seats (about 8 minutes: real proofs)
-cd sandbox && npm install && npm test                         # the board game on a local near-sandbox
+cargo test --workspace                                        # Deedlords, its engine, Arena, the characters: 136 tests
+cargo test --manifest-path poker/Cargo.toml                   # the shuffle proof and heads-up poker: 19 tests
+cargo test --manifest-path poker-table/Cargo.toml             # tables of 2 to 9 seats: 24 tests, about 8 minutes (real proofs)
+
+# The board game on a local near-sandbox: build the contract first, then eight scenarios (about 4 minutes)
+RUSTFLAGS="-C target-cpu=mvp -C target-feature=+sign-ext --cfg near" \
+  cargo build -p deedlords --target wasm32-unknown-unknown --release
+cd sandbox && npm install && npm test
 ```
 
 A whole local playground, chain included (`npm run dev:chain`), needs the contracts built to wasm first; the build
@@ -309,9 +380,8 @@ past the limit a turn falls back to the playbook. See `games/co-ty-phu/agent/`, 
 
 ### Other chains
 
-`/account` has "Other chains": bring NEAR in from USDC, USDT, ETH, SOL or BTC on their own chains through 1Click, or
-send NEAR out to an address on one of them. The pot itself stays plain NEAR; 1Click sits only at the edges. 1Click has
-no testnet, so on the testnet site the same form shows a real price and nothing to send.
+See [Money from any chain: NEAR Intents (1Click)](#5-money-from-any-chain-near-intents-1click) above: the quote, the
+payment from the player's wallet, and NEAR in or out of a game account from `/account`.
 
 ## Known limits
 
@@ -319,10 +389,11 @@ no testnet, so on the testnet site the same form shows a real price and nothing 
   during the hackathon and have not been audited. The largest stake the board game takes is capped at 1 NEAR.
 - **Collusion at a poker table** (two seats sharing their cards off chain) is outside what any contract can see.
 - **1Click with real funds:** quotes are live and the payment request was tested against a simulated wallet. As of
-  2026-11-13 the team has not completed a real cross-chain deposit through it.
+  2026-11-14 the team has not completed a real cross-chain swap through it, in either direction.
 - **Google sign-in** runs on localhost only, as said above.
 - **The sponsor's balance is finite.** A free poker hand for two seats costs it about 0.07 NEAR, nearly all for
-  checking shuffles; when it runs low the page says so and staked tables keep working.
+  checking shuffles, and the cost grows with the table: at nine seats the nine shuffles alone are about 0.19 NEAR a
+  hand. When the sponsor runs low the page says so and staked tables keep working.
 - **A TEE proof is confirmed against NEAR AI's report of the day.** When NEAR AI restarts a model's enclave its key
   changes, and a move made before the restart can no longer be confirmed: `/verify` and `npm run check:live` then mark
   that one check `!` (not confirmed today) and the other four still hold.
@@ -330,6 +401,8 @@ no testnet, so on the testnet site the same form shows a real price and nothing 
 - **Latency on mainnet** was not measured separately; the figures above are from testnet.
 - **The contracts can still be upgraded** by `deedlords.near` (a full-access key exists). An upgrade keeps state:
   `contracts/sandbox/mainnet.js`.
+- **No bit-for-bit rebuild on another machine.** The deployed code is a build of this repository made on the author's
+  machine ("Deployed contracts"); there is no Docker build that anyone can repeat to the same hash.
 
 ## What predates the hackathon, libraries, AI assistance
 
@@ -359,12 +432,18 @@ no testnet, so on the testnet site the same form shows a real price and nothing 
 2. **Cash out anywhere:** winnings sent to another chain through NEAR Intents from the table, not only from `/account`.
 3. **Sign-in:** NEAR Auth (Google) on the public domain, and passkeys.
 4. **Player-owned tables:** whoever opens a table sets its fee and is paid it by the contract.
-5. **An agent market:** publish an agent, let others back its seat, split what it wins on chain. The board-game
-   contract already separates a seat's backer (who stakes and is paid) from its driver (the account that plays it).
+5. **An agent market:** a public record per agent (matches, win rate, return on what was staked), then publishing an
+   agent so that others rent it or back its seat, with what it wins split on chain. Two pieces exist: the board-game
+   contract separates a seat's backer (who stakes and is paid) from its driver (the account that plays it), and it
+   counts `played`, `wins` and `earned` per account (`get_stats`). A record that self-played matches cannot inflate is
+   the missing part.
 6. **Private AI further:** the agent's own key inside the enclave; proofs for poker bets; the hardware quote checked
    in the browser.
 7. **The deck as a library:** the dealerless deck (keys, shuffle proof, shares) packaged for any card game on NEAR.
-8. **Arena** opened, tournaments, a phone build.
+8. **More games on the same rails:** Arena opened, tournaments, a phone build; then the shared pieces (session keys,
+   the sponsor, the dealerless deck, agents with TEE proofs) offered to other builders' games.
+9. **Games as a test bed for AI agents:** one seat played by different models and different instructions, compared on
+   results the contract recorded. Today a free table already seats up to three house agents, each on its own model.
 
 ## Repository layout
 
@@ -388,6 +467,9 @@ server/ worker/         The board game as it was before the hackathon, refereed 
                         contracts uses it
 scripts/check-live.ts   npm run check:live
 scripts/co-ty-phu-sim.ts  Whole Deedlords matches simulated: how long, how open, under which rules
+tools/demo/             How the demo film was recorded and cut: a headless Chrome, captions, narration
+tools/diff/             Differential tests: games recorded on the TypeScript engines, replayed through the Rust ones
+tools/arena/            Arena's art tools and its trailer
 tests/                  317 unit tests
 docs/ENGINE-RULES.md    The exact contract between the TypeScript and Rust rules engines
 PROVENANCE.md           What predates the hackathon, what was written during it, how art was generated

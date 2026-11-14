@@ -1,6 +1,6 @@
 # Deedlords contracts
 
-Deployed on NEAR mainnet under `deedlords.near` (read on 2026-11-13; `npm run check:live` at the repository root
+Deployed on NEAR mainnet under `deedlords.near` (read on 2026-11-14; `npm run check:live` at the repository root
 reads them again):
 
 | Account | Crate | Code hash |
@@ -38,7 +38,18 @@ cd contracts
 RUSTFLAGS="-C target-cpu=mvp -C target-feature=+sign-ext --cfg near" \
   cargo build -p deedlords --target wasm32-unknown-unknown --release
 # -> target/wasm32-unknown-unknown/release/deedlords.wasm (stripped by the release profile)
+
+# The other two contracts on mainnet, with the same RUSTFLAGS:
+#   cargo build -p deedlords-chibi --target wasm32-unknown-unknown --release
+#   cargo build --manifest-path poker-table/Cargo.toml --target wasm32-unknown-unknown --release
+# -> target/wasm32-unknown-unknown/release/deedlords_chibi.wasm
+# -> poker-table/target/wasm32-unknown-unknown/release/deedlords_poker_table.wasm
 ```
+
+Built this way from a fresh clone on the author's machine (rustc 1.99.1, 2026-11-14), the three files are 590,426,
+377,827 and 330,471 bytes and hash to exactly the three code hashes above (NEAR's `code_hash` is the sha256 of the
+file, written in base58). Another machine gets other bytes: the release profile strips symbols, but the compiler still
+writes the absolute path of the local cargo registry into panic messages. There is no Docker build.
 
 `--cfg near` matters: near-sdk 5.30 routes `env::panic_str` and `env::sha256` to the NEAR host functions only under
 `cfg(near)` (what `cargo near build` sets). Without it, panics on chain become a bare `WebAssembly trap: unreachable`
@@ -53,7 +64,8 @@ cargo test -p deedlords                  # contract unit tests (testing_env!, va
 cargo test -p deedlords-engine           # engine tests
 cargo clippy -p deedlords --all-targets
 
-cd sandbox && npm install && npm test    # local near-sandbox 2.14: 6 scenarios + gas/size/storage numbers
+cd sandbox && npm install && npm test    # local near-sandbox 2.14: 8 scenarios + gas/size/storage numbers.
+                                         # It reads the wasm of "Build": build that first
 # NEAR_SANDBOX_BIN_PATH=/path/to/near-sandbox reuses an already downloaded 2.14 binary
 
 # Testnet deploy + latency check (sandbox/testnet.js; it refuses mainnet and reads keys from ~/.near-credentials/testnet)
@@ -170,17 +182,19 @@ Change methods (all panic with a readable message on invalid input):
 
 | Method | Who | What |
 |---|---|---|
-| `new(owner, house, max_stake: U128, fee_bps: u16)` | contract account (init) | `max_stake`: the most yoctoNEAR one seat may stake in this deployment, at most 1,000,000 NEAR. `fee_bps`: the contract's fee on every pot in basis points, at most 500. Both fixed for the life of the contract. |
+| `new(owner, house, max_stake: U128, fee_bps: u16)` | contract account (init) | `max_stake`: the most yoctoNEAR one seat may stake in this deployment, at most 1,000,000 NEAR. `fee_bps`: the contract's fee on every pot in basis points, at most 500. `max_stake` is fixed for the life of the contract; the fee is changed with `set_fee`. |
 | `migrate(fee_bps: u16)` | contract account, together with the deploy | upgrades a deployment made before the fee (above) |
-| `create_match(id, seats, stake: U128, split: Vec<u16>, rules, solo_player: Option<AccountId>, turn_seconds: Option<u32>, host: Option<AccountId>)` | anyone, payable (storage) | `id`: 1–32 chars `[A-Za-z0-9_-]`, unique forever once settled. `seats` 2..=4. `stake` ≤ `max_stake`. `split`: 1..=seats basis points per rank, sum 10000. `rules`: `{ salary, cash, blitz, max_rounds }` (`maxRounds` also accepted); `max_rounds` is required, 1..=255, so every match ends; Blitz needs `cash >= 1670`. `solo_player` may not be the house. `host`: the match is a room that only this account starts (`start`); not with `solo_player`. Kept under its own storage key, so matches stored before hosts existed read unchanged. |
+| `create_match(id, seats, stake: U128, split: Vec<u16>, rules, solo_player: Option<AccountId>, turn_seconds: Option<u32>, host: Option<AccountId>)` | anyone, payable (storage) | `id`: 1–32 chars `[A-Za-z0-9_-]`, unique forever once settled. `seats` 2..=4. `stake` ≤ `max_stake`. `split`: 1..=seats basis points per rank, sum 10000. `rules`: `{ salary, cash, blitz, max_rounds }` (`maxRounds` also accepted); `max_rounds` is required, 1..=255, so every match ends; Blitz needs `cash >= 1670`. The opt-in rules of 2026-11-14 (`tickets`, `leaderRent`, `buildHere`, `buildOne`, `buildOnBuy`, below) ride in the same object. `solo_player` may not be the house. `host`: the match is a room that only this account starts (`start`); not with `solo_player`. Kept under its own storage key, so matches stored before hosts existed read unchanged. |
 | `join(id, seat)` | anyone, payable exactly `stake`. Solo match: the solo player (one seat) and the house (all the others; it cannot take the last free seat while the solo player is not seated) | backs a free seat; the last one starts the game, unless the match has a host |
-| `start(id)` | the host, once every seat is taken, ≥ 100 Tgas | starts a hosted match (draws the turn order); `play(id, seat, ["Start"])` does the same, so a session key can send it |
+| `start(id)` | the host, once every seat is taken; anyone seated, 30 seconds after the last seat was taken; ≥ 100 Tgas | starts a hosted match (draws the turn order); `play(id, seat, ["Start"])` does the same, so a session key can send it |
 | `leave(id, seat)` | the seat's backer, lobby only | refunds the stake |
 | `set_driver(id, seat, driver: Option<AccountId>)` | the seat's backer | |
 | `play(id, seat, actions: Vec<Action>)` | backer or driver of `seat` | 1..=32 engine actions in order: `"Roll"`, `"Buy"`, `"Skip"`, `"End"`, `"Bail"`, `"Card"`, `"Pay"`, `"Bankrupt"`, `"Resign"`, `{"Build": i}`, `{"Sell": i}`, `{"Mortgage": i}`, `{"Redeem": i}`. `Sell`/`Mortgage`/`Redeem` work out of turn as the engine allows; so does `Resign` (giving up, any time: the seat goes bankrupt, see ENGINE-RULES §7). `Auto` is refused, and `Start` except alone from a hosted match's host (`start`). Returns `{ "applied": n, "rejected": null \| { "index", "action", "error" } }`: read `rejected`, a call that rolled succeeds even when a later action was refused ("No re-rolls"). |
 | `turn(id, seat, plan)` | backer or driver of the current seat | whole agent turn in one transaction (below) |
 | `timeout(id)` | anyone, after the deadline | engine `Auto` for the current player; in debt, the deterministic liquidation |
+| `close(id)` | anyone, when nothing has moved at a table under way for 15 minutes, ≥ 100 Tgas | the game ends as it stands, ranked by net worth, and is settled like any other |
 | `abandon(id)` | anyone, lobby only, 15 min after creation | refunds every stake and the storage deposit |
+| `set_fee(fee_bps)` | the owner, payable exactly 1 yoctoNEAR | the fee for matches opened from now on, at most 500; open matches keep theirs ("Fee") |
 | `withdraw_fees()` | the owner, payable exactly 1 yoctoNEAR | sends the collected fees to the owner, returns the amount |
 | `nft_transfer`, `nft_transfer_call`, `nft_resolve_transfer` | NEP-171 | Deeds |
 
@@ -268,6 +282,11 @@ runs against `game.deedlords.testnet`):
 
 Every call of scenario (e) was sent with exactly 100 Tgas attached, a whole match included.
 
+The build on mainnet since 2026-11-14 (590,426 bytes) on the same harness, two runs that day: the heaviest call was
+the turn that settles a match, 9.5 and 10.1 Tgas for the whole transaction; `turn` cost 0.13 to 0.16 Tgas per engine
+step, so a 64-step turn that also settles is about 18 Tgas by the same extrapolation; the 100 Tgas floor is ten times
+the heaviest call seen.
+
 ## Measurements (NEAR testnet, 2026-11-10)
 
 Test deployment: `game.deedlords.testnet` (code hash `CRBA9Sf1dTadmgPPXwQS75ef84n7aV2eWjEBfiGEuWkK`, owner
@@ -327,7 +346,7 @@ call. Stakes 0.05 NEAR per seat. Times run from sending the transaction until th
 every stored match reads as before. `sandbox/upgrade.js dry` rehearses exactly this on a local sandbox, starting from
 the code fetched from testnet, with a lobby and a game in progress opened on it; `sandbox/upgrade.js run` deploys.
 
-### Tickets and the leader's rent (2026-11-14; on testnet, not on mainnet yet)
+### Tickets and the leader's rent (2026-11-14; on testnet and on mainnet)
 
 Two rules a match may be opened with (docs/ENGINE-RULES.md section 10), both off unless asked for:
 
@@ -351,9 +370,10 @@ Checked on a local sandbox only: `DEEDLORDS_ONLY=i node run.js <wasm>` (every ti
 and 4 settled, a match without the rules) and `node upgrade.js dry <wasm>` from the code live on testnet and, with
 `DEEDLORDS_PARENT=deedlords.near NEAR_RPC=https://free.rpc.fastnear.com`, from the code live on mainnet (both are
 `Ha6nhaKn…`, 534,311 bytes): matches opened before the deploy read the same after it and play on to their settlement.
-The new build is 583,211 bytes: **the game account must hold about 0.49 NEAR more for its code before the deploy.**
+That build was 583,211 bytes, 49 KB more than the one it replaced: the game account has to hold about 0.49 NEAR more
+for its code before such a deploy.
 
-### Later the same day: building where one stops, and tables nobody is left waiting at (on testnet, not on mainnet yet)
+### Later the same day: building where one stops, and tables nobody is left waiting at (on testnet and on mainnet)
 
 - **`buildHere`** (a third opt-in rule, docs/ENGINE-RULES.md section 10.5): in a Blitz match a house goes up only on
   the own city just stopped on, one per stop. Building on several cities in one turn read to players as buying many
@@ -383,6 +403,15 @@ The new build is 583,211 bytes: **the game account must hold about 0.49 NEAR mor
 - `get_config` lists `"features": ["tickets", "leaderRent", "buildHere", "hostGrace", "away", "close", "buildOne", "buildOnBuy"]`. None of this
   changes how a stored match is read: which seats are away is kept under a key of its own (`away:<id>`), like the host.
 
+### Mainnet upgraded to this build (2026-11-14)
+
+`game.deedlords.near` went from the build it ran until then (`Ha6nhaKn…`, 534,311 bytes) to this one
+(`HB5ibsB7g2iR5ht2kWjKMDjpMfhwVd1tJgQn5WzHNY5T`, 590,426 bytes) in two transactions: `deedlords.near` sent 1 NEAR to
+the game account for the larger code (`BioQGskPYWaPvmijvLEsQGYUPo6FXCy3cqUK5JfgqFWX`), then the game account's own
+key signed a plain deploy with no `migrate` (`4DGjbAEo2cLY5Mz7ALJ3A8Pd8wvT6oN3rBLrmKCk16X2`, sent by
+`sandbox/mainnet.js run`). State was kept. Read back afterwards: the code hash above, `fee_bps` 0, `max_stake` 1 NEAR
+and the eight features. Testnet runs the same code (the same hash).
+
 ## Known limits
 
 - **Randomness.** `env::random_seed()` is known to the block producer before the block is published, and a producer
@@ -395,8 +424,9 @@ The new build is 583,211 bytes: **the game account must hold about 0.49 NEAR mor
   the contract and no method moves it.
 - **House seats** are played by the house account. Its shares are locked forever, so it cannot profit from a result,
   but it does choose its own moves.
-- **No administration.** `owner` is stored and shown by `get_config`; no method checks it. There is no pause, no
-  upgrade method and no way to change `house` or `max_stake`. The code can still be replaced by whoever holds a
+- **Little administration.** The owner can do two things, each with 1 yoctoNEAR attached: `set_fee` (at most 5%, for
+  matches opened afterwards) and `withdraw_fees`. There is no pause, no upgrade method and no way to change `house` or
+  `max_stake`. The code can still be replaced by whoever holds a
   full-access key of the contract account: a deployment is only as fixed as that key is (delete it to freeze the code).
 
 ## Sandbox harness notes
