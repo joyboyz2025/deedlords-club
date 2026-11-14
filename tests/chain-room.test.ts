@@ -510,6 +510,56 @@ test("Blitz: each house that goes up gives whoever is building the fifteen secon
   assert.equal(room.getState().view!.props[3].houses, 0, "the house not built is passed over");
 });
 
+test("a seat that has done nothing itself this turn is not waited for fifteen seconds over a house; one that is there is", async () => {
+  const blitz = () => {
+    const chain = new FakeChain(3, true);
+    for (const key of Object.keys(chain.game.props)) delete chain.game.props[Number(key)];
+    chain.game.props[1] = { owner: "s0", houses: 0, mortgaged: false };
+    chain.dice = [[1, 3]]; // Airport Tax: nothing to buy, a house can go up in São Paulo
+    return chain;
+  };
+  // Nobody at the seat: the dice are thrown for it after five seconds, and five more pass the house over.
+  let chain = blitz();
+  let clock = { now: 0 };
+  let room = auto(chain, clock);
+  await after(room, clock, 0);
+  await after(room, clock, 5_100);
+  assert.deepEqual(sentBy(chain), ["Roll"]);
+  assert.equal(room.getState().view!.autoInMs, 5_000);
+  await after(room, clock, 4_000);
+  assert.deepEqual(sentBy(chain), ["Roll"]);
+  await after(room, clock, 1_100);
+  assert.deepEqual(sentBy(chain), ["Roll", "End"]);
+  assert.equal(room.getState().view!.props[1].houses, 0);
+
+  // The dice were thrown for the seat, then its player turns to the houses: fifteen seconds from then.
+  chain = blitz();
+  clock = { now: 0 };
+  room = auto(chain, clock);
+  await after(room, clock, 0);
+  await after(room, clock, 5_100);
+  await after(room, clock, 3_000);
+  room.here();
+  assert.equal(room.getState().view!.autoInMs, 15_000);
+  await after(room, clock, 14_000);
+  assert.deepEqual(sentBy(chain), ["Roll"], "the turn is still theirs");
+  room.send({ t: "build", square: 1 });
+  await room.idle();
+  assert.deepEqual(chain.calls.at(-1)!.actions, [{ Build: 1 }, "End"]);
+
+  // A seat whose player threw the dice has the fifteen seconds without asking (the tests above), and keeps none of
+  // it into the next round: being there is said turn by turn.
+  chain = blitz();
+  chain.game.players[0].cash = 5_000;
+  chain.game.props[3] = { owner: "s0", houses: 0, mortgaged: false };
+  clock = { now: 0 };
+  room = auto(chain, clock);
+  await room.refresh();
+  room.send({ t: "roll" });
+  await room.idle();
+  assert.equal(room.getState().view!.autoInMs, 15_000);
+});
+
 test("without autoPlay a purchase is only a purchase", async () => {
   const chain = new FakeChain();
   const room = roomFor(chain, "alice.test");

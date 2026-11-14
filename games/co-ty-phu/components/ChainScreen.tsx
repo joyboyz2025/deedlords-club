@@ -178,6 +178,7 @@ function Table({ id, state, helper, onSignIn }: { id: string; state: PlayerState
           label: `${CHAIN.network} · ${accountId === null ? "watching" : seat === null ? `${playerName(accountId)} (no seat here)` : `${playerName(accountId)}, seat ${seat + 1}`}`,
           busy,
           onBehind: setBehind,
+          here: room.here,
           agents,
           autopilot: autopilot && {
             on: autopilot.on,

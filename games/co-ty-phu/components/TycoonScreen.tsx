@@ -312,6 +312,8 @@ export type ChainStage = {
   busy: boolean;
   /** Told `true` while the board is still playing rolls the chain has already made, `false` once it shows the present. */
   onBehind?: (behind: boolean) => void;
+  /** Told when the viewer starts on something that is not a move yet (choosing where to build): they are given their time. */
+  here?: () => void;
   /** The payout card of a settled match, shown in place of the room server's result card. */
   result: (onClose: () => void) => ReactNode;
   /** Seats an agent plays, by player id: who drives and the sentence it gave for its last plan. */
@@ -770,7 +772,10 @@ function Game({
               onStopRaising={() => setRaising(false)}
               sites={isBlitz(view) ? sites.size : null}
               placing={placing}
-              onPlacing={setBuilding}
+              onPlacing={(on) => {
+                setBuilding(on);
+                if (on) chain?.here?.();
+              }}
             />
           )}
           <CardPopup view={view} holding={holding} />
