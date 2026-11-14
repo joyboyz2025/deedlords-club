@@ -1626,6 +1626,21 @@ function PlayerCards({
                     {portraits[player.id] ? <img src={portraits[player.id]} alt="" /> : <b>{player.name.slice(0, 1).toUpperCase()}</b>}
                     {player.jail !== null && <i className="tp-hud__flag">Held</i>}
                     {!player.online && player.jail === null && <i className="tp-hud__flag">Away</i>}
+                    {/* What doubles a rent, across the top of the portrait: this seat's Festival, and its lead. */}
+                    {(festival || leader) && (
+                      <span className="tp-hud__x2">
+                        {festival && (
+                          <i data-kind="festival" title="Festival on: double rent in this seat's cities">
+                            Festival
+                          </i>
+                        )}
+                        {leader && (
+                          <i data-kind="lead" title="Leads on net worth: pays double rent">
+                            Pays ×2
+                          </i>
+                        )}
+                      </span>
+                    )}
                   </span>
                   <span className="tp-hud__name">
                     {player.name}
@@ -1641,20 +1656,6 @@ function PlayerCards({
                             <TicketPip key={k} ticket={ticket} />
                           ))}
                         </span>
-                      )}
-                    </span>
-                  )}
-                  {(festival || leader) && (
-                    <span className="tp-hud__x2">
-                      {festival && (
-                        <i data-kind="festival" title="Festival on: double rent in this seat's cities">
-                          Festival
-                        </i>
-                      )}
-                      {leader && (
-                        <i data-kind="lead" title="Leads on net worth: pays double rent">
-                          Leads · rent ×2
-                        </i>
                       )}
                     </span>
                   )}
@@ -1778,6 +1779,7 @@ function landingNote(view: View, steps: number): { name: string; note: string } 
   if (isOwnable(square)) note = !owned ? `for sale ${money(square.price)}` : owned.owner === mine.id ? "yours" : owned.mortgaged ? "mortgaged: no rent" : `rent to ${view.players.find((p) => p.id === owned.owner)?.name ?? "its owner"}`;
   else if (square.kind === "tax") note = `pay ${money(square.amount)}`;
   else if (square.kind === "card") note = "draw a card";
+  else if (square.kind === "jail") note = "just visiting";
   else if (square.kind === "arrest") note = "sent to Customs Hold";
   return { name: square.name, note: `${note}${lap}` };
 }

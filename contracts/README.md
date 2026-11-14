@@ -327,6 +327,32 @@ call. Stakes 0.05 NEAR per seat. Times run from sending the transaction until th
 every stored match reads as before. `sandbox/upgrade.js dry` rehearses exactly this on a local sandbox, starting from
 the code fetched from testnet, with a lobby and a game in progress opened on it; `sandbox/upgrade.js run` deploys.
 
+### Tickets and the leader's rent (2026-11-14, not deployed yet)
+
+Two rules a match may be opened with (docs/ENGINE-RULES.md section 10), both off unless asked for:
+
+- `create_match`'s `rules` may also carry `"tickets": true` and `"leaderRent": true`. The method's arguments are the
+  ones of before; the two fields are read from the call's own JSON, so a contract deployed before them ignores them
+  without a word. `get_config` therefore lists what a build knows, `"features": ["tickets", "leaderRent"]`, and the
+  page sends the fields only to a contract that lists them (`games/co-ty-phu/chain/calls.ts` `extrasOf`).
+- A match with them shows `rules.tickets` / `rules.leaderRent` in its `meta` and `game.tickets` in `get_match`
+  (`{ held, waiver, festival }`); a match without has neither, and plays, logs and reads exactly as before.
+- Four more actions for `play`: `"Waiver"`, `"Festival"`, `"Takeover"`, `{"Steps": n}` (2..=12). `turn`'s plan may carry
+  `"tickets": { "waiver": bool, "festival": bool, "steps": n, "takeover": [squares] }`: before a throw the driver plays
+  the Festival and the Rent waiver if asked and held, then `Steps(n)` if allowed, else `Roll`; after a landing it plays
+  a Takeover when the city stood on is listed and `cash - 2 * price >= buy_reserve`. Five more events in the log:
+  `drew`, `played`, `waived`, `taken`, `raised`.
+- **Storage.** A stored match is the layout of before, to the byte, when it has neither rule. With one, the top bit of
+  its status byte is set and a tail follows the game (a version byte, the two flags, the ticket state). What earlier
+  builds stored reads as a match without the rules: the upgrade is a plain deploy, no `migrate`, and open matches
+  play on. (The other way round does not hold: a build from before cannot read a match opened with the rules.)
+
+Checked on a local sandbox only: `DEEDLORDS_ONLY=i node run.js <wasm>` (every ticket through the contract, tables of 2
+and 4 settled, a match without the rules) and `node upgrade.js dry <wasm>` from the code live on testnet and, with
+`DEEDLORDS_PARENT=deedlords.near NEAR_RPC=https://free.rpc.fastnear.com`, from the code live on mainnet (both are
+`Ha6nhaKn…`, 534,311 bytes): matches opened before the deploy read the same after it and play on to their settlement.
+The new build is 583,211 bytes: **the game account must hold about 0.49 NEAR more for its code before the deploy.**
+
 ## Known limits
 
 - **Randomness.** `env::random_seed()` is known to the block producer before the block is published, and a producer

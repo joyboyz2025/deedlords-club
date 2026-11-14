@@ -2064,7 +2064,7 @@
   white-space: nowrap;
 }
 
-/* On a player's card: the tickets held, after the net worth; and what doubles a rent, pinned to the card's edge. */
+/* On a player's card: the tickets held, after the net worth; and what doubles a rent, across the top of the portrait. */
 .tp-hud__pips {
   display: inline-flex;
   gap: 3px;
@@ -2092,31 +2092,24 @@
 
 .tp-hud__x2 {
   position: absolute;
-  top: 22px;
-  right: 8px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: grid;
   pointer-events: none;
 }
 
-.tp-hud [data-side="right"] .tp-hud__x2 {
-  right: auto;
-  left: 8px;
-  align-items: flex-start;
-}
-
 .tp-hud__x2 i {
-  padding: 1px 6px;
-  border-radius: 999px;
+  padding: 1px 0;
   background: #b45ac8;
   color: #fff;
-  font-size: 9.5px;
+  font-size: 9px;
   font-style: normal;
   font-weight: 800;
   letter-spacing: 0.02em;
-  line-height: 1.35;
+  line-height: 1.25;
+  text-align: center;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
