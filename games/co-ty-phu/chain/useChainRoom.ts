@@ -25,6 +25,7 @@ export function useChainRoom(
   hold: (on: boolean) => void;
   watch: (behind: boolean) => void;
   here: () => void;
+  choose: (on: boolean) => void;
 } {
   const room = useMemo(
     () =>
@@ -53,5 +54,5 @@ export function useChainRoom(
   }, [room]);
 
   const state = useSyncExternalStore(room.subscribe, room.getState, room.getState);
-  return { ...state, send: room.send, playTurn: room.playTurn, retry: room.retry, refresh: room.refresh, hold: room.hold, watch: room.watch, here: room.here };
+  return { ...state, send: room.send, playTurn: room.playTurn, retry: room.retry, refresh: room.refresh, hold: room.hold, watch: room.watch, here: room.here, choose: room.choose };
 }

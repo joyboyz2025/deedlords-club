@@ -11,12 +11,21 @@
 // always the chain's own.
 
 import { BOARD_SIZE, CARDS, type Deck } from "./board.ts";
+import type { Ticket } from "./engine.ts";
 import type { View } from "./view.ts";
 
 /** One roll the contract logged, and the cards drawn on the squares it led to, in the order they were drawn. */
 export type RollNote = { player: string; dice: [number, number]; cards?: { deck: Deck; index: number }[] };
-/** A view with what the pacing needs: the rolls the chain has logged, oldest first, and which leg of a roll this is. */
-export type PacedView = View & { trail?: RollNote[]; step?: number };
+/**
+ * Something the tickets or the leader's rent did, for the table to announce as it announces a drawn card. `after`: how
+ * many rolls of the match had been thrown when it happened; the table shows it once the board has played that many.
+ */
+export type TicketNews = { id: string; after: number; kind: "drew" | "played" | "waived" | "taken" | "raised"; player: string; ticket?: Ticket; text: string };
+/**
+ * A view with what the pacing needs: the rolls the chain has logged, oldest first, and which leg of a roll this is;
+ * and, in a match with tickets or the leader's rent, what they did lately (`news`).
+ */
+export type PacedView = View & { trail?: RollNote[]; step?: number; news?: TicketNews[] };
 
 /** What the board plays as one thing: a roll, or the second leg of one. */
 export const beatOf = (view: PacedView): string => `${view.rolls}:${view.step ?? 0}`;

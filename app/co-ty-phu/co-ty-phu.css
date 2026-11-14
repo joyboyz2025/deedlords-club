@@ -2019,3 +2019,343 @@
   width: auto;
   min-width: 7.5em;
 }
+
+/* Tickets (matches opened with them): a mark per ticket, the viewer's own in the turn's corner, the news over the table. */
+
+.tp-pip {
+  --ticket: #8a8f98;
+  display: inline-grid;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border-radius: 5px;
+  background: var(--ticket);
+  color: #fff;
+  font-style: normal;
+  vertical-align: -3px;
+}
+
+.tp-pip svg {
+  display: block;
+}
+
+[data-ticket="waiver"] {
+  --ticket: #1f9d8b;
+}
+
+[data-ticket="steps"] {
+  --ticket: #3b78d8;
+}
+
+[data-ticket="takeover"] {
+  --ticket: #d0503a;
+}
+
+[data-ticket="festival"] {
+  --ticket: #b45ac8;
+}
+
+.tp-stub {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* On a player's card: the tickets held, after the net worth; and what doubles a rent, pinned to the card's edge. */
+.tp-hud__pips {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 6px;
+  vertical-align: -3px;
+}
+
+.tp-hud__pips .tp-pip {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  vertical-align: 0;
+}
+
+.tp-hud__pips .tp-pip svg {
+  width: 10px;
+  height: 10px;
+}
+
+.tp-hud__worth {
+  opacity: 1;
+  color: rgb(255 247 230 / 80%);
+  white-space: nowrap;
+}
+
+.tp-hud__x2 {
+  position: absolute;
+  top: 22px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.tp-hud [data-side="right"] .tp-hud__x2 {
+  right: auto;
+  left: 8px;
+  align-items: flex-start;
+}
+
+.tp-hud__x2 i {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #b45ac8;
+  color: #fff;
+  font-size: 9.5px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.tp-hud__x2 i[data-kind="lead"] {
+  background: #fff7e6;
+  color: #7a1712;
+}
+
+/* The viewer's tickets, in the turn's corner: lit when one can be played now. */
+.tp-hand {
+  flex: none;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 13px 0 9px;
+  background: rgb(36 13 6 / 84%);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 28%);
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+
+.tp-hand.tp-btn--main {
+  background: var(--gold);
+}
+
+.tp-hand__pips {
+  display: inline-flex;
+  gap: 3px;
+}
+
+/* The sheet of the viewer's tickets. */
+.tp-tickets__list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tp-ticket {
+  display: grid;
+  gap: 8px;
+  padding: 12px 12px 12px 14px;
+  border-left: 6px solid var(--ticket);
+  border-radius: 12px;
+  background: #fffaf0;
+  color: var(--ink);
+}
+
+.tp-ticket__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 16px;
+}
+
+.tp-ticket__head small {
+  color: #6b4a36;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tp-ticket p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.4;
+}
+
+.tp-ticket__deal {
+  font-weight: 700;
+}
+
+.tp-ticket__wait {
+  color: #6b4a36;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tp-ticket .tp-btn {
+  justify-self: start;
+  min-height: 44px;
+  border-color: rgb(42 18 8 / 30%);
+  color: var(--ink);
+}
+
+.tp-ticket .tp-btn--main {
+  border-color: var(--ticket);
+  background: var(--ticket);
+  color: #fff;
+}
+
+.tp-ticket__steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 6px;
+}
+
+.tp-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 8px;
+  min-height: 48px;
+  padding: 6px 10px;
+  border: 1.5px solid rgb(42 18 8 / 22%);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+  touch-action: manipulation;
+}
+
+.tp-step b {
+  grid-row: 1 / span 2;
+  align-self: center;
+  min-width: 22px;
+  color: #3b78d8;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.tp-step span {
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tp-step small {
+  overflow: hidden;
+  color: #6b4a36;
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tp-tickets .tp-row {
+  display: flex;
+  gap: 8px;
+}
+
+.tp-tickets .tp-row .tp-btn--big {
+  flex: 1;
+}
+
+/* What a ticket or the leader's rent just did: a line over the table, under the clock. */
+.tp-news {
+  position: absolute;
+  top: calc(138px + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: max-content;
+  max-width: min(340px, calc(100% - 24px));
+  padding: 9px 14px 9px 10px;
+  border: 2px solid var(--gold);
+  border-radius: 14px;
+  background: #fffaf0;
+  box-shadow: 0 10px 26px rgb(0 0 0 / 34%);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: left;
+  transform: translateX(-50%);
+  animation: tp-news-in 0.3s ease-out;
+  touch-action: manipulation;
+}
+
+.tp-news .tp-pip {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+
+.tp-news .tp-pip svg {
+  width: 16px;
+  height: 16px;
+}
+
+@keyframes tp-news-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+}
+
+/* In the rules: the tickets, one by one. */
+.tp-rules__head {
+  margin: 12px 0 2px;
+  color: var(--gold);
+  font-weight: 700;
+}
+
+.tp-rules p {
+  margin: 0;
+  color: var(--soft);
+}
+
+.tp-rules__tickets {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+}
+
+.tp-rules__tickets dt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.tp-rules__tickets dt small {
+  color: var(--soft);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tp-rules__tickets dd {
+  margin: 2px 0 0;
+  color: var(--soft);
+}
+
+@media (orientation: landscape) and (min-width: 600px) {
+  .tp-news {
+    top: max(14px, env(safe-area-inset-top));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tp-news {
+    animation: none;
+  }
+}

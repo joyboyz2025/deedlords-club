@@ -2,7 +2,7 @@
 // real answers of the contract on a local sandbox.
 
 import type { Deck } from "../board.ts";
-import type { Owned, Payee, Phase, Stage } from "../engine.ts";
+import type { Owned, Payee, Phase, Stage, Ticket, TicketState } from "../engine.ts";
 
 export type ChainSeat = {
   seat: number;
@@ -15,7 +15,8 @@ export type ChainSeat = {
   house: boolean;
 };
 
-export type ChainRules = { salary: number; cash: number; blitz: boolean; maxRounds: number };
+/** `tickets`, `leaderRent`: the opt-in rules of ENGINE-RULES §10; the contract leaves them out of a match that has none. */
+export type ChainRules = { salary: number; cash: number; blitz: boolean; maxRounds: number; tickets?: boolean; leaderRent?: boolean };
 
 export type ChainMeta = {
   id: string;
@@ -73,6 +74,8 @@ export type ChainGame = {
   rolls: number;
   result: { reason: "last" | "time"; ranking: string[] } | null;
   players: ChainPlayer[];
+  /** Only in a match with tickets. */
+  tickets?: TicketState;
 };
 
 /** One entry of the contract's log (the last 30 are kept). */
@@ -95,7 +98,13 @@ export type ChainEvent =
   | { kind: "bankrupt"; player: string; creditor: string | null }
   | { kind: "auto"; player: string }
   | { kind: "end"; reason: "last" | "time" }
-  | { kind: "resign"; player: string };
+  | { kind: "resign"; player: string }
+  /** Tickets and the leader's rent (ENGINE-RULES §10). `value`: the steps chosen, or the square taken over. */
+  | { kind: "drew"; player: string; ticket: Ticket }
+  | { kind: "played"; player: string; ticket: Ticket; value: number }
+  | { kind: "waived"; player: string; owner: string; square: number; amount: number }
+  | { kind: "taken"; player: string; owner: string; square: number; amount: number }
+  | { kind: "raised"; player: string; square: number; festival: boolean; leader: boolean };
 
 /** `get_match`: `null` once the match is settled, abandoned or never existed. */
 export type ChainMatch = { meta: ChainMeta; game: ChainGame; log: ChainEvent[] };
@@ -137,6 +146,10 @@ export type ContractAction =
   | "Pay"
   | "Bankrupt"
   | "Resign"
+  | "Waiver"
+  | "Takeover"
+  | "Festival"
+  | { Steps: number }
   | { Build: number }
   | { Sell: number }
   | { Mortgage: number }

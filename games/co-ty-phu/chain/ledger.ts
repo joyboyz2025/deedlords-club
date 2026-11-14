@@ -22,13 +22,27 @@ export type MoveTx = {
 /** The contract's methods that belong to a match. */
 export const MATCH_METHODS = ["create_match", "join", "play", "turn", "timeout", "leave", "abandon", "set_driver"];
 
-const ACTION_WORDS: Record<string, string> = { Roll: "Roll", Buy: "Buy", Skip: "Pass", End: "End turn", Bail: "Pay the fine", Card: "Use a release card", Pay: "Pay the debt", Bankrupt: "Go bankrupt" };
+const ACTION_WORDS: Record<string, string> = {
+  Roll: "Roll",
+  Buy: "Buy",
+  Skip: "Pass",
+  End: "End turn",
+  Bail: "Pay the fine",
+  Card: "Use a release card",
+  Pay: "Pay the debt",
+  Bankrupt: "Go bankrupt",
+  Waiver: "Play a Rent waiver",
+  Festival: "Play a Festival",
+  Takeover: "Play a Takeover",
+};
 const SQUARE_WORDS: Record<string, string> = { Build: "Build in", Sell: "Sell a house in", Mortgage: "Mortgage", Redeem: "Redeem" };
 
 function actionWord(action: unknown): string {
   if (typeof action === "string") return ACTION_WORDS[action] ?? action;
   if (typeof action === "object" && action !== null) {
     const [[verb, square] = ["?", null]] = Object.entries(action as Record<string, unknown>);
+    // "Pick your steps" carries a number of steps, not a square.
+    if (verb === "Steps") return `Pick ${String(square)} steps`;
     const name = typeof square === "number" ? SQUARES[square]?.name : undefined;
     return `${SQUARE_WORDS[verb] ?? verb}${name ? ` ${name}` : ""}`;
   }

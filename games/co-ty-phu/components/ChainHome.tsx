@@ -11,6 +11,10 @@ import {
   joinCalls,
   near,
   neededToOpen,
+  extrasOf,
+  LEADER_LINE,
+  TICKET_LINES,
+  TICKETS_LINE,
   newMatchId,
   openDuelCalls,
   ownStake,
@@ -39,7 +43,8 @@ import { TopUp } from "./TopUp";
 const REFRESH_MS = 3_000;
 /** What a seat may cost in a match opened here, in NEAR; the contract's own cap cuts the list. */
 const STAKES = [SMALLEST_STAKE, 0.1, 0.25, 0.5, 1];
-type Limits = { max_stake: string; fee_bps: number };
+/** `features`: the opt-in rules this contract knows (tickets, the leader's rent); a contract from before them lists none. */
+type Limits = { max_stake: string; fee_bps: number; features?: unknown };
 
 const problemText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -236,7 +241,10 @@ function FlightStub({
   const seats = room ? seatCount : 1 + agentModels.length;
   const rounds = pickedRounds ?? roundsFor(seats);
   const bots = mode === "friends" ? roomBots.slice(0, Math.max(0, seatCount - 2)) : [];
+  // Tickets and the leader's rent, when the contract this page talks to has them; otherwise the match of before.
+  const extras = extrasOf(limits);
   const terms = {
+    extras,
     stake: near(stake),
     maxRounds: rounds,
     turnSeconds: TURN_SECONDS,
@@ -478,6 +486,8 @@ function FlightStub({
             </div>
           </div>
           <p className="fd-fine">{winLine({ blitz: RULES.blitz, maxRounds: rounds })}</p>
+          {extras.tickets && <p className="fd-fine">With special tickets: {TICKET_LINES.map((line) => line.name).join(", ")}. {TICKETS_LINE}</p>}
+          {extras.leaderRent && <p className="fd-fine">{LEADER_LINE}</p>}
         </div>
       </details>
       {/* Too little on the account for this stake: the way to the missing NEAR, right here. */}

@@ -1999,3 +1999,16 @@ a.fd-row:hover .fd-row__go {
     opacity: 0.35;
   }
 }
+
+/* The gate, for a match with special tickets: each one in a line. */
+.fd-specials {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fd-specials b {
+  font-weight: 700;
+}

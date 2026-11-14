@@ -37,7 +37,9 @@ const STORAGE_DEPOSIT = NEAR(0.06);
 const SESSION_METHODS = ["play", "turn", "timeout", "set_driver", "leave"];
 const SESSION_ALLOWANCE = NEAR(0.25);
 const ALL_CITIES = [1, 3, 6, 8, 9, 11, 13, 14, 16, 18, 19, 21, 23, 24, 26, 27, 29, 31, 32, 34, 37, 39];
-const HOUSE_PLAN = { buy_reserve: 150, build: ALL_CITIES, keep_reserve: 250, bail: true, liquidate: [] };
+/// In a match with tickets (POST /match with rules: { tickets: true }) the house plays its Festival and its Rent waiver
+/// as soon as it holds them; the contract skips what the seat does not hold, and all of it in a match without tickets.
+const HOUSE_PLAN = { buy_reserve: 150, build: ALL_CITIES, keep_reserve: 250, bail: true, liquidate: [], tickets: { festival: true, waiver: true } };
 /// The rules the web page opens a table of two with (games/co-ty-phu/chain/calls.ts RULES and roundsFor).
 const DEFAULT_RULES = { salary: 200, cash: 2000, blitz: true, max_rounds: 20 };
 /// What a new game account (a key made in the browser) is handed here.

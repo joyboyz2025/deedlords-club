@@ -14,13 +14,13 @@ import { formatClock, useCountdown } from "@/lib/useCountdown";
 import { usePin } from "@/lib/usePin";
 import { useWakeLock } from "@/lib/useWakeLock";
 import { DECK_NAMES, GROUPS, JAIL_FINE, SALARY, SQUARES, TOKEN_COLORS, groupSquares, houseCost, isOwnable } from "../board";
-import { roundOf, winLine } from "../chain/calls";
-import { BLITZ_DEAL, autoSecondsOf, isBlitz, maxRoundsOf, redeemPrice, startCashOf } from "../engine";
+import { LEADER_LINE, TICKETS_LINE, TICKET_LINES, roundOf, winLine } from "../chain/calls";
+import { BLITZ_DEAL, MAX_TICKETS, TICKET_NAMES, autoSecondsOf, isBlitz, maxRoundsOf, redeemPrice, startCashOf, type Ticket } from "../engine";
 import { AUTO_CHOICES, CASH_CHOICES, LIMIT_CHOICES, SALARY_CHOICES, type ErrorCode } from "../protocol";
 import { sound } from "../sound";
 import { savedLook } from "../../ma-soi/components/Wardrobe";
 import { hostKeyStorage, useRoom, type Send } from "../useRoom";
-import { type PacedView, beatOf, rollSteps } from "../steps";
+import { type PacedView, type TicketNews, beatOf, rollSteps } from "../steps";
 import type { PublicPlayer, View } from "../view";
 import { DECK_ART, TROPHY_ART } from "../scene/art";
 import type { CameraMode } from "../scene/tycoon";
@@ -320,6 +320,8 @@ export type ChainStage = {
   onBehind?: (behind: boolean) => void;
   /** Told when the viewer starts on something that is not a move yet (choosing where to build): they are given their time. */
   here?: () => void;
+  /** Told while the viewer has their tickets open, deciding whether to play one: nothing is thrown for them meanwhile. */
+  choosing?: (on: boolean) => void;
   /** The payout card of a settled match, shown in place of the room server's result card. */
   result: (onClose: () => void) => ReactNode;
   /** Seats an agent plays, by player id: who drives and the sentence it gave for its last plan. */
@@ -382,7 +384,7 @@ export function Stage({ view: live, offline, send, chain }: { view: View; offlin
       {view.phase === "lobby" ? (
         <Lobby view={view} send={send} />
       ) : (
-        <Game view={view} send={send} chain={chain} has3D={has3D} holding={holding} rolling={sending || lifted} onArrive={arrived} onBroken={() => setHas3D(false)} />
+        <Game view={view} news={(live as PacedView).news} send={send} chain={chain} has3D={has3D} holding={holding} rolling={sending || lifted} onArrive={arrived} onBroken={() => setHas3D(false)} />
       )}
     </main>
   );
@@ -552,12 +554,12 @@ function Lobby({ view, send }: { view: View; send: Send }) {
   );
 }
 
-function Rules({ view }: { view: View }) {
+function Rules({ view, open = false }: { view: View; open?: boolean }) {
   const auto = autoSecondsOf(view);
   const blitz = isBlitz(view);
   const rounds = maxRoundsOf(view);
   return (
-    <details className="tp-rules">
+    <details className="tp-rules" open={open || undefined}>
       <summary>Quick rules</summary>
       <ul>
         <li>
@@ -581,7 +583,24 @@ function Rules({ view }: { view: View }) {
           <li>Trade properties and cash with another player at any time, if they agree.</li>
         )}
         {auto > 0 && <li>After {auto} seconds without a move the game rolls, declines the purchase or ends the turn for the player.</li>}
+        {view.settings.leaderRent && <li>{LEADER_LINE}</li>}
       </ul>
+      {view.settings.tickets && (
+        <>
+          <p className="tp-rules__head">Tickets</p>
+          <p>{TICKETS_LINE}</p>
+          <dl className="tp-rules__tickets">
+            {TICKET_LINES.map((line) => (
+              <div key={line.ticket}>
+                <dt>
+                  <TicketStub ticket={line.ticket} /> <small>{line.when}</small>
+                </dt>
+                <dd>{line.does}</dd>
+              </div>
+            ))}
+          </dl>
+        </>
+      )}
     </details>
   );
 }
@@ -634,10 +653,11 @@ function useWalkingTokens(view: View): Record<string, number> {
   return shown;
 }
 
-type Sheet = { kind: "assets"; playerId: string } | { kind: "trade" } | { kind: "rules" } | { kind: "menu" } | { kind: "ledger" } | null;
+type Sheet = { kind: "assets"; playerId: string } | { kind: "trade" } | { kind: "rules" } | { kind: "menu" } | { kind: "ledger" } | { kind: "tickets" } | null;
 
 function Game({
   view,
+  news,
   send,
   chain,
   has3D,
@@ -647,6 +667,8 @@ function Game({
   onBroken,
 }: {
   view: View;
+  /** On chain, in a match with tickets or the leader's rent: what they did lately, to be announced. */
+  news?: TicketNews[];
   send: Send;
   chain?: ChainStage;
   has3D: boolean;
@@ -714,6 +736,14 @@ function Game({
   useEffect(() => {
     if (!myTurn) setBuilding(false);
   }, [myTurn]);
+  // With their tickets open the viewer is deciding: whoever runs the match throws nothing for them meanwhile.
+  const choosing = chain?.choosing;
+  const ticketsOpen = sheet?.kind === "tickets";
+  useEffect(() => {
+    if (!ticketsOpen) return;
+    choosing?.(true);
+    return () => choosing?.(false);
+  }, [choosing, ticketsOpen]);
 
   // Cầm dọc thì chừa dải trên, dải dưới cho thẻ người chơi và nút; xoay ngang thì chừa hai cột hai bên.
   const landscape = useLandscape();
@@ -782,9 +812,14 @@ function Game({
                 setBuilding(on);
                 if (on) chain?.here?.();
               }}
+              onTickets={() => {
+                chain?.here?.();
+                setSheet({ kind: "tickets" });
+              }}
             />
           )}
           <CardPopup view={view} holding={holding} />
+          <TicketToast news={news} view={view} holding={holding} />
           {result}
         </div>
         {selected !== null && (
@@ -905,6 +940,7 @@ function Game({
         {sheet?.kind === "assets" && <AssetsSheet view={view} playerId={sheet.playerId} send={send} onClose={close} />}
         {sheet?.kind === "trade" && <TradeSheet view={view} send={send} onClose={close} />}
         {sheet?.kind === "rules" && <RulesSheet view={view} onClose={close} />}
+        {sheet?.kind === "tickets" && <TicketsSheet view={view} send={send} ready={!holding && !(chain?.busy ?? false)} onRules={() => setSheet({ kind: "rules" })} onClose={close} />}
         {sheet?.kind === "ledger" && chain?.ledger && (
           <div className="tp-sheet" role="dialog" aria-label="Transactions" onClick={(event) => event.target === event.currentTarget && close()}>
             <div className="tp-sheet__body tp-more">{chain.ledger(close)}</div>
@@ -954,7 +990,7 @@ function RulesSheet({ view, onClose }: { view: View; onClose: () => void }) {
   return (
     <div className="tp-sheet" role="dialog" aria-label="Quick rules">
       <div className="tp-sheet__body">
-        <Rules view={view} />
+        <Rules view={view} open />
         <button type="button" className="tp-btn tp-btn--big" onClick={onClose}>
           Close
         </button>
@@ -981,6 +1017,7 @@ function TurnControls({
   sites,
   placing,
   onPlacing,
+  onTickets,
 }: {
   view: View;
   send: Send;
@@ -997,9 +1034,26 @@ function TurnControls({
   /** The board is lit for building: a tap on a lit city puts a house there. */
   placing: boolean;
   onPlacing: (on: boolean) => void;
+  /** Opens the viewer's tickets. */
+  onTickets: () => void;
 }) {
   const mine = me(view);
   const myTurn = view.current === mine.id && !view.pause && !holding && !busy;
+  // The viewer's tickets: one button in the turn's corner, there on anybody's turn, lit when one can be played now.
+  const held = isActive(mine) ? (view.tickets?.held[mine.id] ?? []) : [];
+  const playable = myTurn ? (view.tickets?.can ?? []) : [];
+  const hand =
+    held.length > 0 ? (
+      <button type="button" className={`tp-btn tp-hand${playable.length > 0 ? " tp-btn--main" : ""}`} onClick={onTickets} aria-label={`Your tickets: ${held.map((ticket) => TICKET_NAMES[ticket]).join(", ")}`}>
+        <span className="tp-hand__pips">
+          {held.map((ticket, i) => (
+            <TicketPip key={i} ticket={ticket} />
+          ))}
+        </span>
+        {playable.length > 0 ? "Play a ticket" : held.length === 1 ? "1 ticket" : `${held.length} tickets`}
+      </button>
+    ) : null;
+  const waiverOn = view.tickets?.waiver && view.current === mine.id;
   const square = SQUARES[mine.position];
   const autoLeft = useAutoLeft(view);
   const center: ReactNode[] = [];
@@ -1069,6 +1123,7 @@ function TurnControls({
   } else if (autopilot?.on && isActive(mine)) {
     corner = (
       <div className="tp-turn">
+        {hand}
         <span className="tp-turn__note" aria-live="polite">
           {view.current !== mine.id ? (autopilot.note ?? "The AI plays your seat") : autopilot.thinking ? "The AI is planning…" : "The AI is playing…"}
         </span>
@@ -1106,6 +1161,8 @@ function TurnControls({
             Let AI play
           </button>
         )}
+        {waiverOn && <span className="tp-turn__note">Rent waiver on: the next rent this turn is free</span>}
+        {hand}
         {/* Blitz: the way to the houses sits beside the dice, under the board, not over its corner. */}
         <div className="tp-turn__row">
           {sites !== null && sites > 0 && !placing && (
@@ -1127,10 +1184,11 @@ function TurnControls({
     );
   }
   // A roll on its way shows as the dice themselves, tumbling until their numbers come: no words over the table.
+  // On anybody else's turn the corner holds the viewer's tickets alone.
   return (
     <>
       {center.length > 0 && <div className="tp-center">{center}</div>}
-      {corner}
+      {corner ?? (hand && <div className="tp-turn">{hand}</div>)}
     </>
   );
 }
@@ -1548,13 +1606,21 @@ function PlayerCards({
             const shown = cash[player.id] ?? player.cash;
             const worth = worths[player.id] ?? player.worth;
             const agent = agents?.[player.id];
+            const tickets = player.bankrupt ? [] : (view.tickets?.held[player.id] ?? []);
+            const festival = !player.bankrupt && !!view.tickets?.festival.includes(player.id);
+            const leader = !player.bankrupt && view.leader === player.id;
+            const extras = [
+              tickets.length > 0 ? `holds ${tickets.map((ticket) => TICKET_NAMES[ticket]).join(" and ")}` : "",
+              festival ? "Festival on: double rent in their cities" : "",
+              leader ? "leads on net worth: pays double rent" : "",
+            ].filter(Boolean);
             return (
               <li key={player.id} data-side={right ? "right" : "left"}>
                 <button
                   type="button"
                   className={`tp-hud__chip${player.id === view.current ? " tp-hud__chip--turn" : ""}${player.bankrupt ? " tp-chip--out" : ""}${player.online ? "" : " tp-hud__chip--away"}`}
                   onClick={() => onOpen(player.id)}
-                  aria-label={`${player.name}, ${player.bankrupt ? "bankrupt" : `${money(shown)} cash, net worth ${money(worth)}`}. See assets`}
+                  aria-label={`${player.name}, ${player.bankrupt ? "bankrupt" : `${money(shown)} cash, net worth ${money(worth)}`}${extras.length > 0 ? `, ${extras.join(", ")}` : ""}. See assets`}
                 >
                   <span className="tp-hud__face" style={{ "--seat": TOKEN_COLORS[player.color ?? 0] } as CSSProperties}>
                     {portraits[player.id] ? <img src={portraits[player.id]} alt="" /> : <b>{player.name.slice(0, 1).toUpperCase()}</b>}
@@ -1566,7 +1632,32 @@ function PlayerCards({
                     {player.id === view.you.id && <small> (you)</small>}
                   </span>
                   {player.bankrupt ? <span className="tp-hud__cash">Bankrupt</span> : <Wallet cash={shown} />}
-                  {!player.bankrupt && <span className="tp-hud__worth">Worth {money(worth)}</span>}
+                  {!player.bankrupt && (
+                    <span className="tp-hud__worth">
+                      Worth {money(worth)}
+                      {tickets.length > 0 && (
+                        <span className="tp-hud__pips">
+                          {tickets.map((ticket, k) => (
+                            <TicketPip key={k} ticket={ticket} />
+                          ))}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                  {(festival || leader) && (
+                    <span className="tp-hud__x2">
+                      {festival && (
+                        <i data-kind="festival" title="Festival on: double rent in this seat's cities">
+                          Festival
+                        </i>
+                      )}
+                      {leader && (
+                        <i data-kind="lead" title="Leads on net worth: pays double rent">
+                          Leads · rent ×2
+                        </i>
+                      )}
+                    </span>
+                  )}
                 </button>
                 {agent && !player.bankrupt && (
                   <p className="tp-hud__agent" data-fallback={agent.fallback || undefined} data-mine={player.id === view.you.id || undefined}>
@@ -1625,6 +1716,197 @@ function Wallet({ cash }: { cash: number }) {
         </b>
       ))}
     </span>
+  );
+}
+
+const TICKET_GLYPHS: Record<Ticket, string> = {
+  // A shield, footprints of a path, two arrows changing places, a burst.
+  waiver: "M12 3l7 3v5c0 4.500-3 8-7 10-4-2-7-5.500-7-10V6z",
+  steps: "M5 18h4v-4h4v-4h4V6h2",
+  takeover: "M7 8h11l-3-3M17 16H6l3 3",
+  festival: "M12 3v5M12 16v5M3 12h5M16 12h5M6 6l3 3M15 15l3 3M18 6l-3 3M9 15l-3 3",
+};
+
+/** A ticket as a small coloured mark, for a row of them. */
+function TicketPip({ ticket }: { ticket: Ticket }) {
+  return (
+    <i className="tp-pip" data-ticket={ticket} title={TICKET_NAMES[ticket]}>
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d={TICKET_GLYPHS[ticket]} />
+      </svg>
+    </i>
+  );
+}
+
+/** A ticket by its mark and its name. */
+function TicketStub({ ticket }: { ticket: Ticket }) {
+  return (
+    <span className="tp-stub" data-ticket={ticket}>
+      <TicketPip ticket={ticket} />
+      {TICKET_NAMES[ticket]}
+    </span>
+  );
+}
+
+/** Why the viewer cannot play `ticket` right now, in a few words. */
+function ticketWait(view: View, ticket: Ticket, ready: boolean): string {
+  const mine = me(view);
+  if (view.current !== mine.id) return "Play it on your turn.";
+  if (!ready) return "Wait for your piece to arrive.";
+  if (ticket === "takeover") {
+    if (view.stage !== "end") return "Play it after you land on another seat's city.";
+    const square = SQUARES[mine.position];
+    const owned = view.props[mine.position];
+    if (square.kind !== "city" || !owned || owned.owner === mine.id) return "You are not standing on another seat's city.";
+    if (owned.houses > 0 || owned.mortgaged) return "This city has a house or is mortgaged: it cannot be taken over.";
+    return `You need ${money(2 * square.price)} in cash for ${square.name}.`;
+  }
+  if (!(view.stage === "roll" || (view.stage === "end" && view.again))) return "Play it before you throw the dice: next turn.";
+  if (ticket === "steps" && mine.jail !== null) return "Not from Customs Hold: leave it first.";
+  if (ticket === "waiver") return "A Rent waiver is already on this turn.";
+  return "Your Festival is already on.";
+}
+
+/** What ending a move of `steps` on a square means for the viewer, in a word or two, for "Pick your steps". */
+function landingNote(view: View, steps: number): { name: string; note: string } {
+  const mine = me(view);
+  const index = (mine.position + steps) % SQUARES.length;
+  const square = SQUARES[index];
+  const owned = view.props[index];
+  const lap = mine.position + steps >= SQUARES.length ? " · passes Departure" : "";
+  let note = "";
+  if (isOwnable(square)) note = !owned ? `for sale ${money(square.price)}` : owned.owner === mine.id ? "yours" : owned.mortgaged ? "mortgaged: no rent" : `rent to ${view.players.find((p) => p.id === owned.owner)?.name ?? "its owner"}`;
+  else if (square.kind === "tax") note = `pay ${money(square.amount)}`;
+  else if (square.kind === "card") note = "draw a card";
+  else if (square.kind === "arrest") note = "sent to Customs Hold";
+  return { name: square.name, note: `${note}${lap}` };
+}
+
+/**
+ * The viewer's tickets: what each does, and the way to play it. "Pick your steps" asks how many; a Takeover names the
+ * city and its price. A ticket that cannot be played now says when it can.
+ */
+function TicketsSheet({ view, send, ready, onRules, onClose }: { view: View; send: Send; ready: boolean; onRules: () => void; onClose: () => void }) {
+  const mine = me(view);
+  const held = view.tickets?.held[mine.id] ?? [];
+  const can = view.current === mine.id && ready && !view.pause ? (view.tickets?.can ?? []) : [];
+  const [picking, setPicking] = useState(false);
+  const autoLeft = useAutoLeft(view);
+  const play = (ticket: Ticket, steps?: number) => {
+    send({ t: "ticket", ticket, ...(steps !== undefined ? { steps } : {}) });
+    onClose();
+  };
+  const spot = SQUARES[mine.position];
+  return (
+    <div className="tp-sheet" role="dialog" aria-label="Your tickets" onClick={(event) => event.target === event.currentTarget && onClose()}>
+      <div className="tp-sheet__body tp-tickets">
+        <div className="tp-sheet__head">
+          <h2>Your tickets</h2>
+          <p>
+            You hold {held.length} of {MAX_TICKETS}. One more comes each time you pass Departure, unless you hold {MAX_TICKETS}.
+            {view.current === mine.id && autoLeft !== null && ` The turn's clock: ${autoLeft} s.`}
+          </p>
+        </div>
+        {held.length === 0 && <p className="tp-hint">You hold no ticket now.</p>}
+        <ul className="tp-tickets__list">
+          {held.map((ticket, i) => {
+            const line = TICKET_LINES.find((one) => one.ticket === ticket)!;
+            // Two of a kind: the first is the one played.
+            const open = can.includes(ticket) && held.indexOf(ticket) === i;
+            return (
+              <li key={i} className="tp-ticket" data-ticket={ticket} data-open={open || undefined}>
+                <div className="tp-ticket__head">
+                  <TicketStub ticket={ticket} />
+                  <small>{line.when}</small>
+                </div>
+                <p>{line.does}</p>
+                {ticket === "takeover" && open && isOwnable(spot) && (
+                  <p className="tp-ticket__deal">
+                    {spot.name}: {money(2 * spot.price)} to {view.players.find((p) => p.id === view.props[mine.position]?.owner)?.name ?? "its owner"}. You have {money(mine.cash)}.
+                  </p>
+                )}
+                {open && ticket === "steps" && picking && (
+                  <div className="tp-ticket__steps" role="group" aria-label="How many steps?">
+                    {Array.from({ length: 11 }, (_, k) => k + 2).map((steps) => {
+                      const landing = landingNote(view, steps);
+                      return (
+                        <button key={steps} type="button" className="tp-step" onClick={() => play("steps", steps)}>
+                          <b>{steps}</b>
+                          <span>{landing.name}</span>
+                          <small>{landing.note}</small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {open ? (
+                  ticket === "steps" ? (
+                    !picking && (
+                      <button type="button" className="tp-btn tp-btn--main" onClick={() => setPicking(true)}>
+                        Choose the steps
+                      </button>
+                    )
+                  ) : (
+                    <button type="button" className="tp-btn tp-btn--main" onClick={() => play(ticket)}>
+                      Play {TICKET_NAMES[ticket]}
+                    </button>
+                  )
+                ) : (
+                  held.indexOf(ticket) === i && <small className="tp-ticket__wait">{ticketWait(view, ticket, ready)}</small>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+        <div className="tp-row">
+          <button type="button" className="tp-btn" onClick={onRules}>
+            All the rules
+          </button>
+          <button type="button" className="tp-btn tp-btn--big" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** A piece of ticket news stays up this long; less when more are waiting. */
+const NEWS_MS = 3_200;
+const NEWS_HURRIED_MS = 1_700;
+
+/**
+ * What the tickets and the leader's rent just did, said over the table as a drawn card is: who played which ticket, a
+ * rent a waiver took, a city taken over, a rent raised. Each piece waits for the board to have played the rolls thrown
+ * before it, so it is never read ahead of the piece it is about. Tap to close.
+ */
+function TicketToast({ news, view, holding }: { news?: TicketNews[]; view: View; holding: boolean }) {
+  // What was already there when the page opened is not told again.
+  const seen = useRef<Set<string> | null>(null);
+  if (seen.current === null) seen.current = new Set((news ?? []).map((item) => item.id));
+  const [queue, setQueue] = useState<TicketNews[]>([]);
+  const you = view.you.id;
+  useEffect(() => {
+    const due = (news ?? []).filter((item) => !seen.current!.has(item.id) && (view.rolls > item.after || (view.rolls === item.after && !holding)));
+    if (due.length === 0) return;
+    for (const item of due) seen.current!.add(item.id);
+    // Old news (the page was away), and tickets other seats drew (their cards show them), are not announced.
+    const fresh = due.filter((item) => item.after >= view.rolls - 1 && !(item.kind === "drew" && item.player !== you));
+    if (fresh.length > 0) setQueue((waiting) => [...waiting, ...fresh].slice(-5));
+  }, [news, view.rolls, holding, you]);
+  const current = queue[0];
+  const hurried = queue.length > 2;
+  useEffect(() => {
+    if (!current) return;
+    const timer = setTimeout(() => setQueue((waiting) => waiting.slice(1)), hurried ? NEWS_HURRIED_MS : NEWS_MS);
+    return () => clearTimeout(timer);
+  }, [current, hurried]);
+  if (!current) return null;
+  return (
+    <button type="button" key={current.id} className="tp-news" data-kind={current.kind} aria-live="polite" onClick={() => setQueue((waiting) => waiting.slice(1))}>
+      {current.ticket ? <TicketPip ticket={current.ticket} /> : <i className="tp-pip" data-ticket={current.kind === "waived" ? "waiver" : current.kind === "taken" ? "takeover" : "festival"} />}
+      <span>{current.text}</span>
+    </button>
   );
 }
 
@@ -1696,6 +1978,7 @@ function AssetsSheet({ view, playerId, send, onClose }: { view: View; playerId: 
           <p>
             Cash {money(player.cash)} · Net worth {money(player.worth)}
             {player.freeCards > 0 && ` · ${player.freeCards} release card${player.freeCards > 1 ? "s" : ""}`}
+            {(view.tickets?.held[playerId] ?? []).length > 0 && ` · Tickets: ${view.tickets!.held[playerId].map((ticket) => TICKET_NAMES[ticket]).join(", ")}`}
           </p>
         </header>
         {owned.length === 0 && <p className="tp-hint">No properties yet.</p>}

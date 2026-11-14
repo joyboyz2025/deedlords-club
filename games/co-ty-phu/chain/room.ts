@@ -11,12 +11,12 @@
 // one or two transactions' wait, not three.
 
 import type { TeeProof } from "../../../lib/teeProof.ts";
-import { canBuild, currentPlayer, type Game } from "../engine.ts";
+import { canBuild, canTakeover, currentPlayer, type Game } from "../engine.ts";
 import type { Plan } from "../agent/plan.ts";
 import type { ClientMessage } from "../protocol.ts";
-import type { PacedView, RollNote } from "../steps.ts";
+import type { PacedView, RollNote, TicketNews } from "../steps.ts";
 import type { View } from "../view.ts";
-import { applyAction, chainView, deadlineMs, diceAllowed, needsDice, seatOf, settledGame, toAction, toGame } from "./adapt.ts";
+import { applyAction, chainView, deadlineMs, diceAllowed, logLine, needsDice, seatOf, settledGame, toAction, toGame } from "./adapt.ts";
 import { describeCall, type MoveTx } from "./ledger.ts";
 import type { ChainMatch, ChainResult, ContractAction, PlayOutcome } from "./types.ts";
 
@@ -93,6 +93,25 @@ export function rollTrail(log: ChainMatch["log"]): RollNote[] {
 }
 
 /**
+ * What the tickets and the leader's rent did, from the contract's log, oldest first: tickets drawn and played, a rent a
+ * waiver took, a city taken over, a rent raised. `rolls`: the rolls of the match so far, which dates each of them by
+ * the rolls thrown before it.
+ */
+export function ticketNews(log: ChainMatch["log"], rolls: number, nameOf: (playerId: string) => string): TicketNews[] {
+  let after = rolls - log.filter((event) => event.kind === "roll").length;
+  let nth = 0;
+  const news: TicketNews[] = [];
+  for (const event of log) {
+    if (event.kind === "roll") [after, nth] = [after + 1, 0];
+    if (event.kind !== "drew" && event.kind !== "played" && event.kind !== "waived" && event.kind !== "taken" && event.kind !== "raised") continue;
+    // "Pick your steps" is told by the dice it sets and the walk that follows; the others by a line.
+    const ticket = event.kind === "drew" || event.kind === "played" ? event.ticket : undefined;
+    news.push({ id: `${after}:${nth++}:${event.kind}:${event.player}`, after, kind: event.kind, player: event.player, ...(ticket ? { ticket } : {}), text: logLine(event, nameOf) });
+  }
+  return news;
+}
+
+/**
  * With `autoPlay`: a turn with nothing left to decide is ended as soon as the chain shows it. The landing is seen all
  * the same: the board plays one roll at a time and shows the next only once this one has arrived (TycoonScreen
  * `useRollPace`), and meanwhile the end of the turn is already on its way.
@@ -115,7 +134,9 @@ export const AUTO_PASS_AFTER_MS = 5_000;
  */
 export function nothingToDecide(game: Game, playerId: string): boolean {
   if (game.phase !== "playing" || currentPlayer(game)?.id !== playerId || game.stage !== "end" || game.again) return false;
-  return !Object.keys(game.props).some((square) => canBuild(game, playerId, Number(square)));
+  // A Takeover the seat holds and could play on the city it stands on is theirs to decide; tickets played before a
+  // throw are not waited for (the dice are thrown for a seat after 5 s as ever).
+  return !Object.keys(game.props).some((square) => canBuild(game, playerId, Number(square))) && !canTakeover(game, playerId);
 }
 
 /**
@@ -176,6 +197,8 @@ export class ChainRoom {
   private held = false;
   /** The viewer's board is still playing rolls the chain has already made: nothing is decided for them meanwhile. */
   private behind = false;
+  /** The viewer is choosing a ticket to play: nothing is thrown or ended for them meanwhile. */
+  private choosing = false;
   /** The round of the turn in which the viewer last did something themselves. */
   private hereRound: number | null = null;
   /** The viewer gave up while their roll was on its way: sent when it has landed. */
@@ -515,7 +538,7 @@ export class ChainRoom {
     if (!this.autoPlay || this.stopped || !match || !this.caller || this.working || this.queue.length > 0 || this.dicePending || this.result || match.meta.status !== "playing")
       return;
     const seat = seatOf(match.meta, this.accountId);
-    const game = seat !== null && match.meta.current_seat === seat && !this.held ? toGame(match) : null;
+    const game = seat !== null && match.meta.current_seat === seat && !this.held && !this.choosing ? toGame(match) : null;
     const playerId = seat !== null ? match.meta.seats[seat].player : "";
     // The dice are thrown, and a square passed over, for somebody who has seen their turn come and let it wait, not
     // for somebody still watching the roll before. Ending a turn that holds no decision waits for nobody.
@@ -548,6 +571,17 @@ export class ChainRoom {
     this.endIdleTurn();
   };
 
+  /**
+   * The viewer has a ticket open and is deciding whether to play it (`true`), or has closed it: meanwhile the room
+   * throws no dice and ends no turn for them, and the wait for them starts again when they are done. The contract's
+   * own turn clock runs on all the same.
+   */
+  readonly choose = (on: boolean): void => {
+    if (this.choosing === on) return;
+    this.choosing = on;
+    this.endIdleTurn();
+  };
+
   /** The viewer's board is still playing rolls the chain has already made (`true`), or shows the present again. */
   readonly watch = (behind: boolean): void => {
     if (this.behind === behind) return;
@@ -570,6 +604,8 @@ export class ChainRoom {
       const paced: PacedView = {
         ...chainView(game, match.meta, this.accountId, now, sameTurn ? (deadline !== null && own !== null ? Math.min(deadline, own) : (own ?? deadline)) : null),
         trail: rollTrail(match.log),
+        // Only a match with these rules has such news: any other is shown exactly as it always was.
+        ...(match.meta.rules.tickets || match.meta.rules.leaderRent ? { news: ticketNews(match.log, match.game.rolls, (id) => base.players.find((player) => player.id === id)?.name ?? id) } : {}),
       };
       view = paced;
     }

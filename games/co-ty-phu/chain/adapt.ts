@@ -16,6 +16,12 @@ import {
   newPlayer,
   payBail,
   payDebt,
+  canPlay,
+  playFestival,
+  playWaiver,
+  raiseLine,
+  takeover,
+  TICKET_NAMES,
   redeem,
   resign,
   sellHouse,
@@ -140,6 +146,19 @@ export function logLine(event: ChainEvent, nameOf: (playerId: string) => string)
       return `${nameOf(event.player)} timed out; the game moves for them.`;
     case "resign":
       return `${nameOf(event.player)} gives up.`;
+    case "drew":
+      return `${nameOf(event.player)} gets a ticket: ${TICKET_NAMES[event.ticket]}.`;
+    case "played":
+      if (event.ticket === "waiver") return `${nameOf(event.player)} plays a Rent waiver: the next rent this turn is not charged.`;
+      if (event.ticket === "festival") return `${nameOf(event.player)} plays a Festival: double rent in their cities until their next turn.`;
+      if (event.ticket === "steps") return `${nameOf(event.player)} plays Pick your steps and moves ${event.value}.`;
+      return `${nameOf(event.player)} plays a Takeover on ${squareName(event.value)}.`;
+    case "waived":
+      return `${nameOf(event.player)}'s Rent waiver covers ${event.amount} rent to ${nameOf(event.owner)} at ${squareName(event.square)}.`;
+    case "taken":
+      return `${nameOf(event.player)} takes ${squareName(event.square)} from ${nameOf(event.owner)} for ${event.amount}.`;
+    case "raised":
+      return raiseLine(nameOf(event.player), event);
     case "end":
       return event.reason === "time" ? "Time is up: net worth decides." : "Only one player is left.";
   }
@@ -164,7 +183,7 @@ export function toGame(match: ChainMatch): Game {
   return {
     phase: game.phase,
     // The chain has no clock for the whole game: it ends after `maxRounds` rounds. Its turn clock is `turn_seconds`.
-    settings: { limitMinutes: 0, salary, cash, autoSeconds: meta.turn_seconds, maxRounds, blitz },
+    settings: { limitMinutes: 0, salary, cash, autoSeconds: meta.turn_seconds, maxRounds, blitz, ...(meta.rules.tickets ? { tickets: true } : {}), ...(meta.rules.leaderRent ? { leaderRent: true } : {}) },
     players,
     order: game.order,
     turn: game.turn,
@@ -186,6 +205,7 @@ export function toGame(match: ChainMatch): Game {
     minted: game.minted,
     rolls: game.rolls,
     result: game.result,
+    ...(game.tickets ? { tickets: game.tickets } : {}),
   };
 }
 
@@ -239,6 +259,11 @@ export function toAction(message: ClientMessage): ContractAction | null {
       return isSquare(message.square) ? { Mortgage: message.square } : null;
     case "redeem":
       return isSquare(message.square) ? { Redeem: message.square } : null;
+    case "ticket":
+      if (message.ticket === "waiver") return "Waiver";
+      if (message.ticket === "festival") return "Festival";
+      if (message.ticket === "takeover") return "Takeover";
+      return Number.isInteger(message.steps) && message.steps! >= 2 && message.steps! <= 12 ? { Steps: message.steps! } : null;
     default:
       return null;
   }
@@ -249,7 +274,8 @@ export function toAction(message: ClientMessage): ContractAction | null {
  * roll (the held-back move follows and may draw a card). Such an action is never applied here first.
  */
 export function needsDice(game: Game, action: ContractAction): boolean {
-  return action === "Roll" || (action === "Pay" && game.pendingMove !== null);
+  // "Pick your steps" throws no dice, but where it leads the chain may draw a card or a ticket.
+  return action === "Roll" || (action === "Pay" && game.pendingMove !== null) || (typeof action === "object" && "Steps" in action);
 }
 
 /** Whether the rules allow `playerId` an action that needs dice right now. */
@@ -258,6 +284,7 @@ export function diceAllowed(game: Game, playerId: string, action: ContractAction
   if (!player || player.id !== playerId) return false;
   if (action === "Roll") return game.stage === "roll" || (game.stage === "end" && game.again);
   if (action === "Pay") return game.stage === "debt" && !!game.debt && player.cash >= game.debt.reduce((sum, payee) => sum + payee.amount, 0);
+  if (typeof action === "object" && "Steps" in action) return canPlay(game, playerId, "steps");
   return false;
 }
 
@@ -285,11 +312,15 @@ export function applyAction(game: Game, playerId: string, action: ContractAction
   else if (action === "Pay") payDebt(game, playerId, NO_DICE);
   else if (action === "Bankrupt") declareBankruptcy(game, playerId);
   else if (action === "Resign") resign(game, playerId);
+  else if (action === "Waiver") playWaiver(game, playerId);
+  else if (action === "Festival") playFestival(game, playerId);
+  else if (action === "Takeover") takeover(game, playerId);
   else if (typeof action === "string") return false;
   else if ("Build" in action) build(game, playerId, action.Build);
   else if ("Sell" in action) sellHouse(game, playerId, action.Sell);
   else if ("Mortgage" in action) mortgage(game, playerId, action.Mortgage);
   else if ("Redeem" in action) redeem(game, playerId, action.Redeem);
+  else return false;
   return JSON.stringify(game) !== before;
 }
 

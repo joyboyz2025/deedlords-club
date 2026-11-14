@@ -4,7 +4,26 @@
 import type { AccessView } from "../../lib/roomAccess.ts";
 import { lookFromSeat, type Look } from "../ma-soi/look.ts";
 import { CARDS, type Deck } from "./board.ts";
-import { canBuild, canMortgage, canSell, currentPlayer, netWorth, redeemPrice, type Game, type Owned, type Payee, type Phase, type Result, type Stage, type Trade } from "./engine.ts";
+import {
+  TICKETS,
+  canBuild,
+  canMortgage,
+  canPlay,
+  canSell,
+  currentPlayer,
+  leads,
+  netWorth,
+  redeemPrice,
+  type Game,
+  type Owned,
+  type Payee,
+  type Phase,
+  type Result,
+  type Stage,
+  type Ticket,
+  type TicketState,
+  type Trade,
+} from "./engine.ts";
 
 export type PublicPlayer = {
   id: string;
@@ -34,6 +53,10 @@ export type View = {
     /** Những ô người này đang xây thêm, bán bớt nhà, cầm cố hay chuộc được, để máy chỉ sáng đúng nút. */
     can: { build: number[]; sell: number[]; mortgage: number[]; redeem: number[] };
   };
+  /** Only in a game with tickets: what everybody holds and has on, and which of their own the viewer may play right now. */
+  tickets?: TicketState & { can: Ticket[] };
+  /** Only in a game with the leader's rent: who leads on net worth and pays double rent, `null` on a tie for the lead. */
+  leader?: string | null;
   players: PublicPlayer[];
   settings: Game["settings"];
   order: string[];
@@ -115,5 +138,7 @@ export function viewFor(
     result: game.result,
     pause: context.pause ?? null,
     autoInMs: context.autoAt == null ? null : Math.max(context.autoAt - context.now, 0),
+    ...(game.tickets ? { tickets: { ...game.tickets, can: TICKETS.filter((ticket) => canPlay(game, viewer.id, ticket)) } } : {}),
+    ...(game.settings.leaderRent && game.phase === "playing" ? { leader: game.players.find((player) => leads(game, player.id))?.id ?? null } : {}),
   };
 }
