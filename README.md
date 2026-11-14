@@ -10,11 +10,11 @@ the repository and shown as a trailer.
 | | |
 |---|---|
 | Play on mainnet | https://deedlords-club.vercel.app |
-| The same app on testnet, where everything is free | https://deedlords-club-testnet.vercel.app |
+| The same app on testnet, where everything is free | https://deedlords-club-testnet.vercel.app (also https://www.deedlords.xyz) |
 | Check the claims below against mainnet, with no key | `npm ci && npm run check:live` |
 | For judges and AI screeners | [JUDGES.md](JUDGES.md): three minutes in the browser, three commands in a terminal, and what each shows |
 | Tracks | `games`, `privacy`, `open`: [how each brief is answered](#tracks) |
-| Built | for NEAR HACKATHON, November 2026. What predates it: [PROVENANCE.md](PROVENANCE.md) |
+| Built | for NEAR HACKATHON, November 2026. What predates it: [PROVENANCE.md](PROVENANCE.md). Everything written during the hackathon: [`pre-hackathon...hackathon-submission`](https://github.com/joyboyz2025/deedlords-club/compare/pre-hackathon...hackathon-submission) |
 
 ## The problem, and what this does about it
 
@@ -339,7 +339,9 @@ no testnet, so on the testnet site the same form shows a real price and nothing 
   dates. That earlier game had a server as its referee and no chain. Its room server is still in the repository
   (`server/`, `worker/`, `wrangler.jsonc`, the route `app/co-ty-phu/`); nothing on chain uses it.
 - **Written during the hackathon** (2026-11-10 to 2026-11-14, everything after that commit:
-  `git log pre-hackathon..hackathon-submission`; the tag `pre-hackathon` is that commit): the Rust port of the rules, all NEAR contracts, the poker cryptography
+  `git log pre-hackathon..hackathon-submission`, or on GitHub
+  [pre-hackathon...hackathon-submission](https://github.com/joyboyz2025/deedlords-club/compare/pre-hackathon...hackathon-submission);
+  the tag `pre-hackathon` is that commit): the Rust port of the rules, all NEAR contracts, the poker cryptography
   in Rust and TypeScript, the chain client, session keys, the relayer and free play, the agents and their TEE proofs,
   1Click, the characters as NFTs, Arena, and every page except the board's own screen.
 - **Libraries.** Web: Next.js 16, React 19, three.js, `@noble/curves` and `@noble/hashes` (BN254, secp256k1, SHA-2,
