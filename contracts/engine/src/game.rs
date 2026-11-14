@@ -81,11 +81,14 @@ pub struct Extras {
     /// `build_here`. Not in the borsh form either.
     #[borsh(skip)]
     pub build_one: bool,
+    /// A city just bought may take its first house in the same stop (ENGINE-RULES §10.7). Not in the borsh form either.
+    #[borsh(skip)]
+    pub build_on_buy: bool,
 }
 
 impl Extras {
     pub fn is_off(&self) -> bool {
-        !self.tickets && !self.leader_rent && !self.build_here && !self.build_one
+        !self.tickets && !self.leader_rent && !self.build_here && !self.build_one && !self.build_on_buy
     }
 }
 
@@ -1335,6 +1338,10 @@ impl Game {
         self.props.insert(square, Owned { owner: owner.clone(), houses: 0, mortgaged: false });
         self.note(Event::Buy { player: owner, square, price });
         self.stage = Stage::End;
+        // With the purchase comes the right to one house there, as for a stop on an own city (ENGINE-RULES §10.7).
+        if self.extras.build_on_buy && board::square(square).is_some_and(|bought| bought.is_city()) {
+            self.build_at = Some(square);
+        }
     }
 
     fn auto<R: Rng + ?Sized>(&mut self, p: usize, rng: &mut R) {

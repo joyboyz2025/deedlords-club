@@ -582,7 +582,7 @@ async function scenarioTickets(acc) {
   console.log("\n(i) tickets and the leader's rent: opt-in by rules, every ticket through the contract, tables of 2 and 4 settled");
   const squares = require("../../shared/board.json").squares;
   const stake = NEAR(0.1);
-  assert.deepEqual((await view("get_config")).features, ["tickets", "leaderRent", "buildHere", "hostGrace", "away", "close", "buildOne"], "get_config lists the opt-in rules");
+  assert.deepEqual((await view("get_config")).features, ["tickets", "leaderRent", "buildHere", "hostGrace", "away", "close", "buildOne", "buildOnBuy"], "get_config lists the opt-in rules");
   const accounts = { [acc.alice.accountId]: acc.alice, [acc.bob.accountId]: acc.bob, [acc.carol.accountId]: acc.carol };
   const signerOf = (m, seat) => accounts[m.meta.seats[seat].backer];
   const seen = { play: {}, turn: {}, waived: 0, taken: 0, raised: 0, tripled: 0, drew: 0 };

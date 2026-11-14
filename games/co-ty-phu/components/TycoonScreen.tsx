@@ -572,7 +572,10 @@ function Rules({ view, open = false }: { view: View; open?: boolean }) {
         ) : blitz && !view.settings.buildHere ? (
           <li>Land on somebody else's property and you pay rent. On your turn you may add one house to each of your cities; the fifth is a hotel. Owning a whole colour group doubles the rent of its empty lots.</li>
         ) : (
-          <li>Land on somebody else's property and you pay rent. When you later stop on your own city you may add one house; after 4 houses the next stop makes it a hotel. Owning a whole colour group doubles the rent of its empty lots.</li>
+          <li>
+            Land on somebody else's property and you pay rent. {view.settings.buildOnBuy ? "When you buy a city you may put its first house on it at once, and each time you stop on it again you may add one more" : "When you later stop on your own city you may add one house"}; after 4 houses the next
+            stop makes it a hotel. Owning a whole colour group doubles the rent of its empty lots.
+          </li>
         )}
         <li>A double rolls again; three doubles in a row send you to Customs Hold. Leave by rolling a double, paying 50 or using a card.</li>
         <li>Short of cash? Sell houses or mortgage properties to pay. If you still cannot, you go bankrupt and your assets go to the creditor.</li>

@@ -171,10 +171,15 @@ export async function open({ width = 1280, height = 720, scale = 1.5, gl = proce
       state.style = css;
       await dress();
     },
-    /** The words under the picture; `<b>` marks what matters. Empty: none. */
-    async caption(html = "") {
+    /**
+     * The words under the picture; `<b>` marks what matters. Empty: none. `id` names the caption for the narration:
+     * a take writes `<name>.captions.json`, the film time at which each named caption came up.
+     */
+    async caption(html = "", id = "") {
       state.caption = html;
       await evaluate(`window.__demo?.caption(${JSON.stringify(html)})`).catch(() => undefined);
+      // The picture that shows it is the next one kept.
+      if (id && state.captions) state.captions.push({ id, text: html.replace(/<[^>]+>/g, ""), frame: state.frames.length });
     },
     /** Waits until `test` (an expression, in the page) is true, asking every 250 ms. Throws after `timeout`. */
     async until(test, timeout = 60_000, what = test) {
@@ -229,6 +234,7 @@ export async function open({ width = 1280, height = 720, scale = 1.5, gl = proce
       mkdirSync(state.dir, { recursive: true });
       state.frames = [];
       state.writing = [];
+      state.captions = [];
       state.lastAt = 0;
       state.taken = 0;
       state.filming = true;
@@ -285,6 +291,10 @@ export async function open({ width = 1280, height = 720, scale = 1.5, gl = proce
         { encoding: "utf8" },
       );
       if (made.status !== 0) throw new Error(`ffmpeg: ${made.stderr}`);
+      // When each named caption came up, in seconds of this clip.
+      const said = state.captions.map(({ id, text, frame }) => ({ id, at: Number((frames[Math.min(frame, frames.length - 1)].at - frames[0].at).toFixed(2)), text }));
+      state.captions = null;
+      writeFileSync(join(dir, `${name}.captions.json`), JSON.stringify({ seconds: Number(seconds.toFixed(2)), captions: said }, null, 1));
       console.log(
         `${name}: ${seconds.toFixed(1)} s on film, ${((Date.now() - started) / 1000).toFixed(0)} s to take, ${frames.length} pictures (${(frames.length / seconds).toFixed(0)} a second)`,
       );

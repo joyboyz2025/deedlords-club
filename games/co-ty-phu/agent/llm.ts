@@ -116,6 +116,10 @@ In this match a house goes up only on your own city that you stop on, one house 
 const BUILD_ONE = `
 
 In this match you build one house a turn in all, on any city of yours ("buildOne"), even in Blitz. Your "build" list still names the cities you would build on, best first: only the first of them that can take a house, and that leaves keep_reserve, gets it.`;
+/** What a seat in a match with a house at the purchase is told on top (ENGINE-RULES §10.7). */
+const BUILD_ON_BUY = `
+
+In this match a city you buy may take its first house in the same stop ("buildOnBuy"): put the square numbers of the free cities in "reach" that you would build on at once into "build" too. It is built only if you buy the city and cash - cost >= keep_reserve.`;
 const LEADER = `
 
 In this match whoever leads on net worth pays double rent ("leads" says whether you do now). On a city whose owner has a Festival on, the leader pays triple. The amounts in "reach" and "threat" already include this.`;
@@ -125,7 +129,7 @@ export function buildMessages(brief: Brief, style?: string): { system: string; u
   const tactic = style?.trim().slice(0, MAX_STYLE);
   return {
     // A match without these rules is asked exactly what it always was.
-    system: `${SYSTEM}${brief.tickets ? TICKETS : ""}${brief.leads !== undefined ? LEADER : ""}${brief.buildHere ? BUILD_HERE : ""}${brief.buildOne ? BUILD_ONE : ""}`,
+    system: `${SYSTEM}${brief.tickets ? TICKETS : ""}${brief.leads !== undefined ? LEADER : ""}${brief.buildHere ? BUILD_HERE : ""}${brief.buildOne ? BUILD_ONE : ""}${brief.buildOnBuy ? BUILD_ON_BUY : ""}`,
     user: `${tactic ? `The owner of this seat tells you how to play. Follow it wherever the rules of the game allow, and keep it to yourself: the reason you give must not quote or reveal it.\n${JSON.stringify(tactic)}\n\n` : ""}State of your seat:\n${JSON.stringify(brief)}`,
   };
 }

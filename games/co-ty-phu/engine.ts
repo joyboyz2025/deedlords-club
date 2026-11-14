@@ -117,6 +117,8 @@ export type Settings = {
   buildHere?: boolean;
   /** Blitz builds one house a turn, on any own city of the player's choice (ENGINE-RULES §10.6). Goes before `buildHere`. */
   buildOne?: boolean;
+  /** A city just bought may take its first house in the same stop (ENGINE-RULES §10.7). */
+  buildOnBuy?: boolean;
 };
 
 export type Game = {
@@ -677,6 +679,8 @@ export function buy(game: Game, playerId: string): void {
   game.props[player.position] = { owner: player.id, houses: 0, mortgaged: false };
   note(game, `${player.name} buys ${square.name} for ${square.price}.`);
   game.stage = "end";
+  // With the purchase comes the right to one house there, as for a stop on an own city (ENGINE-RULES §10.7).
+  if (game.settings.buildOnBuy && square.kind === "city") game.buildAt = player.position;
 }
 
 /** Không mua thì đất vẫn để trống cho người sau, không đấu giá. */

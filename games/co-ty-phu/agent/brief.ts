@@ -81,6 +81,8 @@ export type Brief = {
   buildHere?: true;
   /** Only in a match with one house a turn, on any own city (ENGINE-RULES §10.6). */
   buildOne?: true;
+  /** Only in a match where a city just bought may take its first house in the same stop (ENGINE-RULES §10.7). */
+  buildOnBuy?: true;
 };
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
@@ -201,5 +203,6 @@ export function briefFor(match: ChainMatch, seat: number): Brief | null {
     ...(match.meta.rules.leaderRent ? { leads: leads(game, playerId) } : {}),
     ...(match.meta.rules.buildHere ? { buildHere: true as const } : {}),
     ...(match.meta.rules.buildOne ? { buildOne: true as const } : {}),
+    ...(match.meta.rules.buildOnBuy ? { buildOnBuy: true as const } : {}),
   };
 }

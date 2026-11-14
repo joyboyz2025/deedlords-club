@@ -235,3 +235,15 @@ The contract stores it after `buildHere`, in a tail of version 3 that only a mat
 lists it as `buildOne`. The page opens its matches with `buildHere`, not with this rule (`BUILD_RULE` in
 `games/co-ty-phu/chain/calls.ts`): the owner chose the rule players know from the board game.
 
+### 10.7 A house with the purchase (`rules.buildOnBuy`)
+
+A fifth opt-in rule, for any game. In `buy`, after the square has changed hands and `stage` is `end`: if the square is
+a city, `buildAt` is set to it. The buyer may then `build` one house there in the same stop, under the classic
+condition of section 5 (`buildAt == index`, which the build clears), exactly as when stopping on an own city later.
+Stations and utilities take no house. In a Blitz game without `buildHere` the rule changes nothing that Blitz did not
+already allow.
+
+This is the game the page opens where the contract lists the rule (`rulesWith` in `games/co-ty-phu/chain/calls.ts`):
+classic rules, so nothing is dealt and the board is bought by landing on it, a round limit, and a house with each
+purchase and at each later stop on an own city. The contract stores the flag in a tail of version 4.
+

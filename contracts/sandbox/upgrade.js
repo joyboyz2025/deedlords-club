@@ -117,7 +117,7 @@ async function dry(wasm) {
     const { features, ...sameConfig } = after.config;
     const { features: _were, ...wasConfig } = before.config;
     assert.deepEqual(sameConfig, wasConfig);
-    assert.deepEqual(features, ["tickets", "leaderRent", "buildHere", "hostGrace", "away", "close", "buildOne"], "the new build lists the opt-in rules");
+    assert.deepEqual(features, ["tickets", "leaderRent", "buildHere", "hostGrace", "away", "close", "buildOne", "buildOnBuy"], "the new build lists the opt-in rules");
     assert.deepEqual(await view("get_match", { id: "asked" }), asked, "the match opened on the old code reads as it was: without tickets");
     console.log("  the open lobby and the games in progress read the same after the deploy; get_config now lists features");
 
@@ -191,6 +191,27 @@ async function dry(wasm) {
     assert.deepEqual([built[cities[0]].houses, built[cities[1]].houses], [1, 0], "one house a turn, on the city chosen");
     await playOut("one", ticketPlan);
     console.log("  a match opened after the deploy with buildOne takes one house a turn on a chosen city, and settled");
+
+    // The game the page opens now: nothing dealt, and a city takes its first house in the stop it is bought in.
+    const gameOfNow = { ...rules, blitz: false, cash: 2000, max_rounds: 10, tickets: true, leaderRent: true, buildOnBuy: true };
+    await call(alice, "create_match", { id: "buy", seats: 2, stake: String(Y / 10n), split: [7000, 3000], rules: gameOfNow, solo_player: null, turn_seconds: 60 }, Y / 10n);
+    await call(alice, "join", { id: "buy", seat: 0 }, Y / 10n);
+    await call(bob, "join", { id: "buy", seat: 1 }, Y / 10n);
+    const fresh = await view("get_match", { id: "buy" });
+    assert.deepEqual([fresh.meta.rules.blitz, fresh.meta.rules.buildOnBuy, Object.keys(fresh.game.props).length], [false, true, 0], "nothing is dealt");
+    const housePlan = { ...plan, buy_reserve: 0, keep_reserve: 0, build: ticketPlan.tickets.takeover };
+    let boughtAndBuilt = false;
+    for (let turns = 0; turns < 40 && !boughtAndBuilt; turns++) {
+      const match = await view("get_match", { id: "buy" });
+      if (match === null) break;
+      const who = [alice, bob].find((account) => match.meta.seats[match.meta.current_seat].backer === account.accountId);
+      const said = logsOf(await call(who, "turn", { id: "buy", seat: match.meta.current_seat, plan: housePlan }));
+      const bought = [...said.matchAll(/"kind":"buy","player":"s\d","square":(\d+)/g)].map((found) => found[1]);
+      boughtAndBuilt = bought.some((square) => new RegExp(`"kind":"build","player":"s\\d","square":${square},"houses":1`).test(said));
+    }
+    assert.ok(boughtAndBuilt, "a city was bought and took its first house in the same turn");
+    await playOut("buy", housePlan);
+    console.log("  a match with nothing dealt: a city bought took its first house in the same stop, and the match settled");
 
     // The owner makes the fee free for matches opened from now on. The two matches opened before keep their 2.5%.
     await assert.rejects(call(alice, "set_fee", { fee_bps: 0 }, 1n), /only the owner may set the fee/);

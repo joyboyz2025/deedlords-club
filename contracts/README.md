@@ -363,6 +363,10 @@ The new build is 583,211 bytes: **the game account must hold about 0.49 NEAR mor
   in 600 simulated ones, against 18.8 with plain Blitz and 11.6 with this rule). The owner chose `buildHere` all the
   same, the rule players know, so the page asks for that one; this rule stays in the contract for a match that asks
   for it. Stored in a tail of version 3.
+- **`buildOnBuy`** (a fifth, docs/ENGINE-RULES.md section 10.7), and with it the game the page opens since the
+  evening of 2026-11-14, at the owner's word: classic rules (nothing dealt: every seat starts with its cash and the
+  board is bought by landing on it), a round limit, a city takes its first house in the stop it is bought in and one
+  more each time its owner stops there again. Stored in a tail of version 4.
 - **The host's grace.** A full hosted room its host does not start can be started by anyone seated 30 seconds after
   the last seat was taken (`start`, or `play` with `["Start"]`). Before: only the host, so a host who walked away
   left the others in a room nobody could start for 15 minutes.
@@ -376,7 +380,7 @@ The new build is 583,211 bytes: **the game account must hold about 0.49 NEAR mor
   ranked by net worth, and is settled like any other. The free-table desk calls it for tables everybody left, a few
   each time somebody opens a table (`app/api/free/route.ts`); a staked testnet match that had stood on the board for
   83 hours was settled this way.
-- `get_config` lists `"features": ["tickets", "leaderRent", "buildHere", "hostGrace", "away", "close", "buildOne"]`. None of this
+- `get_config` lists `"features": ["tickets", "leaderRent", "buildHere", "hostGrace", "away", "close", "buildOne", "buildOnBuy"]`. None of this
   changes how a stored match is read: which seats are away is kept under a key of its own (`away:<id>`), like the host.
 
 ## Known limits

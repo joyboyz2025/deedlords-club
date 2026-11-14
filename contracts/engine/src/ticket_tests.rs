@@ -26,7 +26,7 @@ impl Rng for Script {
     }
 }
 
-const BOTH: Extras = Extras { tickets: true, leader_rent: true, build_here: false, build_one: false };
+const BOTH: Extras = Extras { tickets: true, leader_rent: true, build_here: false, build_one: false, build_on_buy: false };
 
 /// Two players in seating order, classic rules; `draws`: the ticket each is dealt (`below(4)`), when tickets are on.
 fn started(extras: Extras, draws: &[u32]) -> Game {
@@ -88,7 +88,7 @@ fn the_borsh_form_of_a_game_is_the_one_from_before_and_leaves_the_new_rules_out(
 
 #[test]
 fn a_ticket_each_at_the_start_and_one_more_at_departure_up_to_two() {
-    let mut game = started(Extras { tickets: true, leader_rent: false, build_here: false, build_one: false }, &[0, 3]);
+    let mut game = started(Extras { tickets: true, leader_rent: false, build_here: false, build_one: false, build_on_buy: false }, &[0, 3]);
     assert_eq!(game.tickets_of("p0"), [Ticket::Waiver]);
     assert_eq!(game.tickets_of("p1"), [Ticket::Festival]);
     assert_eq!(
@@ -281,4 +281,30 @@ fn blitz_with_build_one_builds_one_house_a_turn_on_a_city_of_the_players_choice(
     // The next turn of the same seat has its house again.
     act(&mut game, &mover, Action::End, &[]).unwrap();
     assert_eq!(game.check(Some(other), Action::Build(6)), Ok(()));
+}
+
+/// ENGINE-RULES §10.7: with `build_on_buy`, a city just bought may take its first house in the same stop, once.
+#[test]
+fn a_city_just_bought_takes_its_first_house_in_the_same_stop_with_build_on_buy() {
+    for on in [false, true] {
+        let mut game = Game::new(Rules::default(), vec!["p0".into(), "p1".into()]).with_extras(Extras { build_on_buy: on, ..Extras::default() });
+        let mut rng = Script::new(&[1]);
+        game.apply(None, Action::Start, &mut rng).unwrap();
+        assert!(game.props.is_empty(), "a classic game deals nothing");
+        let mover = game.current_player().unwrap().to_string();
+        // 1 + 2 from Departure: Cape Town, a city nobody owns.
+        act(&mut game, &mover, Action::Roll, &[1, 2]).unwrap();
+        assert_eq!(game.stage, Stage::Buy);
+        assert!(game.check(Some(&mover), Action::Build(3)).is_err(), "nothing to build on before it is bought");
+        act(&mut game, &mover, Action::Buy, &[]).unwrap();
+        let house = game.check(Some(&mover), Action::Build(3));
+        if on {
+            assert_eq!(house, Ok(()), "the purchase brings one house");
+            act(&mut game, &mover, Action::Build(3), &[]).unwrap();
+            assert_eq!(game.props[&3].houses, 1);
+            assert_eq!(game.check(Some(&mover), Action::Build(3)), Err(EngineError::NotAllowed), "one, not two");
+        } else {
+            assert_eq!(house, Err(EngineError::NotAllowed), "classic: only on a later stop");
+        }
+    }
 }

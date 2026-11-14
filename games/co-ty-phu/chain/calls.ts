@@ -48,8 +48,8 @@ export type DuelTerms = { stake: bigint; maxRounds: number; turnSeconds: number;
  * for whoever leads on net worth (docs/ENGINE-RULES.md §10). A contract deployed before them ignores the fields, so
  * they are sent only to a contract that lists them (`extrasOf`).
  */
-export type Extras = { tickets: boolean; leaderRent: boolean; buildHere: boolean; buildOne: boolean };
-export const NO_EXTRAS: Extras = { tickets: false, leaderRent: false, buildHere: false, buildOne: false };
+export type Extras = { tickets: boolean; leaderRent: boolean; buildHere: boolean; buildOne: boolean; buildOnBuy: boolean };
+export const NO_EXTRAS: Extras = { tickets: false, leaderRent: false, buildHere: false, buildOne: false, buildOnBuy: false };
 /**
  * Which of the contract's two building rules a match opened from the page gets: "here", a house only on the own city
  * the piece has just stopped on (the rule players know from the board game); "one", one house a turn on any own city.
@@ -66,9 +66,12 @@ export function extrasOf(config: { features?: unknown } | null | undefined, off:
   // How houses go up in a match opened here: on the own city the piece stops on, one house a stop (`BUILD_RULE`), where
   // the contract has that rule; on a contract from before it, as Blitz always did. The contract also knows one house a
   // turn on a city of the player's choice (`buildOne`); the owner chose the first on 2026-11-14.
-  const buildHere = BUILD_RULE === "here" && features.includes("buildHere");
-  const buildOne = BUILD_RULE === "one" && features.includes("buildOne");
-  return { tickets: features.includes("tickets"), leaderRent: features.includes("leaderRent"), buildHere, buildOne };
+  // A contract that has a house with the purchase gets the owner's game of 2026-11-14 (`rulesWith`): nothing dealt,
+  // and houses as in the classic game, which needs neither of the two Blitz building rules.
+  const buildOnBuy = features.includes("buildOnBuy");
+  const buildHere = !buildOnBuy && BUILD_RULE === "here" && features.includes("buildHere");
+  const buildOne = !buildOnBuy && BUILD_RULE === "one" && features.includes("buildOne");
+  return { tickets: features.includes("tickets"), leaderRent: features.includes("leaderRent"), buildHere, buildOne, buildOnBuy };
 }
 
 /**
@@ -79,6 +82,16 @@ export function extrasOf(config: { features?: unknown } | null | undefined, off:
  * a house or two went up in twelve rounds: scripts/co-ty-phu-sim.ts measures both.
  */
 export const RULES = { salary: 200, cash: 2000, blitz: true } as const;
+
+/**
+ * The rules a match is opened with, given what the contract knows. Where it knows `buildOnBuy`: the game the owner
+ * settled on, 2026-11-14. Nothing is dealt (no Blitz): every seat starts with its cash and the board is bought by
+ * landing on it; a city takes its first house in the stop it is bought in, and one more each time its owner stops
+ * there again. Anywhere else: `RULES`, the Blitz match of before.
+ */
+export function rulesWith(extras: Extras | undefined): { salary: number; cash: number; blitz: boolean } {
+  return extras?.buildOnBuy ? { ...RULES, blitz: false } : RULES;
+}
 
 /** How the pot is shared by rank, in basis points, for a table of that many seats. */
 export const SPLITS: Record<number, number[]> = { 2: [7000, 3000], 3: [6000, 3000, 1000], 4: [5000, 3000, 1500, 500] };
@@ -92,7 +105,15 @@ export function createDuelCall(id: string, terms: DuelTerms): FunctionCall {
     seats,
     stake: terms.stake.toString(),
     split: SPLITS[seats] ?? SPLITS[2],
-    rules: { ...RULES, max_rounds: terms.maxRounds, ...(terms.extras?.tickets ? { tickets: true } : {}), ...(terms.extras?.leaderRent ? { leaderRent: true } : {}), ...(terms.extras?.buildHere ? { buildHere: true } : {}), ...(terms.extras?.buildOne ? { buildOne: true } : {}) },
+    rules: {
+      ...rulesWith(terms.extras),
+      max_rounds: terms.maxRounds,
+      ...(terms.extras?.tickets ? { tickets: true } : {}),
+      ...(terms.extras?.leaderRent ? { leaderRent: true } : {}),
+      ...(terms.extras?.buildHere ? { buildHere: true } : {}),
+      ...(terms.extras?.buildOne ? { buildOne: true } : {}),
+      ...(terms.extras?.buildOnBuy ? { buildOnBuy: true } : {}),
+    },
     solo_player: null,
     turn_seconds: terms.turnSeconds,
     ...(terms.host ? { host: terms.host } : {}),
@@ -218,6 +239,8 @@ export const TICKET_LINES: TicketLine[] = [
 ];
 /** How tickets come and go, in two sentences. */
 export const TICKETS_LINE = "Every seat starts with one random ticket and draws another each time it passes Departure, never holding more than two. A ticket is played on your own turn and is then used up.";
+/** Houses in the game without a deal, in two sentences. */
+export const BUILD_LINE = "Nobody starts with property: you buy a square by landing on it. A city takes one house when you buy it, and one more each time you stop on it again.";
 /** The leader's rent, in one sentence. */
 export const LEADER_LINE = "Whoever leads on net worth pays double rent (a tie for the lead: nobody does). On a city with a Festival the leader pays triple.";
 

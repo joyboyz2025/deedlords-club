@@ -6,7 +6,7 @@
 import { SQUARES, isOwnable } from "../board.ts";
 import type { Brief, Holding } from "./brief.ts";
 import type { Plan } from "./plan.ts";
-import { ticketPlan } from "./tickets.ts";
+import { ticketPlan, withPurchases } from "./tickets.ts";
 
 export const BUILD_ORDERS = ["payback", "priciest", "cheapest", "none"] as const;
 export const BAIL_RULES = ["smart", "always", "never"] as const;
@@ -162,7 +162,7 @@ export function playbookPlan(brief: Brief, book: Playbook): { plan: Plan; reason
   return {
     plan: {
       buy_reserve: reserve,
-      build: build.map((holding) => holding.square),
+      build: withPurchases(brief, build.map((holding) => holding.square), book.build !== "none"),
       keep_reserve: reserve + book.cushion,
       bail,
       liquidate,

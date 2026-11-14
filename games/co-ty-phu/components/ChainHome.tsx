@@ -21,7 +21,8 @@ import {
   ROUND_CHOICES,
   roundsFor,
   roundsLabel,
-  RULES,
+  rulesWith,
+  BUILD_LINE,
   SEAT_COUNTS,
   SMALLEST_STAKE,
   SPLITS,
@@ -485,7 +486,8 @@ function FlightStub({
               ))}
             </div>
           </div>
-          <p className="fd-fine">{winLine({ blitz: RULES.blitz, maxRounds: rounds })}</p>
+          <p className="fd-fine">{winLine({ blitz: rulesWith(extras).blitz, maxRounds: rounds })}</p>
+          {extras.buildOnBuy && <p className="fd-fine">{BUILD_LINE}</p>}
           {extras.tickets && <p className="fd-fine">With special tickets: {TICKET_LINES.map((line) => line.name).join(", ")}. {TICKETS_LINE}</p>}
           {extras.leaderRent && <p className="fd-fine">{LEADER_LINE}</p>}
         </div>

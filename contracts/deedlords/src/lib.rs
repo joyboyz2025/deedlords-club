@@ -144,6 +144,8 @@ pub const MATCH_TAIL_V1: u8 = 1;
 pub const MATCH_TAIL_V2: u8 = 2;
 /// The same again, followed by `extras.build_one` (ENGINE-RULES §10.6). Written only for a match that has that rule.
 pub const MATCH_TAIL_V3: u8 = 3;
+/// And once more, followed by `extras.build_on_buy` (ENGINE-RULES §10.7). Written only for a match that has that rule.
+pub const MATCH_TAIL_V4: u8 = 4;
 /// Set on the stored status byte (a [`Status`] is 0..=3) of a match that has a tail after its game.
 pub const MATCH_TAIL_FLAG: u8 = 0x80;
 
@@ -167,8 +169,16 @@ impl BorshSerialize for Match {
         BorshSerialize::serialize(&self.draws, writer)?;
         BorshSerialize::serialize(&self.game, writer)?;
         if tail {
-            let (build_here, build_one) = (self.game.extras.build_here, self.game.extras.build_one);
-            let version = if build_one { MATCH_TAIL_V3 } else if build_here { MATCH_TAIL_V2 } else { MATCH_TAIL_V1 };
+            let (build_here, build_one, build_on_buy) = (self.game.extras.build_here, self.game.extras.build_one, self.game.extras.build_on_buy);
+            let version = if build_on_buy {
+                MATCH_TAIL_V4
+            } else if build_one {
+                MATCH_TAIL_V3
+            } else if build_here {
+                MATCH_TAIL_V2
+            } else {
+                MATCH_TAIL_V1
+            };
             BorshSerialize::serialize(&version, writer)?;
             BorshSerialize::serialize(&self.game.extras, writer)?;
             BorshSerialize::serialize(&self.game.tickets, writer)?;
@@ -177,6 +187,9 @@ impl BorshSerialize for Match {
             }
             if version >= MATCH_TAIL_V3 {
                 BorshSerialize::serialize(&build_one, writer)?;
+            }
+            if version >= MATCH_TAIL_V4 {
+                BorshSerialize::serialize(&build_on_buy, writer)?;
             }
         }
         Ok(())
@@ -215,7 +228,7 @@ impl BorshDeserialize for Match {
             return Ok(m);
         }
         let version = u8::deserialize_reader(reader)?;
-        if !(MATCH_TAIL_V1..=MATCH_TAIL_V3).contains(&version) {
+        if !(MATCH_TAIL_V1..=MATCH_TAIL_V4).contains(&version) {
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "unknown match tail"));
         }
         m.game.extras = Extras::deserialize_reader(reader)?;
@@ -225,6 +238,9 @@ impl BorshDeserialize for Match {
         }
         if version >= MATCH_TAIL_V3 {
             m.game.extras.build_one = bool::deserialize_reader(reader)?;
+        }
+        if version >= MATCH_TAIL_V4 {
+            m.game.extras.build_on_buy = bool::deserialize_reader(reader)?;
         }
         Ok(m)
     }
@@ -284,6 +300,7 @@ fn extras_of_call() -> Extras {
         leader_rent: on(["leaderRent", "leader_rent"]),
         build_here: on(["buildHere", "build_here"]),
         build_one: on(["buildOne", "build_one"]),
+        build_on_buy: on(["buildOnBuy", "build_on_buy"]),
     }
 }
 
@@ -300,7 +317,7 @@ fn call_arg(name: &str) -> Value {
 
 /// What `get_config` lists under `features`: the opt-in rules this code knows. A page opens a match with one of them
 /// only when the contract it talks to lists it (a contract deployed before them ignores the fields it does not know).
-pub const FEATURES: [&str; 7] = ["tickets", "leaderRent", "buildHere", "hostGrace", "away", "close", "buildOne"];
+pub const FEATURES: [&str; 8] = ["tickets", "leaderRent", "buildHere", "hostGrace", "away", "close", "buildOne", "buildOnBuy"];
 
 #[near(contract_state)]
 #[derive(PanicOnDefault)]
@@ -523,6 +540,9 @@ impl Match {
         }
         if self.game.extras.build_one {
             rules["buildOne"] = json!(true);
+        }
+        if self.game.extras.build_on_buy {
+            rules["buildOnBuy"] = json!(true);
         }
         rules
     }

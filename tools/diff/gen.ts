@@ -58,7 +58,7 @@ export type Op = (typeof OPS)[number] | (typeof TICKET_OPS)[number];
 const TURN_OPS: Op[] = ["roll", "buy", "skip", "end", "bail", "card", "pay", "bankrupt"];
 const INDEXED_OPS: Op[] = ["build", "sell", "mortgage", "redeem"];
 
-export type Rules = { salary: number; cash: number; blitz: boolean; maxRounds: number; tickets?: boolean; leaderRent?: boolean; buildHere?: boolean; buildOne?: boolean };
+export type Rules = { salary: number; cash: number; blitz: boolean; maxRounds: number; tickets?: boolean; leaderRent?: boolean; buildHere?: boolean; buildOne?: boolean; buildOnBuy?: boolean };
 export type TraceStep = { op: Op; player: string | null; index: number | null; rng: RngCall[]; ok: boolean; state: Snapshot };
 export type Trace = { version: 1; seed: number; rules: Rules; players: string[]; steps: TraceStep[] };
 
@@ -76,6 +76,7 @@ export function newTraceGame(players: string[], rules: Rules): Game {
   if (rules.leaderRent) game.settings.leaderRent = true;
   if (rules.buildHere) game.settings.buildHere = true;
   if (rules.buildOne) game.settings.buildOne = true;
+  if (rules.buildOnBuy) game.settings.buildOnBuy = true;
   return game;
 }
 
@@ -402,6 +403,8 @@ export function generateGame(seed: number, coverage: Coverage = new Coverage(), 
     if (rules.blitz && seed % 3 === 0) rules.buildHere = true;
     // One house a turn on any own city (ENGINE-RULES §10.6), in another third of them.
     if (rules.blitz && seed % 3 === 1) rules.buildOne = true;
+    // A house with the purchase (ENGINE-RULES §10.7), in the classic games among them and one Blitz game in three.
+    if (!rules.blitz || seed % 3 === 2) rules.buildOnBuy = true;
   }
   const params = pickParams(random);
   const source = prngRng(random, params.doubles);
@@ -411,6 +414,7 @@ export function generateGame(seed: number, coverage: Coverage = new Coverage(), 
   if (extras) coverage.add(`extras: ${rules.tickets ? "tickets" : ""}${rules.tickets && rules.leaderRent ? " + " : ""}${rules.leaderRent ? "leader's rent" : ""}`);
   if (rules.buildHere) coverage.add("extras: build only where one stops");
   if (rules.buildOne) coverage.add("extras: one house a turn");
+  if (rules.buildOnBuy) coverage.add(`extras: a house with the purchase (${rules.blitz ? "blitz" : "classic"})`);
   coverage.add(`players: ${count}`);
 
   let drawing = false;

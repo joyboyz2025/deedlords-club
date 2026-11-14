@@ -81,3 +81,13 @@ export function ticketPlan(brief: Brief, reserve: number): { tickets: TicketPlan
   }
   return { tickets, says };
 }
+
+/**
+ * In a match where a city takes its first house in the stop it is bought in: the free cities this roll can reach go
+ * on the build list too, after the seat's own (a house there is built only if the city is bought and the reserve allows).
+ */
+export function withPurchases(brief: Brief, build: number[], builds = true): number[] {
+  if (!brief.buildOnBuy || !builds) return build;
+  const reachable = brief.reach.filter((spot) => spot.what === "free" && SQUARES[spot.square].kind === "city").map((spot) => spot.square);
+  return [...build, ...reachable.filter((square, i) => !build.includes(square) && reachable.indexOf(square) === i)];
+}
