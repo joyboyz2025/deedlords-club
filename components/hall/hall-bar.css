@@ -96,11 +96,6 @@
   color: var(--hb-cream);
 }
 
-/* The same club on the other network, when it is live: the last link of the row. */
-.hb nav a.hb-othernet {
-  color: var(--hb-gold);
-}
-
 .hb-end {
   display: flex;
   gap: 8px;
@@ -146,6 +141,18 @@
 
 .hb-net > a:hover {
   color: var(--hb-cream);
+}
+
+/* The way to the other network: "Switch to mainnet" where the row has room, "mainnet" with its arrow where it has not. */
+.hb-net > a.hb-net__switch {
+  color: var(--hb-gold);
+  text-decoration: none;
+}
+
+@media (max-width: 1359px) {
+  .hb-net > a.hb-net__switch i {
+    display: none;
+  }
 }
 
 .hb-net small {

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import goldFoil from "@/assets/plates/gold-foil.webp";
-import { Chain, User } from "@/components/landing/icons";
+import { Arrow, Chain, User } from "@/components/landing/icons";
 import { NET_NAME, OTHER_NET } from "@/components/landing/net";
 import type { Character } from "@/games/chibi/chain";
 import { ChibiFace } from "@/games/chibi/components/CharacterTag";
@@ -115,11 +115,6 @@ export function HallBar({ current, account, padded = false }: { current?: HallPl
             {entry.name}
           </Link>
         ))}
-        {OTHER_NET.url && (
-          <a className="hb-othernet" href={OTHER_NET.url}>
-            {OTHER_NET.name}
-          </a>
-        )}
       </nav>
       <div className="hb-end">
         <span className="hb-net" title={`This page plays on ${NET_NAME}`}>
@@ -127,6 +122,13 @@ export function HallBar({ current, account, padded = false }: { current?: HallPl
             <Chain size={16} /> <i>NEAR </i>
             {NET_NAME.replace("NEAR ", "")}
           </span>
+          {/* The same club on the other network, one tap away: the second half of the chip. */}
+          {OTHER_NET.url && (
+            <a className="hb-net__switch" href={OTHER_NET.url} title={`Switch to ${OTHER_NET.name}: the same club on the other network`}>
+              <Arrow size={14} /> <i>Switch to </i>
+              {OTHER_NET.name.replace("NEAR ", "")}
+            </a>
+          )}
         </span>
         {accountId ? (
           <AccountMenu accountId={accountId} balance={balance} current={current} character={character} />
