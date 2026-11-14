@@ -28,6 +28,7 @@ import {
   hostIsSpent,
   leaveState,
   nextDealt,
+  nodeTrouble,
   ruledLate,
   toBase64,
   tookEffect,
@@ -437,4 +438,15 @@ test("a player whose seat was given up for running out of time is told so", () =
   assert.equal(ruledLate({ ...after, players: ["free.testnet", null, "guest.testnet", "pokerhouse.testnet", null, null] }, 2, "guest.testnet"), false);
   assert.equal(ruledLate({ ...after, last: { ...last, late: [3] } }, 2, "guest.testnet"), false);
   assert.equal(ruledLate({ ...after, last: null }, 2, "guest.testnet"), false);
+});
+
+test("a node that does not answer is told to the player in plain words, a refusal of the contract in its own", () => {
+  // A public node limits how often one address may ask (HTTP 429 from test.rpc.fastnear.com while a table was played
+  // from this address, 2026-11-14): the page showed the reading loop's own words.
+  assert.equal(nodeTrouble("RPC query: HTTP 429"), true);
+  assert.equal(nodeTrouble("RPC query: no answer in time"), true);
+  assert.equal(nodeTrouble("RPC block: network error"), true);
+  // What the contract or the chain says about the call itself stays as it is.
+  assert.equal(nodeTrouble("the table is full"), false);
+  assert.equal(nodeTrouble('RPC send_tx: INVALID_TRANSACTION: {"TxExecutionError":{"InvalidTxError":"Expired"}}'), false);
 });

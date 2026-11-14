@@ -302,3 +302,9 @@ export function leaveState(view: Pick<TableView, "players" | "leaving">, account
  * account sat. The contract rules a seat late when its step has not reached it by the deadline, whoever is at fault.
  */
 export const ruledLate = (view: Pick<TableView, "players" | "last">, seat: number, account: string): boolean => view.players[seat] !== account && Boolean(view.last?.late.includes(seat));
+
+/**
+ * Whether what the reading loop could not do was a node not answering (a rate limit, a gateway error, no answer at
+ * all), as lib/chain/rpc.ts words it: nothing for the player to act on, and not to be read out as "RPC query: HTTP 429".
+ */
+export const nodeTrouble = (problem: string): boolean => /^RPC \w+: (HTTP \d{3}|no answer in time|network error)$/.test(problem);

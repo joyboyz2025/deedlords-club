@@ -44,7 +44,7 @@ import {
   viewResult,
 } from "../chain";
 import { FREE_TABLE_HANDS, FREE_TURN_SECONDS, RECORD_FEE } from "../contract";
-import { type TableResult, type TableView, betCall, callsTime, clockAhead, clockMove, duty, holeCards, leaveState, movedOn, ruledLate, seated, tookEffect } from "../seat";
+import { type TableResult, type TableView, betCall, callsTime, clockAhead, clockMove, duty, holeCards, leaveState, movedOn, nodeTrouble, ruledLate, seated, tookEffect } from "../seat";
 import { useHouse } from "../useHouse";
 import { useSeatAgent } from "../useSeatAgent";
 import { type Tables, useTables } from "../useTables";
@@ -1016,7 +1016,7 @@ function LiveTable({
         locked={locked || !view}
         doing={sending ? "Sending to the contract…" : doing}
         now={clock}
-        problems={[refused, trouble, late].filter(Boolean).map((problem) => (/NotEnoughBalance/.test(problem) ? LACKS_NEAR : problem))}
+        problems={[refused, trouble, late].filter(Boolean).map((problem) => (/NotEnoughBalance/.test(problem) ? LACKS_NEAR : nodeTrouble(problem) ? NODE_BUSY : problem))}
         log={log}
         link={`${typeof window === "undefined" ? "" : window.location.origin}${ROUTE}?t=${id}`}
         explorer={explorerLink}
@@ -1133,6 +1133,7 @@ const PLAY_RESERVE = (27n * NEAR) / 100n;
 /** What a seat that ran low is brought back up to. */
 const PLAY_TOP_UP = (4n * NEAR) / 10n;
 const LACKS_NEAR = "Your account holds too little NEAR for this step. Add some below: the page goes on by itself when it lands.";
+const NODE_BUSY = "A NEAR node did not answer just now: the public ones limit how often one address may ask. The page keeps trying by itself.";
 /** Told to a player whose seat ran out of time. Its chips went to the others only when the hand took more in than was put into it. */
 const RULED_LATE = (last: NonNullable<TableView["last"]>): string =>
   `Your seat was given up in hand ${last.number + 1}: the table did not get its step before the clock ran out, and the contract ruled it late.${
