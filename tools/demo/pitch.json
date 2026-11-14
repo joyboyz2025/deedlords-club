@@ -36,6 +36,6 @@
     { "id": "R1", "clip": "n5-arena", "from": 0.5, "say": ["Next to launch: Arena.", 0.12, "Bid in secret, then fight with no dice."], "show": "<b>Arena</b>: a sealed-bid market, then a fight with no dice. Launching next." },
 
     { "id": "Z0", "clip": "6-mainnet", "from": 8.6, "say": ["The club is live on Near mainnet.", 0.15, { "t": "Don't trust this film:", "speed": 0.95 }, 0.08, "one command checks every claim."], "show": "Live on <b>NEAR mainnet</b>. Don't trust this film: one command checks every claim.", "tech": "NPM RUN CHECK:LIVE" },
-    { "id": "Z1", "clip": "1-open", "from": 0.3, "say": [{ "t": "Deed Lords Club.", "speed": 0.9 }, 0.25, "Fully on-chain games.", 0.15, { "t": "Built on Near.", "speed": 0.92 }], "show": "<b>deedlords-club.vercel.app</b> · fully on-chain games · built on NEAR", "pad": 0.9 }
+    { "id": "Z1", "clip": "1-open", "from": 0.3, "say": [{ "t": "Deed Lords Club.", "speed": 0.9 }, 0.25, "Fully on-chain games.", 0.15, { "t": "Built on Near.", "speed": 0.92 }], "show": "<b>deedlords.xyz</b> · fully on-chain games · built on NEAR", "pad": 0.9 }
   ]
 }

@@ -57,7 +57,7 @@
   {
    "id": "V2",
    "clip": "n3-selfplay",
-   "from": 6.0,
+   "from": 10.3,
    "say": [
     {
      "t": "And a training ground for A.I.:",
@@ -449,7 +449,7 @@
      "speed": 0.92
     }
    ],
-   "show": "<b>deedlords-club.vercel.app</b> · fully on-chain games · built on NEAR",
+   "show": "<b>deedlords.xyz</b> · fully on-chain games · built on NEAR",
    "pad": 0.9
   }
  ]

@@ -279,7 +279,8 @@ export function handStory(last: Hand, name: (seat: number) => string, made: (sea
   const list = (seats: number[]): string => {
     const names = seats.map(name);
     const said = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? "nobody");
-    return said.charAt(0).toUpperCase() + said.slice(1);
+    // "you" opens the sentence as "You"; an account's name is written as it is ("c2c30a0…1a311", never "C2c30a0…").
+    return names[0] === "you" ? `Y${said.slice(1)}` : said;
   };
   if (last.ending === "void") return "The hand was void: every chip went back.";
   if (last.ending === "cancelled") return `Called off: ${list(last.late).replace(/^./, (first) => first.toLowerCase())} did not answer in time.`;

@@ -425,6 +425,10 @@ test("a finished hand is told in a sentence: who took the pot, and with what", (
   // house, which did not share any pot by that.
   assert.equal(handStory({ ...hand, put: [100, 40], won: [60, 80] }, name, (seat) => (seat === 1 ? "a flush" : "a pair")), "You took the pot of 80 with a flush.");
   assert.equal(handStory({ ...hand, ending: "cancelled" as const, put: [12, 12], won: [112, 0], late: [1] }, name, () => null), "Called off: you did not answer in time.");
+  // Hand 1 of f-mwgoxg6y-xqgc on testnet, 2026-11-14, a table of nine: three guests shared the pot with a straight
+  // each, and the sentence opened with "C2c30a0…1a311", an account's name with a capital it does not have.
+  const guests = (seat: number) => ["c2c30a0…1a311", "43d79ef…f7754"][seat];
+  assert.equal(handStory({ ...hand, put: [8, 8], won: [8, 8] }, guests, () => "a straight"), "c2c30a0…1a311 and 43d79ef…f7754 shared the pot of 16, a straight each.");
 });
 
 test("a seat that asked to leave between two hands is gone only when the table says so", () => {
