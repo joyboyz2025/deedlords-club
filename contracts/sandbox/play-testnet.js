@@ -161,7 +161,7 @@ const whole = (value, min, max, name) => {
 async function createMatch({ kind = "duel", open = false, player = null, turnSeconds = 60, rules = {} }) {
   if (kind !== "duel") throw new Error("only duels here: a match against the house needs a house runner, which this helper does not have");
   if (matches >= MAX_MATCHES) throw new Error(`this run has opened ${MAX_MATCHES} matches already: restart the helper to go on`);
-  const maxRounds = whole(rules?.max_rounds ?? 6, 1, 12, "rules.max_rounds");
+  const maxRounds = whole(rules?.max_rounds ?? 20, 1, 255, "rules.max_rounds");
   whole(turnSeconds, 20, 300, "turnSeconds");
   const creator = player === null ? acc.p1 : playerById(player);
   const other = creator === acc.p1 ? acc.p2 : acc.p1;
@@ -174,7 +174,8 @@ async function createMatch({ kind = "duel", open = false, player = null, turnSec
     seats: 2,
     stake: STAKE.toString(),
     split: [7000, 3000],
-    rules: { salary: 200, cash: 1500, blitz: false, max_rounds: maxRounds },
+    // The rules the web page opens a match with (games/co-ty-phu/chain/calls.ts RULES).
+    rules: { salary: 200, cash: 2000, blitz: true, max_rounds: maxRounds },
     solo_player: null,
     turn_seconds: turnSeconds,
   }, STORAGE_DEPOSIT);

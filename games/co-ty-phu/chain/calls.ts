@@ -43,6 +43,15 @@ export const STORAGE_DEPOSIT = 60_000_000_000_000_000_000_000n;
  */
 export type DuelTerms = { stake: bigint; maxRounds: number; turnSeconds: number; seats?: number; host?: string | null };
 
+/**
+ * The rules of every match opened from the web page: Blitz. Each seat is dealt five squares, paid at their price out
+ * of `cash`; on its turn a seat may put one house on each of its cities; a match that runs out of rounds is ranked by
+ * net worth. They are the rules the contract's own tests play Blitz by. With nothing dealt and a house only where the
+ * piece stops (the rules before), a match to the end took about a hundred rounds, forty minutes and more for two, and
+ * a house or two went up in twelve rounds: scripts/co-ty-phu-sim.ts measures both.
+ */
+export const RULES = { salary: 200, cash: 2000, blitz: true } as const;
+
 /** How the pot is shared by rank, in basis points, for a table of that many seats. */
 export const SPLITS: Record<number, number[]> = { 2: [7000, 3000], 3: [6000, 3000, 1000], 4: [5000, 3000, 1500, 500] };
 export const SEAT_COUNTS = [2, 3, 4];
@@ -55,7 +64,7 @@ export function createDuelCall(id: string, terms: DuelTerms): FunctionCall {
     seats,
     stake: terms.stake.toString(),
     split: SPLITS[seats] ?? SPLITS[2],
-    rules: { salary: 200, cash: 1500, blitz: false, max_rounds: terms.maxRounds },
+    rules: { ...RULES, max_rounds: terms.maxRounds },
     solo_player: null,
     turn_seconds: terms.turnSeconds,
     ...(terms.host ? { host: terms.host } : {}),
@@ -152,11 +161,24 @@ export const SMALLEST_STAKE = 0.05;
  */
 export const TO_THE_END = 255;
 /** How many rounds a match opened from the web page may last. */
-export const ROUND_CHOICES = [3, 6, 12, TO_THE_END];
+export const ROUND_CHOICES = [8, 12, 16, 20, TO_THE_END];
+/**
+ * The rounds a table of that many seats is opened with unless its opener picks: 40 to 48 turns in all. The simulation
+ * (scripts/co-ty-phu-sim.ts) puts that at 7 to 8 minutes for one person against agents and 11 to 13 for a table of
+ * people, a few minutes more when everybody takes their time.
+ */
+export const roundsFor = (seats: number): number => (seats <= 2 ? 20 : seats === 3 ? 16 : 12);
 /** A round limit as the pages say it. */
 export const roundsLabel = (maxRounds: number): string => (maxRounds >= TO_THE_END ? "To the end" : String(maxRounds));
 /** "ROUND 3/12", or "ROUND 3" in a match played to the end. `round` counts the rounds completed. */
 export const roundOf = (round: number, maxRounds: number): string => (maxRounds >= TO_THE_END ? `${round + 1}` : `${Math.min(round + 1, maxRounds)}/${maxRounds}`);
+/** How a match with these rules is won, in one sentence, for the gate and the table's rules. */
+export function winLine(rules: { blitz: boolean; maxRounds: number }): string {
+  const worth = `cash, properties at their price (half when mortgaged) and houses at ${rules.blitz ? "three quarters of " : ""}their cost`;
+  return rules.maxRounds >= TO_THE_END
+    ? `The last seat standing wins. Should round ${TO_THE_END} ever end, the highest net worth wins: ${worth}.`
+    : `The last seat standing wins; after round ${rules.maxRounds} the highest net worth wins: ${worth}.`;
+}
 /**
  * A turn's clock, in seconds, in matches opened from the web page: after it the contract moves for whoever is late
  * (`timeout`). Long enough for an AI seat's model to answer and its transaction to land.

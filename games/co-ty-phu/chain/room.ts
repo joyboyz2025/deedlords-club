@@ -6,6 +6,9 @@
 // Moving: an action that needs no dice is applied here first with the reference engine and shown at once, then sent;
 // actions made while a transaction is on its way go out together in the next one. A roll is only sent: until it lands
 // nothing else can be played (`busy`). If the contract refuses anything, what was shown ahead of the chain is dropped.
+// Ending a turn is not a decision once nothing is left to decide: with `autoPlay` the room does it, in the transaction
+// of the move that left nothing, or as soon as the chain shows a roll that left nothing. A turn then costs the table
+// one or two transactions' wait, not three.
 
 import type { TeeProof } from "../../../lib/teeProof.ts";
 import { canBuild, currentPlayer, type Game } from "../engine.ts";
@@ -89,12 +92,22 @@ export function rollTrail(log: ChainMatch["log"]): RollNote[] {
   return trail;
 }
 
-/** With `autoPlay`: a turn with nothing left to decide is ended this long after the chain shows it, so the landing is seen first. */
-export const AUTO_END_AFTER_MS = 1_800;
+/**
+ * With `autoPlay`: a turn with nothing left to decide is ended as soon as the chain shows it. The landing is seen all
+ * the same: the board plays one roll at a time and shows the next only once this one has arrived (TycoonScreen
+ * `useRollPace`), and meanwhile the end of the turn is already on its way.
+ */
+export const AUTO_END_AFTER_MS = 0;
 /** With `autoPlay`: the dice are thrown for a viewer who has not thrown them after this long. */
 export const AUTO_ROLL_AFTER_MS = 5_000;
 /** With `autoPlay`: a square to buy or a house to build is passed over, and the turn ended, after this long. */
 export const AUTO_DECIDE_AFTER_MS = 15_000;
+/**
+ * With `autoPlay`: a house to build is passed over this soon when the seat has done nothing itself this turn (its
+ * dice were thrown for it): under Blitz a house can go up on most turns, and a table should not wait fifteen seconds
+ * a turn for somebody who is not there.
+ */
+export const AUTO_PASS_AFTER_MS = 5_000;
 
 /**
  * Whether `playerId`'s turn has nothing left for them to decide: the dice are thrown, there is nothing to buy or owe,
@@ -107,14 +120,15 @@ export function nothingToDecide(game: Game, playerId: string): boolean {
 
 /**
  * What the room does for `playerId` when their turn has waited `after` ms for them: throws the dice (5 s), ends a
- * turn with nothing left to decide (a moment), or passes over what could be bought or built and ends the turn (15 s).
+ * turn with nothing left to decide (at once), or passes over what could be bought or built and ends the turn (15 s;
+ * a house after 5 s when the seat is not `here`: it has done nothing itself this turn).
  * `null`: nothing, as in debt, which is theirs to settle until the contract's own clock runs out.
  */
-export function autoMove(game: Game, playerId: string): { after: number; send: ClientMessage[] } | null {
+export function autoMove(game: Game, playerId: string, here = true): { after: number; send: ClientMessage[] } | null {
   if (game.phase !== "playing" || currentPlayer(game)?.id !== playerId) return null;
   if (game.stage === "roll" || (game.stage === "end" && game.again)) return { after: AUTO_ROLL_AFTER_MS, send: [{ t: "roll" }] };
   if (game.stage === "buy") return { after: AUTO_DECIDE_AFTER_MS, send: [{ t: "skip" }, { t: "end" }] };
-  if (game.stage === "end") return { after: nothingToDecide(game, playerId) ? AUTO_END_AFTER_MS : AUTO_DECIDE_AFTER_MS, send: [{ t: "end" }] };
+  if (game.stage === "end") return { after: nothingToDecide(game, playerId) ? AUTO_END_AFTER_MS : here ? AUTO_DECIDE_AFTER_MS : AUTO_PASS_AFTER_MS, send: [{ t: "end" }] };
   return null;
 }
 
@@ -160,6 +174,10 @@ export class ChainRoom {
   private idleTurn: { key: string; since: number; after: number } | null = null;
   /** Somebody else moves for the viewer (their agent): the room makes no move of its own. */
   private held = false;
+  /** The viewer's board is still playing rolls the chain has already made: nothing is decided for them meanwhile. */
+  private behind = false;
+  /** The round of the turn in which the viewer last did something themselves. */
+  private hereRound: number | null = null;
   /** The viewer gave up while their roll was on its way: sent when it has landed. */
   private giveUp = false;
   private stopped = false;
@@ -226,6 +244,29 @@ export class ChainRoom {
 
   /** A move from the screen. Ignored when it is not the viewer's to make; the rules are the engine's. */
   readonly send = (message: ClientMessage): void => {
+    this.seen();
+    this.act(message);
+  };
+
+  /**
+   * The viewer is at the table this turn and about to do something that is not a move yet (choosing where to build):
+   * the wait for them starts again, at its full length. A turn in which they have done nothing themselves (the room
+   * threw their dice) is otherwise taken for nobody's, and what could be built is passed over sooner.
+   */
+  readonly here = (): void => {
+    if (this.seen()) this.endIdleTurn();
+  };
+
+  /** Notes that the viewer did something themselves in this round's turn. `true` if that is news. */
+  private seen(): boolean {
+    const round = this.chain?.game.round;
+    if (round === undefined || this.hereRound === round) return false;
+    this.hereRound = round;
+    return true;
+  }
+
+  /** A move, the viewer's own or one the room makes for them. */
+  private act(message: ClientMessage): void {
     const action = toAction(message);
     const match = this.chain;
     // Giving up while a roll is on its way: not lost, sent as soon as the roll has landed (`occupy`).
@@ -247,10 +288,12 @@ export class ChainRoom {
       this.local = next;
     }
     this.queue.push(action);
+    // A purchase, a pass or a house that leaves nothing more to decide takes the end of the turn with it.
+    if (this.autoPlay && !this.held && this.local && nothingToDecide(this.local, playerId) && applyAction(this.local, playerId, "End")) this.queue.push("End");
     this.notice = null;
     this.emit();
     this.kick();
-  };
+  }
 
   /**
    * A whole turn by plan, as an agent plays it: one `turn` transaction that rolls, applies the plan wherever the seat
@@ -463,8 +506,9 @@ export class ChainRoom {
 
   /**
    * With `autoPlay`: the viewer's turn has waited long enough for them (`autoMove`), so the room moves: the dice
-   * after 5 seconds, a turn with nothing left to decide after a moment, a turn with something to buy or build after
-   * 15. Counted from when the chain first showed that step of the turn. Not while `hold` is on.
+   * after 5 seconds, a turn with nothing left to decide at once, a turn with something to buy or build after 15.
+   * Counted from when the chain first showed that step of the turn. Not while `hold` is on; and while the board is
+   * `behind`, only a turn with nothing left to decide is ended.
    */
   private endIdleTurn(): void {
     const match = this.chain;
@@ -472,7 +516,10 @@ export class ChainRoom {
       return;
     const seat = seatOf(match.meta, this.accountId);
     const game = seat !== null && match.meta.current_seat === seat && !this.held ? toGame(match) : null;
-    const move = game && seat !== null ? autoMove(game, match.meta.seats[seat].player) : null;
+    const playerId = seat !== null ? match.meta.seats[seat].player : "";
+    // The dice are thrown, and a square passed over, for somebody who has seen their turn come and let it wait, not
+    // for somebody still watching the roll before. Ending a turn that holds no decision waits for nobody.
+    const move = game && (!this.behind || nothingToDecide(game, playerId)) ? autoMove(game, playerId, this.hereRound === match.game.round) : null;
     if (!game || !move) {
       if (this.idleTurn) {
         this.idleTurn = null;
@@ -480,7 +527,8 @@ export class ChainRoom {
       }
       return;
     }
-    const key = `${match.game.round}:${match.game.rolls}:${game.stage}:${game.again}:${game.buildAt ?? ""}:${move.after}`;
+    // A house that has gone up (Blitz) is a step of its own: whoever is building is given the wait again, not cut short.
+    const key = `${match.game.round}:${match.game.rolls}:${game.stage}:${game.again}:${game.buildAt ?? ""}:${match.game.builtThisTurn.length}:${move.after}`;
     const now = this.now();
     if (this.idleTurn?.key !== key) {
       this.idleTurn = { key, since: now, after: move.after };
@@ -490,13 +538,20 @@ export class ChainRoom {
     }
     if (now - this.idleTurn.since < move.after) return;
     this.idleTurn = null;
-    for (const message of move.send) this.send(message);
+    for (const message of move.send) this.act(message);
   }
 
   /** An agent takes the viewer's seat (`true`) or gives it back: while it holds it the room makes no move of its own. */
   readonly hold = (on: boolean): void => {
     if (this.held === on) return;
     this.held = on;
+    this.endIdleTurn();
+  };
+
+  /** The viewer's board is still playing rolls the chain has already made (`true`), or shows the present again. */
+  readonly watch = (behind: boolean): void => {
+    if (this.behind === behind) return;
+    this.behind = behind;
     this.endIdleTurn();
   };
 

@@ -23,12 +23,13 @@ const NUDGE_EVERY_MS = 4_000;
 
 /**
  * At a free table whose turn is the house agent's: asks the server to play it. The server keeps no process running,
- * so the agent moves because somebody with the match open asked; it plays a turn once however many ask.
+ * so the agent moves because somebody with the match open asked; it plays a turn once however many ask. The server
+ * answers when the turn is on the chain: with `refresh` the match is read then, not at the next poll.
  */
-export function useHouseAgent(id: string, state: RoomState, sponsor: string | null | undefined): void {
+export function useHouseAgent(id: string, state: RoomState & { refresh?: () => Promise<void> }, sponsor: string | null | undefined): void {
   const [tick, setTick] = useState(0);
   const asked = useRef<{ key: string; at: number } | null>(null);
-  const { match, result } = state;
+  const { match, result, refresh } = state;
   const seat = match?.meta.current_seat ?? null;
   const due = !result && !!match && match.meta.status === "playing" && seat !== null && isFreeTable(match.meta, sponsor) && match.meta.seats[seat]?.backer === sponsor;
   const key = match ? `${match.game.rolls}:${match.game.round}:${match.game.stage}` : "";
@@ -44,8 +45,10 @@ export function useHouseAgent(id: string, state: RoomState, sponsor: string | nu
     const now = Date.now();
     if (asked.current?.key === key && now - asked.current.at < NUDGE_EVERY_MS) return;
     asked.current = { key, at: now };
-    void nudgeHouseAgent(id).catch(() => undefined);
-  }, [due, key, tick, id]);
+    void nudgeHouseAgent(id)
+      .then(() => refresh?.())
+      .catch(() => undefined);
+  }, [due, key, tick, id, refresh]);
 }
 
 /**

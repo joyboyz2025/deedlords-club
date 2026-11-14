@@ -1290,6 +1290,18 @@
   max-width: 200px;
 }
 
+/* The dice, and beside them (Blitz) the way to the houses: in the band under the board, clear of its corner. */
+.tp-turn__row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.tp-turn__row .tp-btn {
+  white-space: nowrap;
+}
+
 .tp-roll {
   position: relative;
   display: grid;
@@ -1484,6 +1496,10 @@
     width: 172px;
     align-items: center;
     transform: translateY(-50%);
+  }
+
+  .tp-turn__row {
+    flex-direction: column;
   }
 }
 

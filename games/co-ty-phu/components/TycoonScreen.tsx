@@ -14,7 +14,8 @@ import { formatClock, useCountdown } from "@/lib/useCountdown";
 import { usePin } from "@/lib/usePin";
 import { useWakeLock } from "@/lib/useWakeLock";
 import { DECK_NAMES, GROUPS, JAIL_FINE, SALARY, SQUARES, TOKEN_COLORS, groupSquares, houseCost, isOwnable } from "../board";
-import { autoSecondsOf, redeemPrice, startCashOf } from "../engine";
+import { roundOf, winLine } from "../chain/calls";
+import { BLITZ_DEAL, autoSecondsOf, isBlitz, maxRoundsOf, redeemPrice, startCashOf } from "../engine";
 import { AUTO_CHOICES, CASH_CHOICES, LIMIT_CHOICES, SALARY_CHOICES, type ErrorCode } from "../protocol";
 import { sound } from "../sound";
 import { savedLook } from "../../ma-soi/components/Wardrobe";
@@ -184,8 +185,9 @@ const isActive = (player: PublicPlayer | undefined) => !!player && player.color 
  * answer one after the other, and the dice are thrown for somebody who is slow. Given to the board as they came, the
  * next dice were in the air while the last piece was still walking. So states wait in line here: one that brings a
  * new roll is shown only once the roll before has arrived and stayed for a moment (`DWELL_MS`); states of the same
- * roll (a purchase, the end of a turn) are shown as they come. `behind`: something is still waiting or playing, so the
- * viewer has not seen the present yet: nothing should be thrown for them. Bàn 2D không giữ.
+ * roll (a purchase, a house) are shown as they come, except the end of the turn, which waits for the piece to arrive.
+ * `behind`: something is still waiting or playing, so the viewer has not seen the present yet: nothing should be
+ * thrown for them. Bàn 2D không giữ.
  */
 function useRollPace(live: PacedView, enabled: boolean): { view: View; holding: boolean; behind: boolean; arrived: (rolls: number) => void } {
   const [shown, setShown] = useState<PacedView>(live);
@@ -227,6 +229,16 @@ function useRollPace(live: PacedView, enabled: boolean): { view: View; holding: 
       // A card drawn where the piece has just arrived is read before the piece goes where the card sends it.
       const dwell = next.step && shown.card ? CARD_MS : ahead >= HURRY_AT ? 0 : DWELL_MS;
       const wait = settledAt.current + dwell - Date.now();
+      if (wait > 0) {
+        const timer = setTimeout(() => setTick((n) => n + 1), wait);
+        return () => clearTimeout(timer);
+      }
+    } else if (next.current !== shown.current && shown.dice !== null) {
+      // The turn does not pass on the board before the piece that ends it has arrived, nor before a card drawn there
+      // has been read (the card goes with the turn). The chain is ahead of both now: a turn with nothing left to
+      // decide is ended while its roll is still playing (chain/room.ts).
+      if (shown.rolls !== settled) return;
+      const wait = settledAt.current + (shown.card ? CARD_MS : 0) - Date.now();
       if (wait > 0) {
         const timer = setTimeout(() => setTick((n) => n + 1), wait);
         return () => clearTimeout(timer);
@@ -306,6 +318,8 @@ export type ChainStage = {
   busy: boolean;
   /** Told `true` while the board is still playing rolls the chain has already made, `false` once it shows the present. */
   onBehind?: (behind: boolean) => void;
+  /** Told when the viewer starts on something that is not a move yet (choosing where to build): they are given their time. */
+  here?: () => void;
   /** The payout card of a settled match, shown in place of the room server's result card. */
   result: (onClose: () => void) => ReactNode;
   /** Seats an agent plays, by player id: who drives and the sentence it gave for its last plan. */
@@ -374,11 +388,21 @@ export function Stage({ view: live, offline, send, chain }: { view: View; offlin
   );
 }
 
-/** Đếm lùi từ lúc nhận tin, không phụ thuộc giờ của từng máy. */
+/**
+ * Đếm lùi từ lúc nhận tin, không phụ thuộc giờ của từng máy. A match counted in rounds (on chain) shows which round
+ * it is in instead, and says what decides it when the last one has come.
+ */
 function GameClock({ view }: { view: View }) {
   const left = useCountdown(view.endsInMs ?? 0);
-  if (view.lastRound) return <span className="tp-clock tp-clock--last">Last round</span>;
+  const rounds = maxRoundsOf(view);
+  if (view.lastRound) return <span className="tp-clock tp-clock--last">{rounds > 0 ? "Last round: net worth wins" : "Last round"}</span>;
   if (view.pause) return <span className="tp-clock">Paused</span>;
+  if (rounds > 0)
+    return (
+      <span className="tp-clock" aria-label={`Round ${roundOf(view.round, rounds)}`}>
+        Round {roundOf(view.round, rounds)}
+      </span>
+    );
   if (view.endsInMs === null) return null;
   return (
     <span className="tp-clock" role="timer" aria-label="Time left in the game">
@@ -530,18 +554,32 @@ function Lobby({ view, send }: { view: View; send: Send }) {
 
 function Rules({ view }: { view: View }) {
   const auto = autoSecondsOf(view);
+  const blitz = isBlitz(view);
+  const rounds = maxRoundsOf(view);
   return (
     <details className="tp-rules">
       <summary>Quick rules</summary>
       <ul>
         <li>
-          Everybody starts with {money(startCashOf(view))}. Passing Departure pays {money(view.settings.salary ?? SALARY)}. The turn order is drawn at random.
+          Everybody starts with {money(startCashOf(view))}
+          {blitz && ` and is dealt ${BLITZ_DEAL} properties, paid for at their price out of it`}. Passing Departure pays {money(view.settings.salary ?? SALARY)}. The turn order is drawn at random.
         </li>
         <li>Land on an unowned property and you may buy it; if you don't, it stays free. There is no auction.</li>
-        <li>Land on somebody else's property and you pay rent. When you later stop on your own city you may add one house; after 4 houses the next stop makes it a hotel. Owning a whole colour group doubles the rent of its empty lots.</li>
+        {blitz ? (
+          <li>Land on somebody else's property and you pay rent. On your turn you may add one house to each of your cities; the fifth is a hotel. Owning a whole colour group doubles the rent of its empty lots.</li>
+        ) : (
+          <li>Land on somebody else's property and you pay rent. When you later stop on your own city you may add one house; after 4 houses the next stop makes it a hotel. Owning a whole colour group doubles the rent of its empty lots.</li>
+        )}
         <li>A double rolls again; three doubles in a row send you to Customs Hold. Leave by rolling a double, paying 50 or using a card.</li>
         <li>Short of cash? Sell houses or mortgage properties to pay. If you still cannot, you go bankrupt and your assets go to the creditor.</li>
-        <li>Trade properties and cash with another player at any time, if they agree.</li>
+        {/* A match counted in rounds lives in the contract, which has no trades between players. */}
+        {rounds > 0 ? (
+          <li>
+            A round is one turn each. {winLine({ blitz, maxRounds: rounds })}
+          </li>
+        ) : (
+          <li>Trade properties and cash with another player at any time, if they agree.</li>
+        )}
         {auto > 0 && <li>After {auto} seconds without a move the game rolls, declines the purchase or ends the turn for the player.</li>}
       </ul>
     </details>
@@ -660,13 +698,22 @@ function Game({
   // Đang nợ thì chờ quân tới nơi mới bật; tự chọn thì bật ngay, kể cả lúc quân người khác đang chạy.
   const selling = has3D && view.phase === "playing" && active && ((debt && !holding) || raising);
   const offers = sellOffers(view);
+  // Blitz: a house may go up on any of the viewer's cities, once a turn each. Asked for with "Build", the board lights
+  // the cities that can take one, each with what it costs, and a tap builds; the same board as for selling.
+  const [building, setBuilding] = useState(false);
+  const sites = buildSites(view);
+  const placing = has3D && view.phase === "playing" && myTurn && building && !selling && !holding && sites.size > 0 && view.stage !== "buy";
   const tap = (index: number) => {
+    if (placing) return sites.has(index) ? send({ t: "build", square: index }) : undefined;
     if (!selling) return pick(index);
     if (offers.has(index)) send({ t: view.props[index].houses > 0 ? "sell" : "mortgage", square: index });
   };
   useEffect(() => {
     if (!active || view.phase !== "playing") setRaising(false);
   }, [active, view.phase]);
+  useEffect(() => {
+    if (!myTurn) setBuilding(false);
+  }, [myTurn]);
 
   // Cầm dọc thì chừa dải trên, dải dưới cho thẻ người chơi và nút; xoay ngang thì chừa hai cột hai bên.
   const landscape = useLandscape();
@@ -690,7 +737,7 @@ function Game({
             selected={selected}
             mode={camera}
             insets={insets}
-            focus={selling ? offers : null}
+            focus={selling ? offers : placing ? sites : null}
             rolling={rolling}
             onTile={tap}
             onArrive={onArrive}
@@ -729,6 +776,12 @@ function Game({
               raising={raising && !debt}
               offers={offers.size}
               onStopRaising={() => setRaising(false)}
+              sites={isBlitz(view) ? sites.size : null}
+              placing={placing}
+              onPlacing={(on) => {
+                setBuilding(on);
+                if (on) chain?.here?.();
+              }}
             />
           )}
           <CardPopup view={view} holding={holding} />
@@ -925,6 +978,9 @@ function TurnControls({
   raising,
   offers,
   onStopRaising,
+  sites,
+  placing,
+  onPlacing,
 }: {
   view: View;
   send: Send;
@@ -936,6 +992,11 @@ function TurnControls({
   raising: boolean;
   offers: number;
   onStopRaising: () => void;
+  /** Blitz: how many of the viewer's cities can take a house now. `null`: not Blitz, a house goes up only where the piece stands. */
+  sites: number | null;
+  /** The board is lit for building: a tap on a lit city puts a house there. */
+  placing: boolean;
+  onPlacing: (on: boolean) => void;
 }) {
   const mine = me(view);
   const myTurn = view.current === mine.id && !view.pause && !holding && !busy;
@@ -946,6 +1007,17 @@ function TurnControls({
   if (view.trade && (view.trade.from === mine.id || view.trade.to === mine.id)) center.push(<TradeNote key="trade" view={view} send={send} />);
 
   let corner: ReactNode = null;
+  // The dice and the end of the turn stay where they are while houses go up.
+  if (placing) {
+    center.push(
+      <div key="build" className="tp-strip">
+        <p>Tap a lit city to add a house: one per city each turn.</p>
+        <button type="button" className="tp-btn" onClick={() => onPlacing(false)}>
+          Done
+        </button>
+      </div>,
+    );
+  }
   if (raising) {
     center.push(
       <div key="raise" className="tp-strip">
@@ -1010,7 +1082,7 @@ function TurnControls({
     const again = view.stage === "end" && view.again;
     const roll = view.stage === "roll" || again;
     const index = mine.position;
-    const build = view.you.can.build.includes(index);
+    const build = sites === null && view.you.can.build.includes(index);
     corner = (
       <div className="tp-turn">
         {jailed && <span className="tp-turn__note">Roll a double to get out ({mine.jail! + 1}/3)</span>}
@@ -1034,15 +1106,23 @@ function TurnControls({
             Let AI play
           </button>
         )}
-        <button type="button" className="tp-roll" onClick={() => send({ t: roll ? "roll" : "end" })} aria-label={roll ? "Roll the dice" : "End the turn"}>
-          {roll ? (again ? "AGAIN" : "ROLL") : "END"}
-          {/* Số giây còn lại trước khi máy bấm hộ. */}
-          {autoLeft !== null && (
-            <span className="tp-roll__timer" data-low={autoLeft <= 5 || undefined} aria-label={`The game moves for you in ${autoLeft} seconds`}>
-              {autoLeft}
-            </span>
+        {/* Blitz: the way to the houses sits beside the dice, under the board, not over its corner. */}
+        <div className="tp-turn__row">
+          {sites !== null && sites > 0 && !placing && (
+            <button type="button" className="tp-btn tp-btn--main" onClick={() => onPlacing(true)}>
+              Build houses · {sites}
+            </button>
           )}
-        </button>
+          <button type="button" className="tp-roll" onClick={() => send({ t: roll ? "roll" : "end" })} aria-label={roll ? "Roll the dice" : "End the turn"}>
+            {roll ? (again ? "AGAIN" : "ROLL") : "END"}
+            {/* Số giây còn lại trước khi máy bấm hộ. */}
+            {autoLeft !== null && (
+              <span className="tp-roll__timer" data-low={autoLeft <= 5 || undefined} aria-label={`The game moves for you in ${autoLeft} seconds`}>
+                {autoLeft}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
     );
   }
@@ -1377,6 +1457,11 @@ const SIDE_COLUMN_PX = 172;
  */
 const BAND_PX = 120;
 
+/** The viewer's cities that can take a house right now, each with what the house costs (as money leaving). */
+function buildSites(view: View): Map<number, number> {
+  return new Map(view.you.can.build.map((index) => [index, -houseCost(index)]));
+}
+
 /** Đất bán nhà hay cầm cố được ngay lúc này, kèm số tiền nhận: bán một nhà được nửa giá nhà, cầm cố được nửa giá đất. */
 function sellOffers(view: View): Map<number, number> {
   const offers = new Map<number, number>();
@@ -1653,7 +1738,12 @@ function AssetsSheet({ view, playerId, send, onClose }: { view: View; playerId: 
             );
           })}
         </ul>
-        {mine && <p className="tp-hint">To build, stop on your own city: one house per stop. A house sells for half its price; a property with houses cannot be mortgaged or traded. Redeeming costs 10% more.</p>}
+        {mine && (
+          <p className="tp-hint">
+            {isBlitz(view) ? "On your turn, one house per city." : "To build, stop on your own city: one house per stop."} A house sells for half its price; a property with houses cannot be mortgaged or
+            traded. Redeeming costs 10% more.
+          </p>
+        )}
         <button type="button" className="tp-btn tp-btn--big" onClick={onClose}>
           Close
         </button>

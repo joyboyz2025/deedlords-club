@@ -29,9 +29,9 @@ class FakeChain {
   behind: ChainMatch | null = null;
   dice: [number, number][] = [];
 
-  constructor(maxRounds = 3) {
+  constructor(maxRounds = 3, blitz = false) {
     this.game = createGame();
-    this.game.settings = { limitMinutes: 0, salary: 200, cash: 1500, autoSeconds: 45, maxRounds };
+    this.game.settings = { limitMinutes: 0, salary: 200, cash: blitz ? 2000 : 1500, autoSeconds: 45, maxRounds, blitz };
     this.game.players.push(newPlayer("s0", "", "s0"), newPlayer("s1", "", "s1"));
     startGame(this.game, new Set(["s0", "s1"]), 0, RNG);
     assert.deepEqual(this.game.order, ["s0", "s1"]);
@@ -47,7 +47,7 @@ class FakeChain {
         stake: "1000000000000000000000000",
         split: [7000, 3000],
         fee_bps: 250,
-        rules: { salary: 200, cash: 1500, blitz: false, maxRounds: g.settings.maxRounds ?? 0 },
+        rules: { salary: 200, cash: g.settings.cash ?? 1500, blitz: g.settings.blitz ?? false, maxRounds: g.settings.maxRounds ?? 0 },
         solo_player: null,
         creator: BACKERS[0],
         storage_deposit: "60000000000000000000000",
@@ -369,7 +369,7 @@ async function after(room: ChainRoom, clock: { now: number }, ms: number): Promi
 }
 const sentBy = (chain: FakeChain) => chain.calls.flatMap((call) => call.actions ?? [call.method]);
 
-test("with autoPlay, the dice are thrown after 5 seconds, and a turn with nothing left to decide ends after a moment", async () => {
+test("with autoPlay, the dice are thrown after 5 seconds, and a turn with nothing left to decide ends as soon as the chain shows it", async () => {
   const chain = new FakeChain();
   chain.dice = [[1, 3]]; // Airport Tax: paid, and nothing to buy
   const clock = { now: 0 };
@@ -379,12 +379,7 @@ test("with autoPlay, the dice are thrown after 5 seconds, and a turn with nothin
   await after(room, clock, 4_000);
   assert.deepEqual(sentBy(chain), [], "the dice are the player's to throw for 5 seconds");
   await after(room, clock, 1_100);
-  assert.deepEqual(sentBy(chain), ["Roll"]);
-  assert.equal(room.getState().view!.stage, "end");
-  // Not at once, so the landing is seen first.
-  await after(room, clock, 500);
-  assert.deepEqual(sentBy(chain), ["Roll"], "too soon");
-  await after(room, clock, 2_000);
+  // The end of the turn follows the roll without waiting: the board shows the landing while it is on its way.
   assert.deepEqual(sentBy(chain), ["Roll", "End"]);
   assert.equal(room.getState().view!.current, "s1");
   // Somebody else's turn is never played from here (the contract's own clock is another matter).
@@ -428,10 +423,153 @@ test("with autoPlay, a player who buys in time keeps the square, and a double is
   // Melbourne, nobody's. Bought in time: only the end of the turn is left.
   assert.equal(room.getState().view!.stage, "buy");
   room.send({ t: "buy" });
+  assert.equal(room.getState().view!.current, "s1", "the turn is over on the screen as soon as the square is bought");
   await room.idle();
-  await after(room, clock, 2_000);
   assert.deepEqual(sentBy(chain), ["Roll", "Roll", "Buy", "End"]);
+  assert.deepEqual(chain.calls.at(-1)!.actions, ["Buy", "End"], "the purchase and the end of the turn are one transaction");
   assert.equal(room.getState().view!.props[8].owner, "s0");
+});
+
+test("with autoPlay, a double that leaves nothing to decide does not end the turn: the second throw is still to come", async () => {
+  const chain = new FakeChain();
+  chain.dice = [[1, 1]]; // a double onto Souvenir; the card drawn (repairs, with no house standing) costs nothing
+  const clock = { now: 0 };
+  const room = auto(chain, clock);
+  await room.refresh();
+  room.send({ t: "roll" });
+  await room.idle();
+  assert.equal(room.getState().view!.again, true);
+  assert.deepEqual(sentBy(chain), ["Roll"], "a turn with a throw left is not ended");
+});
+
+test("while the board is still playing the rolls before, the dice are not thrown; a turn with nothing left to decide is ended all the same", async () => {
+  const chain = new FakeChain();
+  chain.dice = [[1, 3]]; // Airport Tax: paid, and nothing to buy
+  const clock = { now: 0 };
+  const room = auto(chain, clock);
+  room.watch(true);
+  await after(room, clock, 0);
+  await after(room, clock, 60_000);
+  assert.deepEqual(sentBy(chain), [], "nothing is thrown for somebody still watching the turn before");
+  assert.equal(room.getState().view!.autoInMs, null, "and no countdown runs");
+  // The board shows the present: the five seconds start then.
+  room.watch(false);
+  await after(room, clock, 4_000);
+  assert.deepEqual(sentBy(chain), []);
+  await after(room, clock, 1_100);
+  // The viewer's own roll is now playing on the board (`behind` again): the turn is ended without waiting for it.
+  room.watch(true);
+  await room.idle();
+  assert.deepEqual(sentBy(chain), ["Roll", "End"]);
+});
+
+test("Blitz: a turn is not ended while a house can still go up; the last house that can takes the end of the turn with it", async () => {
+  const chain = new FakeChain(3, true);
+  // Seat 0 holds one city and the cash for exactly one house on it.
+  for (const key of Object.keys(chain.game.props)) delete chain.game.props[Number(key)];
+  chain.game.props[1] = { owner: "s0", houses: 0, mortgaged: false };
+  chain.game.players[0].cash = 250;
+  chain.dice = [[1, 3]]; // Airport Tax, 200: nothing to buy, 50 left
+  const clock = { now: 0 };
+  const room = auto(chain, clock);
+  await room.refresh();
+  room.send({ t: "roll" });
+  await room.idle();
+  assert.equal(room.getState().view!.autoInMs, 15_000, "a house can go up in São Paulo: the turn is theirs to end, for fifteen seconds");
+  await after(room, clock, 2_000);
+  assert.deepEqual(sentBy(chain), ["Roll"]);
+  room.send({ t: "build", square: 1 });
+  await room.idle();
+  assert.deepEqual(chain.calls.at(-1)!.actions, [{ Build: 1 }, "End"]);
+  assert.equal(room.getState().view!.props[1].houses, 1);
+  assert.equal(room.getState().view!.current, "s1");
+});
+
+test("Blitz: each house that goes up gives whoever is building the fifteen seconds again", async () => {
+  const chain = new FakeChain(3, true);
+  for (const key of Object.keys(chain.game.props)) delete chain.game.props[Number(key)];
+  chain.game.props[1] = { owner: "s0", houses: 0, mortgaged: false };
+  chain.game.props[3] = { owner: "s0", houses: 0, mortgaged: false };
+  chain.dice = [[1, 3]]; // Airport Tax: nothing to buy, houses can go up in São Paulo and Cape Town
+  const clock = { now: 0 };
+  const room = auto(chain, clock);
+  await room.refresh();
+  room.send({ t: "roll" });
+  await room.idle();
+  await after(room, clock, 14_000);
+  room.send({ t: "build", square: 1 });
+  await room.idle();
+  assert.deepEqual(chain.calls.at(-1)!.actions, [{ Build: 1 }], "Cape Town can still take a house: the turn is not ended with this one");
+  assert.equal(room.getState().view!.autoInMs, 15_000, "the count starts again");
+  // Sixteen seconds after the roll, two after the house: the turn is still theirs.
+  await after(room, clock, 2_000);
+  assert.equal(room.getState().view!.current, "s0");
+  assert.deepEqual(chain.calls.at(-1)!.actions, [{ Build: 1 }]);
+  await after(room, clock, 13_100);
+  assert.deepEqual(chain.calls.at(-1)!.actions, ["End"]);
+  assert.equal(room.getState().view!.props[3].houses, 0, "the house not built is passed over");
+});
+
+test("a seat that has done nothing itself this turn is not waited for fifteen seconds over a house; one that is there is", async () => {
+  const blitz = () => {
+    const chain = new FakeChain(3, true);
+    for (const key of Object.keys(chain.game.props)) delete chain.game.props[Number(key)];
+    chain.game.props[1] = { owner: "s0", houses: 0, mortgaged: false };
+    chain.dice = [[1, 3]]; // Airport Tax: nothing to buy, a house can go up in São Paulo
+    return chain;
+  };
+  // Nobody at the seat: the dice are thrown for it after five seconds, and five more pass the house over.
+  let chain = blitz();
+  let clock = { now: 0 };
+  let room = auto(chain, clock);
+  await after(room, clock, 0);
+  await after(room, clock, 5_100);
+  assert.deepEqual(sentBy(chain), ["Roll"]);
+  assert.equal(room.getState().view!.autoInMs, 5_000);
+  await after(room, clock, 4_000);
+  assert.deepEqual(sentBy(chain), ["Roll"]);
+  await after(room, clock, 1_100);
+  assert.deepEqual(sentBy(chain), ["Roll", "End"]);
+  assert.equal(room.getState().view!.props[1].houses, 0);
+
+  // The dice were thrown for the seat, then its player turns to the houses: fifteen seconds from then.
+  chain = blitz();
+  clock = { now: 0 };
+  room = auto(chain, clock);
+  await after(room, clock, 0);
+  await after(room, clock, 5_100);
+  await after(room, clock, 3_000);
+  room.here();
+  assert.equal(room.getState().view!.autoInMs, 15_000);
+  await after(room, clock, 14_000);
+  assert.deepEqual(sentBy(chain), ["Roll"], "the turn is still theirs");
+  room.send({ t: "build", square: 1 });
+  await room.idle();
+  assert.deepEqual(chain.calls.at(-1)!.actions, [{ Build: 1 }, "End"]);
+
+  // A seat whose player threw the dice has the fifteen seconds without asking (the tests above), and keeps none of
+  // it into the next round: being there is said turn by turn.
+  chain = blitz();
+  chain.game.players[0].cash = 5_000;
+  chain.game.props[3] = { owner: "s0", houses: 0, mortgaged: false };
+  clock = { now: 0 };
+  room = auto(chain, clock);
+  await room.refresh();
+  room.send({ t: "roll" });
+  await room.idle();
+  assert.equal(room.getState().view!.autoInMs, 15_000);
+});
+
+test("without autoPlay a purchase is only a purchase", async () => {
+  const chain = new FakeChain();
+  const room = roomFor(chain, "alice.test");
+  await room.refresh();
+  room.send({ t: "roll" }); // 1 + 2: Cape Town, nobody's
+  await room.idle();
+  room.send({ t: "buy" });
+  await room.idle();
+  assert.deepEqual(chain.calls.at(-1)!.actions, ["Buy"]);
+  assert.equal(room.getState().view!.current, "s0");
 });
 
 test("while an agent holds the seat the room moves nothing itself, and a room without autoPlay never does", async () => {
