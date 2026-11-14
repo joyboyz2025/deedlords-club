@@ -185,8 +185,9 @@ const isActive = (player: PublicPlayer | undefined) => !!player && player.color 
  * answer one after the other, and the dice are thrown for somebody who is slow. Given to the board as they came, the
  * next dice were in the air while the last piece was still walking. So states wait in line here: one that brings a
  * new roll is shown only once the roll before has arrived and stayed for a moment (`DWELL_MS`); states of the same
- * roll (a purchase, the end of a turn) are shown as they come. `behind`: something is still waiting or playing, so the
- * viewer has not seen the present yet: nothing should be thrown for them. Bàn 2D không giữ.
+ * roll (a purchase, a house) are shown as they come, except the end of the turn, which waits for the piece to arrive.
+ * `behind`: something is still waiting or playing, so the viewer has not seen the present yet: nothing should be
+ * thrown for them. Bàn 2D không giữ.
  */
 function useRollPace(live: PacedView, enabled: boolean): { view: View; holding: boolean; behind: boolean; arrived: (rolls: number) => void } {
   const [shown, setShown] = useState<PacedView>(live);
@@ -232,6 +233,10 @@ function useRollPace(live: PacedView, enabled: boolean): { view: View; holding: 
         const timer = setTimeout(() => setTick((n) => n + 1), wait);
         return () => clearTimeout(timer);
       }
+    } else if (next.current !== shown.current && shown.dice !== null && shown.rolls !== settled) {
+      // The turn does not pass on the board before the piece that ends it has arrived. The chain is ahead of that
+      // now: a turn with nothing left to decide is ended while its roll is still playing (chain/room.ts).
+      return;
     }
     queue.shift();
     // The second leg of a roll (a card sent the piece on) throws no dice, so the board reports no arrival for it:
