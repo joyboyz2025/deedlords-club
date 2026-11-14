@@ -890,7 +890,9 @@ function LiveTable({
       const { view: at, click: send_, mySeat: seat } = latest.current;
       if (!at || seat === null || !session) return false;
       const owed = Math.min(at.chips[seat], Math.max(...at.bet) - at.bet[seat]);
-      const line = words ?? (action === "fold" ? "folds" : action === "raise" ? `raises to ${amount}` : owed > 0 ? `calls ${owed}` : "checks");
+      // With nothing bet on the street yet a raise is a bet.
+      const raised = Math.max(...at.bet) === 0 ? `bets ${amount}` : `raises to ${amount}`;
+      const line = words ?? (action === "fold" ? "folds" : action === "raise" ? raised : owed > 0 ? `calls ${owed}` : "checks");
       const keys = seatKeys(id, session.accountId);
       if (!keys) return false;
       const took = await send_(`Seat ${seat + 1}${byAgent ? "'s agent" : ""} ${line}`, seat, "act", async () => send(session, await betCall(at, seat, action, amount, keys, store)));

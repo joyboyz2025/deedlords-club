@@ -621,6 +621,8 @@ function ActionStub({
   const amount = raise ? Math.min(raise.max, Math.max(raise.min, Math.round(Number(raiseTo)) || raise.min)) : 0;
   // Not while this seat's own part is owed: time called then rules it late with the others.
   const late = !inLobby && left < 0 && view.awaited.some((seat) => seat !== mySeat) && (mySeat === null || !view.awaited.includes(mySeat));
+  // With nothing bet on the street yet a raise is a bet, and is called one.
+  const opening = Math.max(0, ...view.bet) === 0;
   const clockSeconds = Math.round(clockMarginMs(view) / 1_000);
   const isHost = you !== null && view.host === you;
   // A table with a stake of nothing: its host is the server, which starts it when a seated player asks.
@@ -749,7 +751,7 @@ function ActionStub({
           <div className="pk-raise">
             <input
               type="range"
-              aria-label="Raise to"
+              aria-label={opening ? "Bet" : "Raise to"}
               min={raise.min}
               max={raise.max}
               value={amount}
@@ -758,7 +760,7 @@ function ActionStub({
             />
             <input
               type="number"
-              aria-label="Raise to, in chips"
+              aria-label={opening ? "Bet, in chips" : "Raise to, in chips"}
               inputMode="numeric"
               min={raise.min}
               max={raise.max}
@@ -773,10 +775,10 @@ function ActionStub({
               data-busy={pressed?.key === "raise" || undefined}
               onClick={() => {
                 press({ key: "raise", amount });
-                on.act("raise", amount, `raises to ${amount}`);
+                on.act("raise", amount, opening ? `bets ${amount}` : `raises to ${amount}`);
               }}
             >
-              Raise to {amount}
+              {opening ? "Bet" : "Raise to"} {amount}
             </button>
             <button
               type="button"
@@ -799,7 +801,8 @@ function ActionStub({
         )}
       </div>
     );
-  } else if (!inHand) {
+  } else if (!inHand && (view.dealt.length > 0 || view.leaving[mySeat])) {
+    // Not before a hand has begun: the seats taken then are all dealt in, and the page is about to shuffle for this one.
     title = view.leaving[mySeat] ? "Leaving" : "Next hand";
     line = view.leaving[mySeat] ? "You are paid when this hand is over." : "You sit at the table and are dealt in from the next hand.";
   } else if (view.folded[mySeat]) {
