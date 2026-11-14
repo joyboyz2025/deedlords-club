@@ -2,11 +2,13 @@
 
 // A Deedlords Poker table of two to nine seats, as it is drawn: a board with the hand's route, an oval of red baize
 // with the seats around its rail clockwise in seat order (this browser's seat at the foot), the board and the pot in
-// the middle, the action stub under it and the hand before, who has been paid and the ledger beside it. It only
-// draws: what it shows comes from a table view, every click goes back to whoever feeds it (the live table or the demo).
+// the middle. The player acts on the table itself: the bets are a bar at the table's foot, a free seat is tapped to sit
+// down or to seat an AI, the host starts from the middle of the cloth. What is beside the game (the hand before, who
+// was paid, what the AIs thought once a hand is over, the transactions) is folded away under the table. It only draws:
+// what it shows comes from a table view, every click goes back to whoever feeds it (the live table or the demo).
 
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
-import { Bot, Clock, Copy, Seat as SeatIcon } from "@/components/landing/icons";
+import { Bot, Copy, Seat as SeatIcon } from "@/components/landing/icons";
 import type { Character } from "../../../chibi/chain";
 import { useLookPictures } from "../../../chibi/useChibi";
 import { lookFromSeat } from "../../../ma-soi/look";
@@ -241,26 +243,46 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
   let say: ReactNode;
   const filled = seated(view).length;
   if (reading) say = "Asking the contract for this table…";
-  else if (inLobby)
-    say =
-      filled < 2
-        ? `${filled} of ${count} seats taken. The table starts when it is full, or when its host starts it with two or more.`
-        : `${filled} of ${count} seats taken. The host can start now, or wait for the table to fill.`;
-  else if (told) say = `${told} Next hand: ${view.phase === "deal" ? `dealing, waiting for ${waitingText}` : doing === "shuffle" ? "this page is shuffling for you" : `waiting for ${waitingText} to shuffle`}.`;
-  else if (view.phase === "shuffle")
-    say = (
-      <>
-        {doing === "shuffle"
-          ? "This page is shuffling for you and proving the shuffle: a second or two of work, then one transaction."
-          : `Each seat shuffles the deck once with its own key, about 5 s each. Waiting for ${waitingText}.`}
-      </>
-    );
-  else if (view.phase === "deal") say = `Each seat sends the shares that unlock the others' cards. Waiting for ${waitingText}.`;
+  else if (inLobby) say = filled < 2 ? `${filled} of ${count} seats taken. The table starts when it is full, or when its host starts it.` : `${filled} of ${count} seats taken.`;
+  else if (told)
+    say = `${told} Next hand: ${view.phase === "deal" ? `dealing, waiting for ${waitingText}` : doing === "shuffle" ? "this page is shuffling for you" : `waiting for ${waitingText} to shuffle`}.`;
+  else if (view.phase === "shuffle") say = <>{doing === "shuffle" ? "Shuffling the deck for your seat…" : `Shuffling the deck. Waiting for ${waitingText}.`}</>;
+  else if (view.phase === "deal") say = `Dealing. Waiting for ${waitingText}.`;
   else if (view.phase === "bet") {
     const owed = betOptions(view, view.toAct).owed;
     say = `${view.toAct === mySeat ? "Your turn" : `${name(view.toAct)} to act`}${owed > 0 ? `: ${owed} to call.` : ": no bet to call."}`;
-  } else if (view.phase === "open") say = `Turning the next card${view.street === 1 ? "s" : ""}: a card turns when every seat's share of it is in. Waiting for ${waitingText}.`;
-  else say = `Showdown: each seat still in opens its own two cards. Waiting for ${waitingText}.`;
+  } else if (view.phase === "open") say = `Turning the next card${view.street === 1 ? "s" : ""}. Waiting for ${waitingText}.`;
+  else say = `Showdown. Waiting for ${waitingText}.`;
+  if (mySeat !== null && inHand && view.leaving[mySeat]) say = <>{say} You leave when this hand is over: keep this page open until then.</>;
+
+  const mine = mySeat !== null;
+  const isHost = you !== null && view.host === you;
+  // A table with a stake of nothing: its host is the server, which starts it when a seated player asks.
+  const noStake = BigInt(view.stake) === 0n;
+  const canStart = isHost || (noStake && Boolean(house?.accounts.includes(view.host)));
+  const price = noStake ? "free" : asNear(view.deposit);
+  /** What tapping a free seat does: sit down (the contract gives the first free seat), or ask the house for an AI. */
+  const freeTap: { label: string; sub: string; run: () => void } | null = reading
+    ? null
+    : !mine
+      ? {
+          label: "Sit",
+          sub: price,
+          run: () => {
+            setPressed({ key: "sit" });
+            on.sit();
+          },
+        }
+      : house?.canAdd && !house.seating
+        ? {
+            label: "+ AI",
+            sub: "house",
+            run: () => {
+              setPressed({ key: "house" });
+              on.addHouse([house.defaultModel ?? house.models[0] ?? "rules"]);
+            },
+          }
+        : null;
 
   const seatPod = (seat: number) => {
     const player = view.players[seat];
@@ -318,10 +340,30 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
             {modelName(house.seatModels[seat])}
           </span>
         )}
-        {free ? <span className="pt-pod__status">free</span> : <b className="pt-pod__chips">{view.chips[seat]}</b>}
+        {free ? (
+          freeTap ? (
+            <button
+              type="button"
+              className="pt-pod__tap"
+              disabled={locked || pressed?.key === "sit" || pressed?.key === "house"}
+              data-busy={pressed?.key === "sit" || pressed?.key === "house" || undefined}
+              onClick={freeTap.run}
+              aria-label={freeTap.label === "Sit" ? `Sit down at seat ${seat + 1} (${freeTap.sub})` : `Seat an AI from the house at seat ${seat + 1}`}
+            >
+              <b>{freeTap.label}</b>
+              <small>{freeTap.sub}</small>
+            </button>
+          ) : (
+            <span className="pt-pod__status">free</span>
+          )
+        ) : (
+          <b className="pt-pod__chips">{view.chips[seat]}</b>
+        )}
         {status && !free && <span className="pt-pod__status">{status}</span>}
+        {/* This seat's own cards lie large before it; another seat's cards face down are a small pair at its edge,
+            and once shown they stand in the seat's own box: nothing of a seat lies on another seat. */}
         {cards.length > 0 && (
-          <span className="pt-pod__cards" role="group" aria-label={`${name(seat)}'s cards`}>
+          <span className={seat === mySeat ? "pt-pod__cards" : cards[0] === undefined ? "pt-pod__backs" : "pt-pod__shown"} role="group" aria-label={`${name(seat)}'s cards`}>
             {cards.map((card, index) => (
               <PlayingCard
                 key={`${before ? "before" : view.hand}:${seat}:${index}`}
@@ -356,135 +398,244 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
     return turning ? undefined : "place";
   });
 
+  // Leaving takes two taps: the button sits in the table's head, where a thumb passes.
+  const [leaving, setLeaving] = useState(false);
+  useEffect(() => {
+    if (!leaving) return;
+    const timer = setTimeout(() => setLeaving(false), 4_000);
+    return () => clearTimeout(timer);
+  }, [leaving]);
+  const leaveWords = !mine || view.leaving[mySeat] || reading ? null : inHand && view.dealt.includes(mySeat) ? "Leave after hand" : "Leave";
+  const everyAccount = everyone;
+
   return (
-    <div className="pk-room">
-      <div className="pk-stage">
-        <section className="pk-board pk-table" aria-label={`Table ${id}`}>
-          <header className="pk-table__head">
-            {on.back && (
-              <button type="button" className="pk-exit" onClick={on.back}>
-                <span aria-hidden="true">←</span> Tables
+    <div className="pt-room">
+      <section className="pk-board pk-table pt-table" aria-label={`Table ${id}`}>
+        <header className="pk-table__head pt-head">
+          {on.back && (
+            <button type="button" className="pk-exit" onClick={on.back} aria-label="Back to the tables">
+              <span aria-hidden="true">←</span>
+              <span className="pt-head__word"> Tables</span>
+            </button>
+          )}
+          <h1>
+            <span>{reading ? "Table" : inLobby ? `Table of ${count}` : `Hand ${view.hand + 1}`}</span>
+          </h1>
+          <p className="pt-head__tools">
+            {agent && mine && !inLobby && !reading && (
+              <label className="pt-auto" title={`${agent.name} (${agent.model}) bets for you while this is on`}>
+                <input type="checkbox" checked={agent.on} onChange={agent.toggle} />
+                <span>
+                  <Bot size={15} /> Agent
+                </span>
+              </label>
+            )}
+            {leaveWords && (
+              <button
+                type="button"
+                className="pt-leave"
+                disabled={locked}
+                data-busy={pressed?.key === "leave" || undefined}
+                data-armed={leaving || undefined}
+                onClick={() => {
+                  if (!leaving) return setLeaving(true);
+                  setLeaving(false);
+                  setPressed({ key: "leave" });
+                  on.leave();
+                }}
+              >
+                {leaving ? (
+                  "Tap again to leave"
+                ) : (
+                  <>
+                    Leave{leaveWords !== "Leave" && <span className="pt-head__word"> after hand</span>}
+                  </>
+                )}
               </button>
             )}
-            <h1>
-              <span>{reading ? "Table" : inLobby ? `Table of ${count}` : `Hand ${view.hand + 1}`}</span>
-            </h1>
-            <p className="pk-table__facts">
-              <span className="pk-code">{id}</span>
-              <span>
-                {filled} of {count} seats · blinds 1 and 2{view.feeBps > 0 ? ` · fee ${view.feeBps / 100}% of winnings` : ""}
-              </span>
-            </p>
-            <p className="pk-table__now">
-              {!inLobby && !reading && (
-                <span className="pk-clock" data-low={left < 30 || undefined} title="Time left for this step">
-                  <Clock size={16} /> {left >= 0 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : "time up"}
-                </span>
-              )}
-            </p>
-          </header>
-
-          <div className="pt-arena" data-count={count}>
-            <div className="pt-oval">
-              <div className="pt-middle">
-                <div className="pt-pot" aria-label={`Pot ${pot}`} data-empty={(pot === 0 && progress !== null) || undefined}>
-                  <span className="pk-pot__sum" key={pot}>
-                    {pot}
-                  </span>
-                  <span className="pk-label">{bets > 0 && bets < pot ? `pot · ${bets} bet this round` : "pot"}</span>
-                </div>
-                {before && before.board.length > 0 && (
-                  <div className="pt-board" role="group" aria-label={`The board of hand ${before.number + 1}`}>
-                    {before.board.map((card, index) => (
-                      <PlayingCard key={`before:${before.number}:${index}`} card={card} />
-                    ))}
-                  </div>
-                )}
-                {progress ? (
-                  <p className="pt-readying" role="status">
-                    {progress}
-                  </p>
-                ) : (
-                  <div className="pt-board" role="group" aria-label="The board">
-                    {board.map((card, index) =>
-                      card === "place" ? (
-                        <CardPlace key={`place:${index}`} />
-                      ) : (
-                        <PlayingCard key={`${view.hand}:board:${index}`} card={card} dealt={live} order={index < 3 ? index : 0} />
-                      ),
-                    )}
-                  </div>
-                )}
-              </div>
-              <span
-                className="pk-deck pt-deck"
-                data-pk-deck
-                data-shuffling={(view.phase === "shuffle" && !reading) || undefined}
-                data-away={inLobby || reading || (view.phase !== "shuffle" && view.phase !== "deal") || Boolean(before?.board.length) || undefined}
-                style={{ "--ddx": deckAt ? Math.cos(deckAt.angle).toFixed(3) : "-0.8", "--ddy": deckAt ? Math.sin(deckAt.angle).toFixed(3) : "0" } as CSSProperties}
-                aria-hidden="true"
-              >
-                {[0, 1, 2, 3, 4, 5].map((n) => (
-                  <i key={n} style={{ "--n": n } as CSSProperties} />
-                ))}
-              </span>
-            </div>
-            <ol className="pt-seats" aria-label="Seats">
-              {view.players.map((_, seat) => seatPod(seat))}
-            </ol>
-          </div>
-
-          <p className="pk-say" role="status">
-            <span>{say}</span>
-            {/* The step's clock, where the eye is: past it a seat's page calls time by itself. */}
-            {!inLobby && !reading && view.awaited.length > 0 && (
-              <b className="pk-say__clock" data-low={left < 20 || undefined} title="Time left for this step">
-                {left >= 0 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : "time is up"}
-              </b>
-            )}
           </p>
-        </section>
+        </header>
 
-        <ActionStub
+        <div className="pt-arena" data-count={count}>
+          <div className="pt-oval">
+            <div className="pt-middle">
+              <div className="pt-pot" aria-label={`Pot ${pot}`} data-empty={(pot === 0 && (progress !== null || inLobby || reading)) || undefined}>
+                <span className="pk-pot__sum" key={pot}>
+                  {pot}
+                </span>
+                <span className="pk-label">{bets > 0 && bets < pot ? `pot · ${bets} bet this round` : "pot"}</span>
+              </div>
+              {before && before.board.length > 0 && (
+                <div className="pt-board" role="group" aria-label={`The board of hand ${before.number + 1}`}>
+                  {before.board.map((card, index) => (
+                    <PlayingCard key={`before:${before.number}:${index}`} card={card} />
+                  ))}
+                </div>
+              )}
+              {inLobby && !reading ? (
+                <div className="pt-start">
+                  {mine && canStart && filled >= 2 ? (
+                    <button
+                      type="button"
+                      className="pt-btn pt-btn--gold"
+                      disabled={locked}
+                      data-busy={pressed?.key === "start" || undefined}
+                      onClick={() => {
+                        setPressed({ key: "start" });
+                        on.start();
+                      }}
+                    >
+                      Start · {filled} seats
+                    </button>
+                  ) : (
+                    <p>{!mine ? "Tap a free seat to sit down." : canStart ? "Invite a friend, or tap a free seat to add an AI." : "Waiting for the host to start."}</p>
+                  )}
+                </div>
+              ) : progress ? (
+                <p className="pt-readying" role="status">
+                  {progress}
+                </p>
+              ) : (
+                <div className="pt-board" role="group" aria-label="The board">
+                  {board.map((card, index) =>
+                    card === "place" ? (
+                      <CardPlace key={`place:${index}`} />
+                    ) : (
+                      <PlayingCard key={`${view.hand}:board:${index}`} card={card} dealt={live} order={index < 3 ? index : 0} />
+                    ),
+                  )}
+                </div>
+              )}
+            </div>
+            <span
+              className="pk-deck pt-deck"
+              data-pk-deck
+              data-shuffling={(view.phase === "shuffle" && !reading) || undefined}
+              data-away={inLobby || reading || (view.phase !== "shuffle" && view.phase !== "deal") || Boolean(before?.board.length) || undefined}
+              style={{ "--ddx": deckAt ? Math.cos(deckAt.angle).toFixed(3) : "-0.8", "--ddy": deckAt ? Math.sin(deckAt.angle).toFixed(3) : "0" } as CSSProperties}
+              aria-hidden="true"
+            >
+              {[0, 1, 2, 3, 4, 5].map((n) => (
+                <i key={n} style={{ "--n": n } as CSSProperties} />
+              ))}
+            </span>
+          </div>
+          <ol className="pt-seats" aria-label="Seats">
+            {view.players.map((_, seat) => seatPod(seat))}
+          </ol>
+        </div>
+
+        <p className="pk-say" role="status">
+          <span>{say}</span>
+          {/* The step's clock, where the eye is: past it a seat's page calls time by itself. */}
+          {!inLobby && !reading && view.awaited.length > 0 && (
+            <b className="pk-say__clock" data-low={left < 20 || undefined} title="Time left for this step">
+              {left >= 0 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : "time is up"}
+            </b>
+          )}
+        </p>
+
+        <Hud
           pressed={pressed}
           press={setPressed}
           view={view}
-          you={you}
           mySeat={mySeat}
           locked={locked}
-          doing={doing}
           left={left}
+          pot={pot}
           problems={problems}
           link={link}
+          price={price}
           house={house}
           agent={agent}
           reading={reading}
           on={on}
           name={name}
         />
-      </div>
+      </section>
 
-      <aside className="pk-side">
-        {view.last && <LastHand view={view} name={name} />}
-        {view.cashed.length > 0 && (
-          <section className="pk-board pt-cashed" aria-label="Paid and left">
-            <h2 className="pk-board__title">
-              <SeatIcon size={22} /> <span>Paid and left</span>
-            </h2>
-            <ul>
-              {view.cashed.map((paid, at) => (
-                <li key={`${paid.account}:${at}`}>
-                  <span title={paid.account}>
-                    {paid.account === you ? "You" : house?.accounts.includes(paid.account) ? houseName(house.accounts, paid.account, everyone) : shortAccount(paid.account)}
-                  </span>
-                  <b>{paid.chips}</b>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-        <Ledger log={log} explorer={explorer} />
-      </aside>
+      {!reading && (
+        <details className="pt-details">
+          <summary>
+            <span>Table details</span>
+            <small>the hand before, who was paid, the AIs&apos; notes, transactions</small>
+          </summary>
+          <div className="pt-details__body">
+            <p className="pk-table__facts">
+              <span className="pk-code">{id}</span>
+              <span>
+                {filled} of {count} seats · blinds 1 and 2{view.feeBps > 0 ? ` · fee ${view.feeBps / 100}% of winnings` : ""}
+              </span>
+              {doing && doing !== "shuffle" && <span role="status">{doing}</span>}
+            </p>
+            {house && (house.canAdd || house.seating) && (
+              <div className="pk-ticket">
+                <section className="pk-stub" aria-label="House seats">
+                  <HousePlanner
+                    key={`${house.seats.length}:${view.players.filter((player) => !player).length}`}
+                    house={house}
+                    free={view.players.filter((player) => !player).length}
+                    busy={locked || Boolean(house.seating) || pressed?.key === "house"}
+                    onAdd={(models) => {
+                      setPressed({ key: "house" });
+                      on.addHouse(models);
+                    }}
+                  />
+                </section>
+              </div>
+            )}
+            {view.last && <LastHand view={view} name={name} />}
+            {(house?.opened?.length || (agent?.last && mine)) && (
+              <div className="pk-ticket">
+                <section className="pk-stub pk-agents" aria-label="What the AIs thought">
+                  <h2 className="pk-stub__title">AI notes</h2>
+                  <p className="pk-fine">A house seat&apos;s note names its cards, so it is sealed while its hand is played and opened here once that hand is over.</p>
+                  <div className="pk-voices">
+                    {house?.opened?.map((thought, at) => (
+                      <Voice
+                        key={`${thought.hand}:${thought.seat}:${at}`}
+                        who={name(thought.seat)}
+                        what={`${done(thought.what)} in hand ${thought.hand + 1}`}
+                        reason={thought.reason}
+                        driver={thought.driver}
+                        seat={thought.seat}
+                      />
+                    ))}
+                    {agent?.last && mine && (
+                      <Voice
+                        who={`${agent.name} (your agent)`}
+                        what={agent.said ?? (agent.last.action === "raise" ? `raises to ${agent.last.amount}` : agent.last.action === "fold" ? "folds" : "calls")}
+                        reason={agent.last.reason}
+                        driver={agent.last.driver}
+                        seat={mySeat}
+                        problem={agent.last.fallback ? (agent.last.problem ?? "the model did not answer") : undefined}
+                      />
+                    )}
+                  </div>
+                </section>
+              </div>
+            )}
+            {view.cashed.length > 0 && (
+              <section className="pk-board pt-cashed" aria-label="Paid and left">
+                <h2 className="pk-board__title">
+                  <SeatIcon size={22} /> <span>Paid and left</span>
+                </h2>
+                <ul>
+                  {view.cashed.map((paid, at) => (
+                    <li key={`${paid.account}:${at}`}>
+                      <span title={paid.account}>
+                        {paid.account === you ? "You" : house?.accounts.includes(paid.account) ? houseName(house.accounts, paid.account, everyAccount) : shortAccount(paid.account)}
+                      </span>
+                      <b>{paid.chips}</b>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            <Ledger log={log} explorer={explorer} />
+          </div>
+        </details>
+      )}
     </div>
   );
 }
@@ -604,17 +755,21 @@ function HousePlanner({ house, free, busy, onAdd }: { house: HouseAtTable; free:
 
 type Pressed = { key: "fold" | "call" | "raise" | "allin" | "sit" | "start" | "leave" | "time" | "house"; amount?: number };
 
-function ActionStub({
+/**
+ * The bar at the table's foot: what the player can do now, as buttons on the table itself. On their turn the three
+ * bets with the sizing over them; a seat to take; an invitation while the table fills; time to call on a late seat.
+ */
+function Hud({
   pressed,
   press,
   view,
-  you,
   mySeat,
   locked,
-  doing,
   left,
+  pot,
   problems,
   link,
+  price,
   house,
   agent,
   reading,
@@ -624,13 +779,13 @@ function ActionStub({
   pressed: Pressed | null;
   press: (pressed: Pressed) => void;
   view: TableView;
-  you: string | null;
   mySeat: number | null;
   locked: boolean;
-  doing: string | null;
   left: number;
+  pot: number;
   problems: string[];
   link: string;
+  price: string;
   house?: HouseAtTable;
   agent?: AgentAtTable;
   reading: boolean;
@@ -650,142 +805,53 @@ function ActionStub({
   const raise = options?.raise ?? null;
   const amount = raise ? Math.min(raise.max, Math.max(raise.min, Math.round(Number(raiseTo)) || raise.min)) : 0;
   // Not while this seat's own part is owed: time called then rules it late with the others.
-  const late = !inLobby && left < 0 && view.awaited.some((seat) => seat !== mySeat) && (mySeat === null || !view.awaited.includes(mySeat));
+  const late = !inLobby && !reading && left < 0 && view.awaited.some((seat) => seat !== mySeat) && (mySeat === null || !view.awaited.includes(mySeat));
   // With nothing bet on the street yet a raise is a bet, and is called one.
-  const opening = Math.max(0, ...view.bet) === 0;
+  const top = Math.max(0, ...view.bet);
+  const opening = top === 0;
   const clockSeconds = Math.round(clockMarginMs(view) / 1_000);
-  const isHost = you !== null && view.host === you;
-  // A table with a stake of nothing: its host is the server, which starts it when a seated player asks.
-  const noStake = BigInt(view.stake) === 0n;
-  const canStart = isHost || (noStake && Boolean(house?.accounts.includes(view.host)));
-  const filled = seated(view).length;
-  const inHand = mine && view.dealt.includes(mySeat) && !inLobby;
+  const sized = (to: number): string => String(raise ? Math.min(raise.max, Math.max(raise.min, Math.round(to))) : to);
 
-  let title = "";
-  let line: ReactNode = null;
+  const invite = () => {
+    const copy = () => void navigator.clipboard?.writeText(link).then(() => setCopied(true));
+    if (typeof navigator.share === "function" && window.matchMedia("(pointer: coarse)").matches)
+      navigator.share({ title: "Deedlords Poker", text: "Sit at my poker table", url: link }).catch((error) => error?.name !== "AbortError" && copy());
+    else copy();
+  };
+
   let body: ReactNode = null;
-  if (reading) {
-    title = "Reading the table";
-    line = "One moment: the page is asking the contract what this table holds.";
-  } else if (!mine) {
-    title = free ? "A free seat" : "Watching";
-    line = free
-      ? noStake
-        ? `A seat here is free: 100 chips that are only chips, and the house pays the gas of your moves. ${inLobby ? "" : "At a table under way you are dealt in from the next hand."}`
-        : `A seat costs ${asNear(view.deposit)}: ${asNear(view.stake)} for 100 chips, which come back when you leave, and a record fee that does not. Your account also needs about half a NEAR that the check of your shuffle must be able to reserve. ${inLobby ? "" : "At a table under way you are dealt in from the next hand."}`
-      : "Every seat is taken. You can watch the hands being played.";
-    body = free ? (
-      <button
-        type="button"
-        className="pk-go"
-        disabled={locked}
-        data-busy={pressed?.key === "sit" || undefined}
-        onClick={() => {
-          press({ key: "sit" });
-          on.sit();
-        }}
-      >
-        {noStake ? "Sit down for free" : `Sit down for ${asNear(view.deposit)}`}
-      </button>
-    ) : null;
-    if (on.back)
-      body = (
-        <>
-          {body}
-          <div className="pk-acts">
-            <button type="button" className="pk-pill" onClick={on.back}>
-              <span aria-hidden="true">←</span> Back to the tables
-            </button>
-          </div>
-        </>
-      );
-  } else if (inLobby) {
-    title = isHost ? "Your table" : canStart ? "A free table" : "Waiting for the host";
-    line = canStart
-      ? filled >= 2
-        ? "Start now with the seats taken, or wait for more."
-        : "Invite a friend, or seat an AI from the house below."
-      : "The table starts when it is full, or when its host starts it.";
-    // One gold action: start once two sit, otherwise bring people in. The link is shared by the phone's own sheet.
-    const invite = (
-      <button
-        type="button"
-        className={canStart && filled >= 2 ? "pk-pill" : "pk-go"}
-        onClick={() => {
-          const copy = () => void navigator.clipboard?.writeText(link).then(() => setCopied(true));
-          if (typeof navigator.share === "function" && window.matchMedia("(pointer: coarse)").matches)
-            navigator.share({ title: "Deedlords Poker", text: "Sit at my poker table", url: link }).catch((error) => error?.name !== "AbortError" && copy());
-          else copy();
-        }}
-      >
-        <Copy size={16} /> {copied ? "Link copied: send it to a friend" : "Invite friends"}
-      </button>
-    );
+  if (reading) body = null;
+  else if (toAct && options) {
     body = (
       <>
-        {canStart && filled >= 2 && (
-          <button
-            type="button"
-            className="pk-go"
-            disabled={locked}
-            data-busy={pressed?.key === "start" || undefined}
-            onClick={() => {
-              press({ key: "start" });
-              on.start();
-            }}
-          >
-            Start with {filled} seats
-          </button>
-        )}
-        <div className="pk-acts">{invite}</div>
-        <p className="pk-invite" title={link}>
-          {link}
-        </p>
-      </>
-    );
-  } else if (toAct && options) {
-    title = handed && agent ? (agent.thinking ? `${agent.name} is thinking` : `${agent.name} has your seat`) : "Your move";
-    line = options.owed > 0 ? `${options.owed} to call${options.owed === view.chips[mySeat] ? " (all you have)" : ""}` : "Nothing to call";
-    body = (
-      <div className="pk-move">
-        <button
-          type="button"
-          className="pk-pill"
-          disabled={off}
-          data-busy={pressed?.key === "fold" || undefined}
-          onClick={() => {
-            press({ key: "fold" });
-            on.act("fold", null, "folds");
-          }}
-        >
-          Fold
-        </button>
-        <button
-          type="button"
-          className="pk-go"
-          disabled={off}
-          data-busy={pressed?.key === "call" || undefined}
-          onClick={() => {
-            press({ key: "call", amount: view.bet[mySeat] + options.owed });
-            on.act("call", null, options.owed ? `calls ${options.owed}` : "checks");
-          }}
-        >
-          {options.owed ? `Call ${options.owed}` : "Check"}
-        </button>
         {handed && agent && (
-          <button type="button" className="pk-pill pk-pill--quiet" onClick={agent.toggle}>
-            Bet myself
-          </button>
+          <p className="pt-hud__note" role="status">
+            {agent.name} {agent.thinking ? "is choosing your bet…" : "bets for you."}{" "}
+            <button type="button" className="pt-link" onClick={agent.toggle}>
+              Bet myself
+            </button>
+          </p>
         )}
-        {raise && (
-          <div className="pk-raise">
+        {raise && raise.min < raise.max && !handed && (
+          <div className="pt-size">
+            <span className="pt-size__chips">
+              <button type="button" disabled={off} onClick={() => setRaiseTo(sized(top + Math.ceil((pot + options.owed) / 2)))}>
+                ½ pot
+              </button>
+              <button type="button" disabled={off} onClick={() => setRaiseTo(sized(top + pot + options.owed))}>
+                Pot
+              </button>
+              <button type="button" disabled={off} onClick={() => setRaiseTo(String(raise.max))}>
+                Max
+              </button>
+            </span>
             <input
               type="range"
               aria-label={opening ? "Bet" : "Raise to"}
               min={raise.min}
               max={raise.max}
               value={amount}
-              disabled={off || raise.min === raise.max}
+              disabled={off}
               onChange={(event) => setRaiseTo(event.target.value)}
             />
             <input
@@ -798,188 +864,131 @@ function ActionStub({
               disabled={off}
               onChange={(event) => setRaiseTo(event.target.value)}
             />
-            <button
-              type="button"
-              className="pk-pill pk-pill--ink"
-              disabled={off}
-              data-busy={pressed?.key === "raise" || undefined}
-              onClick={() => {
-                press({ key: "raise", amount });
-                on.act("raise", amount, opening ? `bets ${amount}` : `raises to ${amount}`);
-              }}
-            >
-              {opening ? "Bet" : "Raise to"} {amount}
-            </button>
-            <button
-              type="button"
-              className="pk-pill"
-              disabled={off}
-              data-busy={pressed?.key === "allin" || undefined}
-              onClick={() => {
-                press({ key: "allin", amount: raise.max });
-                on.act("raise", raise.max, `goes all in for ${raise.max}`);
-              }}
-            >
-              All in {raise.max}
-            </button>
           </div>
         )}
+        <div className="pt-hud__acts">
+          <button
+            type="button"
+            className="pt-btn pt-btn--fold"
+            disabled={off}
+            data-busy={pressed?.key === "fold" || undefined}
+            onClick={() => {
+              press({ key: "fold" });
+              on.act("fold", null, "folds");
+            }}
+          >
+            Fold
+          </button>
+          <button
+            type="button"
+            className="pt-btn pt-btn--gold"
+            disabled={off}
+            data-busy={pressed?.key === "call" || undefined}
+            onClick={() => {
+              press({ key: "call", amount: view.bet[mySeat] + options.owed });
+              on.act("call", null, options.owed ? `calls ${options.owed}` : "checks");
+            }}
+          >
+            {options.owed ? `Call ${options.owed}` : "Check"}
+          </button>
+          {raise && (
+            <button
+              type="button"
+              className="pt-btn"
+              disabled={off}
+              data-busy={pressed?.key === "raise" || pressed?.key === "allin" || undefined}
+              onClick={() => {
+                const all = amount === raise.max;
+                press({ key: all ? "allin" : "raise", amount });
+                on.act("raise", amount, all ? `goes all in for ${amount}` : opening ? `bets ${amount}` : `raises to ${amount}`);
+              }}
+            >
+              {amount === raise.max ? "All in" : opening ? "Bet" : "Raise to"} {amount}
+            </button>
+          )}
+        </div>
         {left <= clockSeconds + 10 && (
-          <p className="pk-fine pk-move__clock" role="status">
+          <p className="pt-hud__note" role="status">
             With {clockSeconds} seconds left this page {options.owed > 0 ? "folds" : "checks"} for you, so that your seat is not ruled late.
           </p>
         )}
+      </>
+    );
+  } else if (!mine && free) {
+    body = (
+      <>
+        <div className="pt-hud__acts">
+          <button
+            type="button"
+            className="pt-btn pt-btn--gold"
+            disabled={locked}
+            data-busy={pressed?.key === "sit" || undefined}
+            onClick={() => {
+              press({ key: "sit" });
+              on.sit();
+            }}
+          >
+            {price === "free" ? "Sit down for free" : `Sit down for ${price}`}
+          </button>
+        </div>
+        <p className="pt-hud__note">
+          {price === "free"
+            ? "100 chips that are only chips; the house pays the gas of your moves."
+            : `${asNear(view.stake)} buys 100 chips, yours again when you leave. Keep half a NEAR free for gas.`}
+          {inLobby ? "" : " You are dealt in from the next hand."}
+        </p>
+      </>
+    );
+  } else if (mine && inLobby) {
+    body = (
+      <div className="pt-hud__acts">
+        <button type="button" className="pt-btn" onClick={invite}>
+          <Copy size={16} /> {copied ? "Link copied" : "Invite friends"}
+        </button>
+        {house?.canAdd && (
+          <button
+            type="button"
+            className="pt-btn"
+            disabled={locked || Boolean(house.seating) || pressed?.key === "house"}
+            data-busy={Boolean(house.seating) || pressed?.key === "house" || undefined}
+            onClick={() => {
+              press({ key: "house" });
+              on.addHouse([house.defaultModel ?? house.models[0] ?? "rules"]);
+            }}
+          >
+            <Bot size={16} /> {house.seating ? "Seating an AI…" : "Add an AI"}
+          </button>
+        )}
       </div>
     );
-  } else if (!inHand && (view.dealt.length > 0 || view.leaving[mySeat])) {
-    // Not before a hand has begun: the seats taken then are all dealt in, and the page is about to shuffle for this one.
-    title = view.leaving[mySeat] ? "Leaving" : "Next hand";
-    line = view.leaving[mySeat] ? "You are paid when this hand is over." : "You sit at the table and are dealt in from the next hand.";
-  } else if (view.folded[mySeat]) {
-    title = "Folded";
-    line = "Your shares for the board went with the fold: you owe this hand nothing more.";
-  } else if (view.phase === "bet") {
-    title = `${name(view.toAct)} to act`;
-    line = "Your cards are in; the table waits for another seat's bet.";
-  } else {
-    title = view.phase === "shuffle" ? "Shuffling" : view.phase === "deal" ? "Dealing" : view.phase === "open" ? "Turning cards" : "Showdown";
-    line = "This page plays your seat's part of the step by itself. You are asked for bets only.";
   }
 
-  // A seat dealt into the hand, folded or not, is paid when the hand is over.
-  const leaveWords = !mine ? null : view.leaving[mySeat] ? null : inHand ? "Leave after this hand" : view.phase === "lobby" || BigInt(view.stake) === 0n ? "Leave the table" : "Leave and cash out";
-  const extras = !reading && (late || (mine && leaveWords));
-  const showPlanner = Boolean(house && (house.canAdd || house.seating) && !reading);
-  const showAgent = Boolean(agent && mine && !inLobby && !reading);
-  const houseLast = house?.last;
-
+  const any = body || late || problems.length > 0;
+  if (!any) return null;
   return (
-    <>
-      <div className="pk-ticket pk-desk">
-        <section className="pk-stub" aria-label="Your move">
-          <div className="pk-desk__head">
-            <h2 className="pk-stub__title">{title}</h2>
-            {line && (
-              <p className="pk-small" data-long={typeof line !== "string" || line.length > 28 || undefined}>
-                {line}
-              </p>
-            )}
-          </div>
-          {body}
-          {mine && inHand && view.leaving[mySeat] && (
-            <p className="pk-fine" role="status">
-              You leave when this hand is over, and are paid then. Keep this page open until it is: it still plays your seat&apos;s part, and a seat that does not answer loses
-              its chips.
-            </p>
-          )}
-          {doing && doing !== "shuffle" && (
-            <p className="pk-fine" role="status">
-              {doing}
-            </p>
-          )}
-          {problems.map((problem) => (
-            <p key={problem} className="pk-problem" role="alert">
-              {problem}
-            </p>
-          ))}
-        </section>
-      </div>
-      {(extras || showPlanner || showAgent || houseLast || house?.opened?.length || agent?.last) && (
-        <div className="pk-ticket">
-          <section className="pk-stub pk-agents" aria-label="The table's other ways">
-            {extras && (
-              <div className="pk-acts">
-                {late && (
-                  <button
-                    type="button"
-                    className="pk-pill pk-pill--ink"
-                    disabled={locked}
-                    data-busy={pressed?.key === "time" || undefined}
-                    onClick={() => {
-                      press({ key: "time" });
-                      on.callTime();
-                    }}
-                  >
-                    Call time on {view.awaited.filter((seat) => seat !== mySeat).length > 1 ? "the late seats" : name(view.awaited.find((seat) => seat !== mySeat)!)}
-                  </button>
-                )}
-                {leaveWords && (
-                  <button
-                    type="button"
-                    className="pk-pill pk-pill--quiet"
-                    disabled={locked}
-                    data-busy={pressed?.key === "leave" || undefined}
-                    onClick={() => {
-                      press({ key: "leave" });
-                      on.leave();
-                    }}
-                  >
-                    {leaveWords}
-                  </button>
-                )}
-              </div>
-            )}
-            {house && (house.canAdd || house.seating) && !reading && (
-              <HousePlanner
-                key={`${house.seats.length}:${view.players.filter((player) => !player).length}`}
-                house={house}
-                free={view.players.filter((player) => !player).length}
-                busy={locked || Boolean(house.seating) || pressed?.key === "house"}
-                onAdd={(models) => {
-                  press({ key: "house" });
-                  on.addHouse(models);
-                }}
-              />
-            )}
-            {showAgent && agent && (
-              <div className="pk-agent">
-                <label className="pk-switch">
-                  <input type="checkbox" checked={agent.on} onChange={agent.toggle} />
-                  <span>
-                    <b>Let my agent play</b>
-                    <small>
-                      {agent.name} · {agent.model} · <a href="/agents">your agents</a>
-                    </small>
-                  </span>
-                </label>
-              </div>
-            )}
-            {(houseLast || house?.opened?.length || agent?.last) && (
-              <div className="pk-voices">
-                {houseLast && (
-                  <Voice
-                    who={houseLast.seat !== undefined ? name(houseLast.seat) : "The house"}
-                    what={done(houseLast.what)}
-                    driver={houseLast.driver}
-                    seat={houseLast.seat ?? 0}
-                    sealed={houseLast.sealed}
-                  />
-                )}
-                {house?.opened?.map((thought, at) => (
-                  <Voice
-                    key={`${thought.hand}:${thought.seat}:${at}`}
-                    who={name(thought.seat)}
-                    what={`${done(thought.what)} in hand ${thought.hand + 1}`}
-                    reason={thought.reason}
-                    driver={thought.driver}
-                    seat={thought.seat}
-                  />
-                ))}
-                {agent?.last && mine && (
-                  <Voice
-                    who={agent.name}
-                    what={agent.said ?? (agent.last.action === "raise" ? `raises to ${agent.last.amount}` : agent.last.action === "fold" ? "folds" : "calls")}
-                    reason={agent.last.reason}
-                    driver={agent.last.driver}
-                    seat={mySeat}
-                    problem={agent.last.fallback ? (agent.last.problem ?? "the model did not answer") : undefined}
-                  />
-                )}
-              </div>
-            )}
-          </section>
+    <div className="pt-hud" data-turn={toAct || undefined}>
+      {problems.map((problem) => (
+        <p key={problem} className="pt-hud__problem" role="alert">
+          {problem}
+        </p>
+      ))}
+      {body}
+      {late && (
+        <div className="pt-hud__acts">
+          <button
+            type="button"
+            className="pt-btn"
+            disabled={locked}
+            data-busy={pressed?.key === "time" || undefined}
+            onClick={() => {
+              press({ key: "time" });
+              on.callTime();
+            }}
+          >
+            Call time on {view.awaited.filter((seat) => seat !== mySeat).length > 1 ? "the late seats" : name(view.awaited.find((seat) => seat !== mySeat)!)}
+          </button>
         </div>
       )}
-    </>
+    </div>
   );
 }

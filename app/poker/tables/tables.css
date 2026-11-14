@@ -851,3 +851,556 @@
   grid-column: 1 / -1;
   margin: 0;
 }
+
+/* ---------------------------------------------------------------------------------------------------------------
+   The table as the play screen. The player acts on the table itself: the bets are a bar at its foot, a free seat is
+   tapped, the host starts from the middle of the cloth. What is beside the game is folded away under it. The rules
+   below come last on purpose: they replace where a seat's cards and bet lie.
+   --------------------------------------------------------------------------------------------------------------- */
+
+.pt-room {
+  display: grid;
+  gap: 14px;
+  max-width: min(1040px, 104vh);
+  margin: 6px auto 0;
+}
+
+.pt-table {
+  padding: 12px 14px;
+}
+
+.pt-head {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.pt-head h1 {
+  margin-right: auto;
+  white-space: nowrap;
+}
+
+.pt-head__tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+/* The switch that hands the seat's bets to the player's own agent. */
+.pt-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1.5px solid rgb(255 247 230 / 30%);
+  border-radius: 999px;
+  color: var(--soft);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pt-auto input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--gold);
+}
+
+.pt-auto span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pt-auto:has(input:checked) {
+  border-color: var(--gold);
+  background: rgb(248 201 63 / 12%);
+  color: var(--gold-pale);
+}
+
+.pt-leave {
+  position: relative;
+  overflow: hidden;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1.5px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--soft);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pt-leave:hover:not(:disabled) {
+  border-color: rgb(255 247 230 / 30%);
+}
+
+.pt-leave[data-armed] {
+  border-color: #ff8a6b;
+  color: #ffc4b3;
+}
+
+/* The cloth */
+
+.pt-arena > .pt-oval {
+  aspect-ratio: 1.95 / 1;
+}
+
+.pt-oval {
+  --ry: calc(var(--ow) / 1.95 * 0.27);
+}
+
+/* The pot and the board stand a little above the middle: this seat's own cards lie below them. */
+.pt-middle {
+  padding-bottom: calc(var(--card) * 0.6);
+}
+
+.pt-start {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  max-width: 30ch;
+  text-align: center;
+}
+
+.pt-start p {
+  margin: 0;
+  color: var(--cream);
+  font-size: clamp(13px, 2.2cqw, 16px);
+  text-wrap: balance;
+}
+
+.pt-start .pt-btn {
+  min-width: min(220px, 60cqw);
+}
+
+/* A seat's cards. Its own lie large before it; another seat's face-down pair is a small mark at the seat's inner
+   edge, set to one side so that the bet has the line to the middle; cards shown stand inside the seat's own box. */
+.pt-pod {
+  --cwb: 0px;
+}
+
+.pt-pod[data-mine] {
+  --cw: calc(var(--card) * 1.05);
+}
+
+.pt-pod__cards {
+  top: auto;
+  bottom: calc(100% + var(--face) * 0.5 + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.pt-pod__backs {
+  position: absolute;
+  left: calc(50% + var(--dx) * (var(--half-w) + 2px) - var(--dy) * 26px);
+  top: calc(50% + var(--dy) * (var(--half-h) + 4px) + var(--dx) * 26px);
+  display: flex;
+  transform: translate(-50%, -50%) rotate(-6deg);
+  pointer-events: none;
+}
+
+.pt-pod__backs .pk-card {
+  --w: clamp(14px, 2.4cqw, 22px);
+}
+
+.pt-pod__backs .pk-card + .pk-card {
+  margin-left: calc(var(--w) * -0.45);
+}
+
+.pt-pod__shown {
+  display: flex;
+  gap: 2px;
+  margin-top: 3px;
+}
+
+.pt-pod__shown .pk-card {
+  --w: clamp(20px, 3.4cqw, 34px);
+}
+
+.pt-pod__bet {
+  left: calc(50% + var(--dx) * (var(--half-w) + 28px));
+  top: calc(50% + var(--dy) * (var(--half-h) + 24px));
+}
+
+/* This seat's own bet lies over its cards, on the line to the pot. */
+.pt-pod[data-mine] .pt-pod__bet {
+  top: auto;
+  bottom: calc(100% + var(--face) * 0.5 + var(--cw) * 1.4 + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.pt-pod[data-folding] .pt-pod__cards {
+  transform: translateX(-50%);
+}
+
+/* A free seat is tapped: to sit down, or to seat an AI from the house. */
+.pt-pod__tap {
+  display: grid;
+  justify-items: center;
+  width: 100%;
+  min-height: 34px;
+  margin-top: 2px;
+  padding: 2px 4px;
+  border: 1.5px solid var(--gold);
+  border-radius: 10px;
+  background: rgb(248 201 63 / 14%);
+  color: var(--gold-pale);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.15;
+  cursor: pointer;
+}
+
+/* The whole seat is the target. */
+.pt-pod__tap::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+.pt-pod__tap small {
+  color: var(--soft);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pt-pod__tap:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pt-pod[data-free]:has(.pt-pod__tap) {
+  border-color: rgb(248 201 63 / 50%);
+  background: rgb(32 16 9 / 80%);
+}
+
+/* Buttons on the table */
+
+.pt-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  overflow: hidden;
+  min-height: 52px;
+  padding: 0 16px;
+  border: 1.5px solid rgb(255 247 230 / 40%);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 8%);
+  color: var(--cream);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    transform 0.12s,
+    background 0.2s;
+}
+
+.pt-btn:hover:not(:disabled) {
+  background: rgb(255 255 255 / 14%);
+}
+
+.pt-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.pt-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pt-btn--gold,
+.pt-btn--gold:hover:not(:disabled) {
+  border-color: var(--gold);
+  background: linear-gradient(180deg, #fbd155, #f3b93a);
+  color: var(--ink);
+}
+
+.pt-btn--fold {
+  border-color: rgb(255 138 107 / 55%);
+  color: #ffc4b3;
+}
+
+/* The bar at the table's foot: it stays at the foot of the screen while the table is in sight. */
+.pt-hud {
+  position: sticky;
+  bottom: max(6px, env(safe-area-inset-bottom));
+  z-index: 6;
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 10px;
+  border: 1px solid rgb(248 201 63 / 28%);
+  border-radius: 16px;
+  background: rgb(26 11 6 / 97%);
+}
+
+.pt-hud__acts {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.pt-hud__note {
+  margin: 0;
+  color: var(--soft);
+  font-size: 13px;
+  text-align: center;
+  text-wrap: pretty;
+}
+
+.pt-hud__problem {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgb(240 96 74 / 16%);
+  color: #ffc4b3;
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.pt-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gold-pale);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+/* How much to bet: three sizes, a slider, the figure. */
+.pt-size {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 62px;
+  gap: 10px;
+  align-items: center;
+}
+
+.pt-size__chips {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.pt-size__chips button {
+  min-height: 38px;
+  padding: 0 11px;
+  border: 1.5px solid rgb(255 247 230 / 30%);
+  border-radius: 999px;
+  background: none;
+  color: var(--cream);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pt-size__chips button:disabled {
+  opacity: 0.45;
+}
+
+.pt-size input[type="range"] {
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--gold);
+}
+
+.pt-size input[type="number"] {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 4px;
+  border: 1.5px solid rgb(255 247 230 / 30%);
+  border-radius: 10px;
+  background: rgb(0 0 0 / 25%);
+  color: var(--cream);
+  font: inherit;
+  font-weight: 700;
+  text-align: center;
+  caret-color: var(--gold);
+}
+
+/* A call on its way, on the table's own buttons. */
+.pt-table [data-busy]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: currentColor;
+  opacity: 0.55;
+  transform-origin: left center;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pt-table [data-busy]::after {
+    animation: pt-busy 1.1s ease-in-out infinite;
+  }
+
+  .pt-pod[data-folding] .pt-pod__cards {
+    transform: translateX(-50%) translateY(-14px) rotate(6deg);
+  }
+}
+
+/* What is beside the game, folded away. */
+.pt-details {
+  border: 1.5px dashed rgb(255 247 230 / 26%);
+  border-radius: 16px;
+  color: var(--soft);
+}
+
+.pt-details > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  padding: 12px 16px;
+  color: var(--cream);
+  font-weight: 700;
+  list-style: none;
+  cursor: pointer;
+}
+
+.pt-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.pt-details > summary small {
+  color: var(--soft);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.pt-details > summary::after {
+  content: "+";
+  margin-left: auto;
+  color: var(--gold);
+}
+
+.pt-details[open] > summary::after {
+  content: "\2212";
+}
+
+.pt-details__body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  gap: 16px;
+  align-items: start;
+  padding: 4px 16px 16px;
+}
+
+.pt-details__body > .pk-table__facts {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+@container (max-width: 560px) {
+  .pt-arena > .pt-oval {
+    aspect-ratio: 0.88 / 1;
+  }
+
+  .pt-oval {
+    --ry: calc(var(--ow) / 0.88 * 0.3);
+  }
+
+  .pt-pod__model {
+    display: none;
+  }
+
+  .pt-pod__bet {
+    left: calc(50% + var(--dx) * (var(--half-w) + 22px));
+    top: calc(50% + var(--dy) * (var(--half-h) + 20px));
+  }
+
+  .pt-pod[data-mine] .pt-pod__bet {
+    left: 50%;
+  }
+
+  .pt-pod__backs {
+    left: calc(50% + var(--dx) * (var(--half-w) + 1px) - var(--dy) * 20px);
+    top: calc(50% + var(--dy) * (var(--half-h) + 2px) + var(--dx) * 20px);
+  }
+}
+
+@media (max-width: 719px) {
+  .pt-table {
+    padding: 8px;
+  }
+
+  .pt-middle {
+    padding-bottom: calc(var(--card) * 0.9);
+  }
+
+  .pt-hud {
+    padding: 8px;
+  }
+
+  .pt-btn {
+    min-height: 50px;
+    padding: 0 8px;
+    font-size: 15px;
+  }
+
+  .pt-size {
+    grid-template-columns: auto minmax(0, 1fr) 52px;
+    gap: 8px;
+  }
+
+  .pt-size__chips {
+    gap: 4px;
+  }
+
+  .pt-size__chips button {
+    padding: 0 8px;
+    font-size: 12.5px;
+  }
+
+  .pt-auto,
+  .pt-leave {
+    padding: 0 9px;
+    font-size: 12.5px;
+  }
+
+  /* The head is one row on a phone: the words that can go, go. */
+  .pt-head {
+    gap: 6px;
+  }
+
+  .pt-head__word {
+    display: none;
+  }
+
+  .pt-head .pk-exit {
+    min-width: 38px;
+    padding-inline: 10px;
+  }
+
+  .pt-head h1 {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .pt-details > summary small {
+    display: none;
+  }
+}
