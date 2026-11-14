@@ -296,3 +296,9 @@ export function leaveState(view: Pick<TableView, "players" | "leaving">, account
   const seat = view.players.indexOf(account);
   return seat < 0 ? "gone" : view.leaving[seat] ? "leaving" : "seated";
 }
+
+/**
+ * Whether the seat an account sat in was given up because it ran out of time in the hand before: `seat` is where the
+ * account sat. The contract rules a seat late when its step has not reached it by the deadline, whoever is at fault.
+ */
+export const ruledLate = (view: Pick<TableView, "players" | "last">, seat: number, account: string): boolean => view.players[seat] !== account && Boolean(view.last?.late.includes(seat));

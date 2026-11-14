@@ -28,6 +28,7 @@ import {
   hostIsSpent,
   leaveState,
   nextDealt,
+  ruledLate,
   toBase64,
   tookEffect,
 } from "../games/poker/table/seat.ts";
@@ -424,4 +425,16 @@ test("a seat that asked to leave between two hands is gone only when the table s
   // Had the request been first, the seat would have been paid and given up at once.
   assert.equal(leaveState({ ...raced, players: ["free.testnet", null, "8909.testnet", "pokerhouse.testnet", null, null], leaving: [false, false, false, false, false, false] }, "e19e.testnet"), "gone");
   assert.equal(leaveState({ ...raced, leaving: [false, false, false, false, false, false] }, "e19e.testnet"), "seated");
+});
+
+test("a player whose seat was given up for running out of time is told so", () => {
+  // Hand 2 of f-mwf7vvqq-vmzn on testnet, 2026-11-14: the sponsor did not send seat 2's shares, the seat was ruled
+  // late and given up, and the page went on as if a stranger had opened it: "A free seat. Sit down for free".
+  const last = { number: 1, dealt: [2, 3, 0], board: [20, 13, 32, 44], hole: [[], [], [], [], [], []], folded: [false, false, false, true, false, false], put: [12, 0, 12, 1, 0, 0], won: [112, 0, 0, 1, 0, 0], ending: "cancelled" as const, late: [2] };
+  const after = table({ players: ["free.testnet", null, null, "pokerhouse.testnet", null, null], phase: "shuffle", hand: 2, dealt: [], last });
+  assert.equal(ruledLate(after, 2, "guest.testnet"), true);
+  // Still in its seat, or given up for another reason (it left, another seat was the late one): not told.
+  assert.equal(ruledLate({ ...after, players: ["free.testnet", null, "guest.testnet", "pokerhouse.testnet", null, null] }, 2, "guest.testnet"), false);
+  assert.equal(ruledLate({ ...after, last: { ...last, late: [3] } }, 2, "guest.testnet"), false);
+  assert.equal(ruledLate({ ...after, last: null }, 2, "guest.testnet"), false);
 });
