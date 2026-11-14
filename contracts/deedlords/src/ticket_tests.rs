@@ -77,6 +77,12 @@ struct StoredBefore {
     game: Game,
 }
 
+/// The match as a contract loaded afresh reads it from storage (the one in hand answers from what it has in memory).
+fn stored_again(id: &str) -> Match {
+    let fresh: near_sdk::store::IterableMap<String, Match> = near_sdk::store::IterableMap::new(b"m".to_vec());
+    fresh.get(id).expect("the match is in storage").clone()
+}
+
 fn as_before(m: &Match) -> StoredBefore {
     StoredBefore {
         rules: m.rules,
@@ -100,12 +106,14 @@ fn as_before(m: &Match) -> StoredBefore {
 fn a_match_without_the_new_rules_is_stored_byte_for_byte_as_before_and_old_bytes_read() {
     let mut c = contract();
     started(&mut c, "plain", 2, Extras::default());
+    c.matches.flush();
     let m = c.matches.get("plain").unwrap().clone();
     let old = borsh::to_vec(&as_before(&m)).unwrap();
     assert_eq!(borsh::to_vec(&m).unwrap(), old, "the same bytes the derived layout wrote");
     let read = Match::try_from_slice(&old).unwrap();
     assert!(read.game.extras.is_off() && read.game.tickets.is_none());
     assert_eq!(read.game, m.game);
+    assert_eq!(stored_again("plain").game, m.game, "and it comes back from storage, where the map writes its own bytes after it");
     assert_eq!(c.get_match("plain".into()).unwrap()["meta"]["rules"], json!({ "salary": 200, "cash": 2000, "blitz": true, "maxRounds": 12 }));
     assert!(c.get_match("plain".into()).unwrap()["game"].get("tickets").is_none());
 }
@@ -114,18 +122,27 @@ fn a_match_without_the_new_rules_is_stored_byte_for_byte_as_before_and_old_bytes
 fn a_match_with_the_new_rules_keeps_them_in_a_tail_after_the_old_layout() {
     let mut c = contract();
     started(&mut c, "tix", 4, Extras { tickets: true, leader_rent: true });
+    c.matches.flush();
     let m = c.matches.get("tix").unwrap().clone();
     let bytes = borsh::to_vec(&m).unwrap();
     let old = borsh::to_vec(&as_before(&m)).unwrap();
-    assert_eq!(&bytes[..old.len()], &old[..], "the old layout first, unchanged");
+    // The old layout first; one bit of the status byte says a tail follows it.
+    let flagged: Vec<usize> = (0..old.len()).filter(|&i| bytes[i] != old[i]).collect();
+    assert_eq!(flagged.len(), 1, "one byte differs");
+    assert_eq!(bytes[flagged[0]], old[flagged[0]] | MATCH_TAIL_FLAG);
     assert_eq!(bytes[old.len()], MATCH_TAIL_V1);
     let read = Match::try_from_slice(&bytes).unwrap();
     assert_eq!(read.game, m.game, "extras and tickets come back");
+    assert_eq!(read.status, Status::Playing);
+    // Whatever follows the match in storage (the map's own index) is left alone, with a tail and without.
+    let (again, index) = <(Match, u32)>::try_from_slice(&borsh::to_vec(&(m.clone(), 1u32)).unwrap()).unwrap();
+    assert_eq!((again.game, index), (m.game.clone(), 1));
+    assert_eq!(stored_again("tix").game, m.game, "and it comes back from storage");
     assert_eq!(read.game.tickets.as_ref().unwrap().held.len(), 4);
     assert!(read.game.tickets.as_ref().unwrap().held.values().all(|held| held.len() == 1), "a ticket each at the start");
     // A tail this code does not know is refused, not misread.
-    let mut unknown = old.clone();
-    unknown.push(9);
+    let mut unknown = bytes.clone();
+    unknown[old.len()] = 9;
     assert!(Match::try_from_slice(&unknown).is_err());
     let view = c.get_match("tix".into()).unwrap();
     assert_eq!(view["meta"]["rules"], json!({ "salary": 200, "cash": 2000, "blitz": true, "maxRounds": 12, "tickets": true, "leaderRent": true }));

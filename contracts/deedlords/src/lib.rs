@@ -104,8 +104,10 @@ pub struct Seat {
 /// Full state of an unfinished match. Deleted when the match is settled or abandoned.
 ///
 /// Stored with borsh, by hand (below): the fields in this order, which is the layout every deployment has stored, and
-/// then, only for a match opened with tickets or the leader's rent, a tail ([`MATCH_TAIL_V1`]). A match without them
-/// is stored byte for byte as before those rules existed, and a match stored before them reads as one without.
+/// then, only for a match opened with tickets or the leader's rent, a tail ([`MATCH_TAIL_V1`]) that the top bit of the
+/// stored status byte announces ([`MATCH_TAIL_FLAG`]). A match without them is stored byte for byte as before those
+/// rules existed, and a match stored before them reads as one without. (The map that holds the matches writes its own
+/// bytes after each of them, so the end of the value cannot tell whether a tail is there: the flag does.)
 #[derive(Clone, Debug)]
 pub struct Match {
     pub rules: Rules,
@@ -130,6 +132,8 @@ pub struct Match {
 /// First byte of the tail of a stored [`Match`]: after it come the game's `extras` and `tickets` (ENGINE-RULES §10),
 /// which the engine leaves out of its own borsh form.
 pub const MATCH_TAIL_V1: u8 = 1;
+/// Set on the stored status byte (a [`Status`] is 0..=3) of a match that has a tail after its game.
+pub const MATCH_TAIL_FLAG: u8 = 0x80;
 
 impl BorshSerialize for Match {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
@@ -140,14 +144,17 @@ impl BorshSerialize for Match {
         BorshSerialize::serialize(&self.solo_player, writer)?;
         BorshSerialize::serialize(&self.creator, writer)?;
         BorshSerialize::serialize(&self.storage_deposit, writer)?;
-        BorshSerialize::serialize(&self.status, writer)?;
+        let tail = !self.game.extras.is_off();
+        let mut status = [0u8; 1];
+        BorshSerialize::serialize(&self.status, &mut status.as_mut_slice())?;
+        writer.write_all(&[status[0] | if tail { MATCH_TAIL_FLAG } else { 0 }])?;
         BorshSerialize::serialize(&self.created_at, writer)?;
         BorshSerialize::serialize(&self.last_activity, writer)?;
         BorshSerialize::serialize(&self.turn_seconds, writer)?;
         BorshSerialize::serialize(&self.turn_deadline, writer)?;
         BorshSerialize::serialize(&self.draws, writer)?;
         BorshSerialize::serialize(&self.game, writer)?;
-        if !self.game.extras.is_off() {
+        if tail {
             BorshSerialize::serialize(&MATCH_TAIL_V1, writer)?;
             BorshSerialize::serialize(&self.game.extras, writer)?;
             BorshSerialize::serialize(&self.game.tickets, writer)?;
@@ -158,15 +165,24 @@ impl BorshSerialize for Match {
 
 impl BorshDeserialize for Match {
     fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let rules = BorshDeserialize::deserialize_reader(reader)?;
+        let stake = BorshDeserialize::deserialize_reader(reader)?;
+        let split = BorshDeserialize::deserialize_reader(reader)?;
+        let seats = BorshDeserialize::deserialize_reader(reader)?;
+        let solo_player = BorshDeserialize::deserialize_reader(reader)?;
+        let creator = BorshDeserialize::deserialize_reader(reader)?;
+        let storage_deposit = BorshDeserialize::deserialize_reader(reader)?;
+        let status = u8::deserialize_reader(reader)?;
+        let tail = status & MATCH_TAIL_FLAG != 0;
         let mut m = Match {
-            rules: BorshDeserialize::deserialize_reader(reader)?,
-            stake: BorshDeserialize::deserialize_reader(reader)?,
-            split: BorshDeserialize::deserialize_reader(reader)?,
-            seats: BorshDeserialize::deserialize_reader(reader)?,
-            solo_player: BorshDeserialize::deserialize_reader(reader)?,
-            creator: BorshDeserialize::deserialize_reader(reader)?,
-            storage_deposit: BorshDeserialize::deserialize_reader(reader)?,
-            status: BorshDeserialize::deserialize_reader(reader)?,
+            rules,
+            stake,
+            split,
+            seats,
+            solo_player,
+            creator,
+            storage_deposit,
+            status: Status::try_from_slice(&[status & !MATCH_TAIL_FLAG])?,
             created_at: BorshDeserialize::deserialize_reader(reader)?,
             last_activity: BorshDeserialize::deserialize_reader(reader)?,
             turn_seconds: BorshDeserialize::deserialize_reader(reader)?,
@@ -174,17 +190,11 @@ impl BorshDeserialize for Match {
             draws: BorshDeserialize::deserialize_reader(reader)?,
             game: BorshDeserialize::deserialize_reader(reader)?,
         };
-        // Nothing after the game: a match without the later rules, or one stored before they existed.
-        let mut tail = [0u8; 1];
-        loop {
-            match reader.read(&mut tail) {
-                Ok(0) => return Ok(m),
-                Ok(_) => break,
-                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(error) => return Err(error),
-            }
+        // No flag: a match without the later rules, or one stored before they existed.
+        if !tail {
+            return Ok(m);
         }
-        if tail[0] != MATCH_TAIL_V1 {
+        if u8::deserialize_reader(reader)? != MATCH_TAIL_V1 {
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "unknown match tail"));
         }
         m.game.extras = Extras::deserialize_reader(reader)?;
