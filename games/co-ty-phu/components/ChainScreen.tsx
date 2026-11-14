@@ -72,12 +72,14 @@ function Table({ id, state, helper, onSignIn }: { id: string; state: PlayerState
   const accountId = player?.accountId ?? null;
   const autopilot = useAutopilot(id, room, playTurn, accountId);
   // While the player's agent has the seat it plays whole turns: the room does not throw the dice or end a turn itself.
-  // Nor while the board is still playing rolls the chain has already made (TycoonScreen `useRollPace`): the dice are
-  // thrown for somebody who has seen their turn come and let it wait, not for somebody still watching the turn before.
-  const { hold } = room;
+  // And while the board is still playing rolls the chain has already made (TycoonScreen `useRollPace`) the room is
+  // told so: the dice are thrown for somebody who has seen their turn come and let it wait, not for somebody still
+  // watching the turn before.
+  const { hold, watch } = room;
   const handed = Boolean(autopilot?.on);
   const [behind, setBehind] = useState(false);
-  useEffect(() => hold(handed || behind), [hold, handed, behind]);
+  useEffect(() => hold(handed), [hold, handed]);
+  useEffect(() => watch(behind), [watch, behind]);
   const notes = useAgentNotes(id, match?.meta.status === "playing");
   const sponsor = useFreeSponsor();
   // At a free table the house agent moves when somebody with the match open asks the server for its turn.
