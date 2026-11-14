@@ -485,6 +485,31 @@ test("Blitz: a turn is not ended while a house can still go up; the last house t
   assert.equal(room.getState().view!.current, "s1");
 });
 
+test("Blitz: each house that goes up gives whoever is building the fifteen seconds again", async () => {
+  const chain = new FakeChain(3, true);
+  for (const key of Object.keys(chain.game.props)) delete chain.game.props[Number(key)];
+  chain.game.props[1] = { owner: "s0", houses: 0, mortgaged: false };
+  chain.game.props[3] = { owner: "s0", houses: 0, mortgaged: false };
+  chain.dice = [[1, 3]]; // Airport Tax: nothing to buy, houses can go up in São Paulo and Cape Town
+  const clock = { now: 0 };
+  const room = auto(chain, clock);
+  await room.refresh();
+  room.send({ t: "roll" });
+  await room.idle();
+  await after(room, clock, 14_000);
+  room.send({ t: "build", square: 1 });
+  await room.idle();
+  assert.deepEqual(chain.calls.at(-1)!.actions, [{ Build: 1 }], "Cape Town can still take a house: the turn is not ended with this one");
+  assert.equal(room.getState().view!.autoInMs, 15_000, "the count starts again");
+  // Sixteen seconds after the roll, two after the house: the turn is still theirs.
+  await after(room, clock, 2_000);
+  assert.equal(room.getState().view!.current, "s0");
+  assert.deepEqual(chain.calls.at(-1)!.actions, [{ Build: 1 }]);
+  await after(room, clock, 13_100);
+  assert.deepEqual(chain.calls.at(-1)!.actions, ["End"]);
+  assert.equal(room.getState().view!.props[3].houses, 0, "the house not built is passed over");
+});
+
 test("without autoPlay a purchase is only a purchase", async () => {
   const chain = new FakeChain();
   const room = roomFor(chain, "alice.test");

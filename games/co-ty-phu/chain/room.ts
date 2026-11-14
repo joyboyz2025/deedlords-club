@@ -495,7 +495,8 @@ export class ChainRoom {
       }
       return;
     }
-    const key = `${match.game.round}:${match.game.rolls}:${game.stage}:${game.again}:${game.buildAt ?? ""}:${move.after}`;
+    // A house that has gone up (Blitz) is a step of its own: whoever is building is given the wait again, not cut short.
+    const key = `${match.game.round}:${match.game.rolls}:${game.stage}:${game.again}:${game.buildAt ?? ""}:${match.game.builtThisTurn.length}:${move.after}`;
     const now = this.now();
     if (this.idleTurn?.key !== key) {
       this.idleTurn = { key, since: now, after: move.after };
