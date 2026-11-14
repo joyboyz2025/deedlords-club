@@ -41,7 +41,25 @@ export const STORAGE_DEPOSIT = 60_000_000_000_000_000_000_000n;
  * `seats`: 2 when not said. `host`: the account that starts the game once every seat is taken; without one the game
  * starts by itself with the last seat.
  */
-export type DuelTerms = { stake: bigint; maxRounds: number; turnSeconds: number; seats?: number; host?: string | null };
+export type DuelTerms = { stake: bigint; maxRounds: number; turnSeconds: number; seats?: number; host?: string | null; extras?: Extras };
+
+/**
+ * The rules a match may be opened with on top of `RULES`, when the contract has them: special tickets, and double rent
+ * for whoever leads on net worth (docs/ENGINE-RULES.md §10). A contract deployed before them ignores the fields, so
+ * they are sent only to a contract that lists them (`extrasOf`).
+ */
+export type Extras = { tickets: boolean; leaderRent: boolean };
+export const NO_EXTRAS: Extras = { tickets: false, leaderRent: false };
+
+/**
+ * What a match is opened with here, from the contract's `get_config`: `features` lists the opt-in rules it knows; an
+ * older contract has no such list, and gets today's match. `NEXT_PUBLIC_DEEDLORDS_EXTRAS=off` keeps a deployment of
+ * the page on today's match whatever the contract knows (matches already open with the rules play on with them).
+ */
+export function extrasOf(config: { features?: unknown } | null | undefined, off: boolean = process.env.NEXT_PUBLIC_DEEDLORDS_EXTRAS === "off"): Extras {
+  const features = !off && Array.isArray(config?.features) ? config.features : [];
+  return { tickets: features.includes("tickets"), leaderRent: features.includes("leaderRent") };
+}
 
 /**
  * The rules of every match opened from the web page: Blitz. Each seat is dealt five squares, paid at their price out
@@ -64,7 +82,7 @@ export function createDuelCall(id: string, terms: DuelTerms): FunctionCall {
     seats,
     stake: terms.stake.toString(),
     split: SPLITS[seats] ?? SPLITS[2],
-    rules: { ...RULES, max_rounds: terms.maxRounds },
+    rules: { ...RULES, max_rounds: terms.maxRounds, ...(terms.extras?.tickets ? { tickets: true } : {}), ...(terms.extras?.leaderRent ? { leaderRent: true } : {}) },
     solo_player: null,
     turn_seconds: terms.turnSeconds,
     ...(terms.host ? { host: terms.host } : {}),
@@ -101,9 +119,10 @@ export function freeTableCalls(
   withAgent: boolean,
   room: { host: string; seats: number } | null = null,
   agents = 1,
+  extras: Extras = NO_EXTRAS,
 ): FunctionCall[] {
   const seats = withAgent ? 1 + agents : room?.seats;
-  const create = createDuelCall(id, { stake: 0n, maxRounds, turnSeconds, seats, host: room?.host });
+  const create = createDuelCall(id, { stake: 0n, maxRounds, turnSeconds, seats, host: room?.host, extras });
   // Against the house, its agents take every seat but the visitor's: the last seat taken, the visitor's, starts the
   // game. In a room of friends they take the seats after the host's (`agents` of them, none unless asked for), the
   // friends take the rest, and the host starts it.
@@ -179,6 +198,19 @@ export function winLine(rules: { blitz: boolean; maxRounds: number }): string {
     ? `The last seat standing wins. Should round ${TO_THE_END} ever end, the highest net worth wins: ${worth}.`
     : `The last seat standing wins; after round ${rules.maxRounds} the highest net worth wins: ${worth}.`;
 }
+/** One ticket as the table, the rules sheet and the gate say it. */
+export type TicketLine = { ticket: "waiver" | "steps" | "takeover" | "festival"; name: string; when: string; does: string };
+export const TICKET_LINES: TicketLine[] = [
+  { ticket: "waiver", name: "Rent waiver", when: "Before you throw", does: "The next rent you would owe this turn is not charged. Unused, it is gone when your turn ends." },
+  { ticket: "steps", name: "Pick your steps", when: "Instead of a throw", does: "Move any number of steps from 2 to 12 instead of rolling. A chosen double gives no second throw." },
+  { ticket: "takeover", name: "Takeover", when: "After you land", does: "Buy the city you stand on from its owner for twice its price. Only a city with no house, not mortgaged." },
+  { ticket: "festival", name: "Festival", when: "Before you throw", does: "Your cities charge double rent until your next turn starts." },
+];
+/** How tickets come and go, in two sentences. */
+export const TICKETS_LINE = "Every seat starts with one random ticket and draws another each time it passes Departure, never holding more than two. A ticket is played on your own turn and is then used up.";
+/** The leader's rent, in one sentence. */
+export const LEADER_LINE = "Whoever leads on net worth pays double rent (a tie for the lead: nobody does). On a city with a Festival the leader pays triple.";
+
 /**
  * A turn's clock, in seconds, in matches opened from the web page: after it the contract moves for whoever is late
  * (`timeout`). Long enough for an AI seat's model to answer and its transaction to land.

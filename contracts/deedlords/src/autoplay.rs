@@ -33,6 +33,28 @@ pub struct Plan {
     pub liquidate: Vec<u8>,
 }
 
+/// The tickets a plan plays, in a match that has them (ENGINE-RULES §10.2): the `tickets` object of the plan's JSON,
+/// every field optional, nothing played by default. Each ticket is played only if the seat holds it and the rules
+/// allow it at that moment; a ticket the seat does not hold is simply not played.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(crate = "near_sdk::serde", default)]
+pub struct TicketPlan {
+    /// Play a Rent waiver before the next throw.
+    pub waiver: bool,
+    /// Play a Festival before the next throw.
+    pub festival: bool,
+    /// 2..=12: play "Pick your steps" with that many steps instead of rolling. Anything else: roll.
+    pub steps: u8,
+    /// Cities to take over when the seat stops on one of them, if `cash - 2 * price >= buy_reserve`.
+    pub takeover: Vec<u8>,
+}
+
+impl TicketPlan {
+    pub fn is_empty(&self) -> bool {
+        *self == TicketPlan::default()
+    }
+}
+
 /// Longest `build` / `liquidate` list accepted (bounds the gas of a plan).
 pub const MAX_PLAN_LIST: usize = 40;
 /// Safety bound on the driver loop. A turn needs far fewer steps (at most 3 rolls, each followed by a few actions).
@@ -157,21 +179,55 @@ fn build_pass<R: Rng + ?Sized>(game: &mut Game, seat: &str, plan: &Plan, rng: &m
     Ok(())
 }
 
+/// A throw by the plan: its Festival and its Rent waiver first, each if the seat holds one and may play it now; then
+/// "Pick your steps" with the plan's steps if the seat may play that, else the dice. In a match without tickets none of
+/// them is ever allowed, and this is `Roll`.
+fn throw<R: Rng + ?Sized>(
+    game: &mut Game,
+    seat: &str,
+    tickets: &TicketPlan,
+    rng: &mut R,
+    steps: &mut Vec<Step>,
+) -> Result<(), EngineError> {
+    for (wanted, action) in [(tickets.festival, Action::Festival), (tickets.waiver, Action::Waiver)] {
+        if wanted && game.check(Some(seat), action).is_ok() {
+            apply_logged(game, Some(seat), action, rng, steps)?;
+        }
+    }
+    let chosen = Action::Steps(tickets.steps);
+    let action = if game.check(Some(seat), chosen).is_ok() { chosen } else { Action::Roll };
+    apply_logged(game, Some(seat), action, rng, steps)
+}
+
 /// Plays the rest of `seat`'s turn with `plan`, deterministically. `seat` must be the current player.
 ///
 /// ```text
 /// loop while the game is playing and seat is the current player:
 ///   stage roll:  if in jail and plan.bail: use a leave-jail card if held, else pay bail if affordable.
-///                Roll.
+///                Throw (see `throw`: the tickets to play, then the chosen steps or Roll).
 ///   stage debt:  resolve_debt(plan.liquidate).
 ///   stage buy:   Buy if cash - price >= plan.buy_reserve (and affordable), else Skip.
-///   stage end:   once per roll (the first time stage end is seen after each roll): build pass over plan.build.
-///                Then Roll again if doubles granted another roll, else End (the turn passes; stop).
+///   stage end:   once per roll (the first time stage end is seen after each roll): Takeover if the city stood on is in
+///                tickets.takeover, the rules allow it and cash - 2 * price >= plan.buy_reserve; then the build pass
+///                over plan.build.
+///                Then throw again if doubles granted another roll, else End (the turn passes; stop).
 /// ```
 ///
 /// A third doubles sends the player to jail with no further roll; bankruptcy or the round limit can end the turn or the
 /// game early; the loop stops as soon as `seat` is no longer the current player.
 pub fn play_turn<R: Rng + ?Sized>(game: &mut Game, seat: &str, plan: &Plan, rng: &mut R, steps: &mut Vec<Step>) -> Result<(), EngineError> {
+    play_turn_with(game, seat, plan, &TicketPlan::default(), rng, steps)
+}
+
+/// [`play_turn`] with the tickets the plan plays.
+pub fn play_turn_with<R: Rng + ?Sized>(
+    game: &mut Game,
+    seat: &str,
+    plan: &Plan,
+    tickets: &TicketPlan,
+    rng: &mut R,
+    steps: &mut Vec<Step>,
+) -> Result<(), EngineError> {
     let mut built_after_roll: Option<u32> = None;
     for _ in 0..MAX_DRIVER_STEPS {
         if !is_current(game, seat) {
@@ -187,7 +243,7 @@ pub fn play_turn<R: Rng + ?Sized>(game: &mut Game, seat: &str, plan: &Plan, rng:
                         apply_logged(game, Some(seat), Action::Bail, rng, steps)?;
                     }
                 }
-                apply_logged(game, Some(seat), Action::Roll, rng, steps)?;
+                throw(game, seat, tickets, rng, steps)?;
             }
             Stage::Debt => resolve_debt(game, seat, &plan.liquidate, rng, steps)?,
             Stage::Buy => {
@@ -200,11 +256,17 @@ pub fn play_turn<R: Rng + ?Sized>(game: &mut Game, seat: &str, plan: &Plan, rng:
             Stage::End => {
                 if built_after_roll != Some(game.rolls) {
                     built_after_roll = Some(game.rolls);
+                    let position = game.player(seat).map_or(0, |p| p.position);
+                    let cost = board::price(position).unwrap_or(i64::MAX / 2).saturating_mul(2);
+                    let wanted = tickets.takeover.contains(&position) && cash_of(game, seat).saturating_sub(cost) >= plan.buy_reserve;
+                    if wanted && game.check(Some(seat), Action::Takeover).is_ok() {
+                        apply_logged(game, Some(seat), Action::Takeover, rng, steps)?;
+                    }
                     build_pass(game, seat, plan, rng, steps)?;
                     continue;
                 }
                 if game.again {
-                    apply_logged(game, Some(seat), Action::Roll, rng, steps)?;
+                    throw(game, seat, tickets, rng, steps)?;
                 } else {
                     apply_logged(game, Some(seat), Action::End, rng, steps)?;
                     break;

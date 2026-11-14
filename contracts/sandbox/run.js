@@ -12,6 +12,10 @@
 // played with exactly the floor attached and the largest plan the contract accepts; (f) the fee: 2.5% of every settled
 // pot adds up in the contract and only the owner can withdraw it, and nothing but it.
 // (h) the transaction a web wallet signs to open a match: create_match + join in one, and its refusal as a whole.
+// (i) tickets and the leader's rent (docs/ENGINE-RULES.md section 10): get_config lists them; a match opened without
+// them has no ticket state and refuses ticket moves; matches opened with them, of 2 and of 4 seats, are played to
+// settlement, one seat move by move through play() and the others through turn() with the tickets in their plan,
+// until every ticket has been played through the contract.
 // With DEEDLORDS_V1_WASM=<wasm built before the fee existed> also (g): that wasm is deployed to a second account, a
 // match is settled on it, then the new wasm is deployed over it with migrate() in the same transaction.
 // Prints gas per join/turn/play, the heaviest calls against the gas floor, the wasm size and storage bytes per match.
@@ -573,6 +577,114 @@ async function scenarioWalletBatch(acc) {
 }
 
 /// (g) Upgrade in place: the wasm from before the fee on a second account, then deploy + migrate in one transaction.
+/// (i) Tickets and the leader's rent, through the contract.
+async function scenarioTickets(acc) {
+  console.log("\n(i) tickets and the leader's rent: opt-in by rules, every ticket through the contract, tables of 2 and 4 settled");
+  const squares = require("../../shared/board.json").squares;
+  const stake = NEAR(0.1);
+  assert.deepEqual((await view("get_config")).features, ["tickets", "leaderRent"], "get_config lists the opt-in rules");
+  const accounts = { [acc.alice.accountId]: acc.alice, [acc.bob.accountId]: acc.bob, [acc.carol.accountId]: acc.carol };
+  const signerOf = (m, seat) => accounts[m.meta.seats[seat].backer];
+  const seen = { play: {}, turn: {}, waived: 0, taken: 0, raised: 0, tripled: 0, drew: 0 };
+  const note = (path, outcome) => {
+    for (const event of eventsOf(outcome)) {
+      for (const step of event.data?.steps ?? []) {
+        for (const e of step.events ?? []) {
+          if (e.kind === "played") seen[path][e.ticket] = (seen[path][e.ticket] ?? 0) + 1;
+          if (e.kind === "waived") seen.waived += 1;
+          if (e.kind === "taken") seen.taken += 1;
+          if (e.kind === "drew") seen.drew += 1;
+          if (e.kind === "raised") [seen.raised, seen.tripled] = [seen.raised + 1, seen.tripled + (e.festival && e.leader ? 1 : 0)];
+        }
+      }
+    }
+  };
+  const open = async (id, seats, rules, backers) => {
+    await createMatch(acc.alice, id, { seats, stake, split: seats === 2 ? [7000, 3000] : [5000, 3000, 1500, 500], rules, turnSeconds: 120 });
+    for (const [seat, backer] of backers.entries()) await call(backer, "join", { id, seat }, stake);
+    return view("get_match", { id });
+  };
+
+  // Without the rules, on this build: the match of before. No ticket state, no ticket move, and a plan's tickets do nothing.
+  let m = await open("plain-1", 2, { salary: 200, cash: 2000, blitz: true, max_rounds: 2 }, [acc.alice, acc.bob]);
+  assert.deepEqual(m.meta.rules, { salary: 200, cash: 2000, blitz: true, maxRounds: 2 });
+  assert.equal("tickets" in m.game, false, "no ticket state in a match opened without tickets");
+  await expectFail(call(signerOf(m, m.meta.current_seat), "play", { id: "plain-1", seat: m.meta.current_seat, actions: ["Waiver"] }), "not allowed");
+  await expectFail(call(signerOf(m, m.meta.current_seat), "play", { id: "plain-1", seat: m.meta.current_seat, actions: [{ Steps: 7 }] }), "not allowed");
+  const everything = { waiver: true, festival: true, steps: 7, takeover: ALL_CITIES };
+  for (let turns = 0; turns < 20 && (m = await view("get_match", { id: "plain-1" })) !== null; turns++) {
+    const out = await call(signerOf(m, m.meta.current_seat), "turn", { id: "plain-1", seat: m.meta.current_seat, plan: { buy_reserve: 150, build: ALL_CITIES, keep_reserve: 250, bail: true, liquidate: [], tickets: everything } });
+    assert.ok(!JSON.stringify(eventsOf(out)).includes('"played"'), "a plan's tickets do nothing in a match without tickets");
+  }
+  assert.ok(await view("get_result", { id: "plain-1" }), "the match without tickets settled");
+  settledIds.push("plain-1");
+  console.log("  a match opened without the rules: no ticket state, ticket moves refused, settled as ever");
+
+  // One seat as a person plays it: its tickets by play(), then the rest of the turn. `build`: whether houses go up
+  // (with none, cities stay open to a Takeover).
+  const personTurn = async (id, m, n, build) => {
+    const seat = m.meta.current_seat;
+    const me = `s${seat}`;
+    const signer = signerOf(m, seat);
+    const player = m.game.players.find((p) => p.id === me);
+    const held = m.game.tickets.held[me];
+    if (m.game.stage === "roll") {
+      const actions = [];
+      if (held.includes("festival") && !m.game.tickets.festival.includes(me)) actions.push("Festival");
+      if (held.includes("waiver") && !m.game.tickets.waiver) actions.push("Waiver");
+      actions.push(held.includes("steps") && player.jail === null ? { Steps: 2 + (n % 11) } : "Roll");
+      note("play", await call(signer, "play", { id, seat, actions }));
+      m = await view("get_match", { id });
+      if (m === null || m.meta.current_seat !== seat) return;
+    }
+    const now = m.game.players.find((p) => p.id === me);
+    const square = squares[now.position];
+    const owned = m.game.props[now.position];
+    const takeable = m.game.stage === "end" && m.game.tickets.held[me].includes("takeover") && square.kind === "city" && owned && owned.owner !== me && owned.houses === 0 && !owned.mortgaged && now.cash >= 2 * square.price;
+    if (takeable) {
+      note("play", await call(signer, "play", { id, seat, actions: ["Takeover"] }));
+      const after = await view("get_match", { id });
+      assert.equal(after.game.props[now.position].owner, me, "the city changed hands");
+      assert.equal(after.game.players.find((p) => p.id === me).cash, now.cash - 2 * square.price, "for twice its price");
+    }
+    note("turn", await call(signer, "turn", { id, seat, plan: { buy_reserve: 0, build: build ? ALL_CITIES : [], keep_reserve: 150, bail: true, liquidate: [] } }));
+  };
+  const agentTurn = async (id, m, build) =>
+    note("turn", await call(signerOf(m, m.meta.current_seat), "turn", { id, seat: m.meta.current_seat, plan: { buy_reserve: 0, build: build ? ALL_CITIES : [], keep_reserve: 150, bail: true, liquidate: [], tickets: { ...everything, steps: 2 + (m.game.rolls % 11) } } }));
+  const playOut = async (id, seats, rounds, backers, build) => {
+    let m = await open(id, seats, { salary: 200, cash: 2000, blitz: true, max_rounds: rounds, tickets: true, leaderRent: true }, backers);
+    assert.deepEqual(m.meta.rules, { salary: 200, cash: 2000, blitz: true, maxRounds: rounds, tickets: true, leaderRent: true });
+    assert.deepEqual(Object.values(m.game.tickets.held).map((held) => held.length), Array(seats).fill(1), "a ticket each at the start");
+    let turns = 0;
+    for (; turns < 400 && (m = await view("get_match", { id })) !== null; turns++) {
+      assert.ok(Object.values(m.game.tickets.held).every((held) => held.length <= 2), "never more than two tickets");
+      // Seat 0 is played move by move, as a person does; the others by plan, as agents do.
+      if (m.meta.current_seat === 0) await personTurn(id, m, turns, build);
+      else await agentTurn(id, m, build);
+    }
+    const result = await view("get_result", { id });
+    assert.ok(result, `${id} settled`);
+    settledIds.push(id);
+    return { turns, result };
+  };
+
+  const two = await playOut("tix-2", 2, 12, [acc.alice, acc.bob], false);
+  console.log(`  a table of two with tickets settled after ${two.turns} turns (${two.result.reason})`);
+  const four = await playOut("tix-4", 4, 6, [acc.alice, acc.bob, acc.carol, acc.bob], true);
+  console.log(`  a table of four with tickets settled after ${four.turns} turns (${four.result.reason})`);
+  const all = ["waiver", "steps", "takeover", "festival"];
+  const missing = () => all.filter((ticket) => !((seen.play[ticket] ?? 0) + (seen.turn[ticket] ?? 0)));
+  for (let extra = 0; extra < 6 && missing().length > 0; extra++) {
+    const more = await playOut(`tix-more-${extra}`, 2, 12, [acc.alice, acc.bob], false);
+    console.log(`  one more table of two for ${missing().join(", ") || "nothing"}: settled after ${more.turns} turns`);
+  }
+  console.log(`  tickets played move by move (play): ${JSON.stringify(seen.play)}; by plan (turn): ${JSON.stringify(seen.turn)}`);
+  console.log(`  tickets drawn at Departure ${seen.drew}; rents a waiver took ${seen.waived}; cities taken over ${seen.taken}; rents raised ${seen.raised} (tripled ${seen.tripled})`);
+  assert.deepEqual(missing(), [], "every ticket was played through the contract");
+  assert.ok(seen.raised > 0, "a rent was raised for the leader or a Festival");
+  assert.ok(seen.drew > 0, "tickets were drawn passing Departure");
+}
+
 async function scenarioUpgrade(acc, wasm, v1Path) {
   console.log(`\n(g) upgrade: ${v1Path} deployed first, then the new wasm with migrate()`);
   const main = contractId;
@@ -714,7 +826,10 @@ async function stopSandbox(sandbox) {
     console.log(`deployed to ${contractId}: contract storage ${await storageUsage(contractId) - empty} bytes (code + state)`);
     await expectFail(acc.alice.functionCall({ contractId, methodName: "new", args: { owner: acc.alice.accountId, house: acc.alice.accountId, max_stake: "0", fee_bps: 0 }, gas: GAS }), "");
 
-    const scenarios = [["a", scenarioSoloBlitz], ["b", scenarioClassicPlay], ["c", scenarioTimeout], ["d", scenarioAbandon], ["e", scenarioGasFloor], ["f", scenarioFees], ["h", scenarioWalletBatch]];
+    const scenarios = [["a", scenarioSoloBlitz], ["b", scenarioClassicPlay], ["c", scenarioTimeout], ["d", scenarioAbandon], ["e", scenarioGasFloor], ["f", scenarioFees], ["h", scenarioWalletBatch], ["i", scenarioTickets]];
+    // DEEDLORDS_ONLY=i runs one scenario (or a few: "a,i").
+    const only = process.env.DEEDLORDS_ONLY?.split(",");
+    if (only) scenarios.splice(0, scenarios.length, ...scenarios.filter(([name]) => only.includes(name)));
     const v1Path = process.env.DEEDLORDS_V1_WASM;
     if (v1Path) scenarios.push(["g", (a) => scenarioUpgrade(a, wasm, v1Path)]);
     else console.log("(g) upgrade from the first layout: skipped, set DEEDLORDS_V1_WASM to a wasm built before the fee existed");

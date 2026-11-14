@@ -8,7 +8,7 @@ import { PLAYBOOK_DRIVER } from "../agent/advise";
 import { TOKEN_COLORS } from "../board";
 import { BLITZ_DEAL } from "../engine";
 import { accountLabel, formatBps, formatNear, playerName, seatNames } from "../chain/adapt";
-import { MOVE_HOLD, joinCalls, near, roundsLabel, startCall, upfront, winLine } from "../chain/calls";
+import { LEADER_LINE, MOVE_HOLD, TICKETS_LINE, TICKET_LINES, joinCalls, near, roundsLabel, startCall, upfront, winLine } from "../chain/calls";
 import { devJoin, devSeatAgent, useDevConfig, type DevConfig } from "../chain/devSession";
 import type { ChainMatch, ChainResult } from "../chain/types";
 import { armAgent, useAgent } from "../chain/useAgent";
@@ -179,6 +179,7 @@ function Table({ id, state, helper, onSignIn }: { id: string; state: PlayerState
           busy,
           onBehind: setBehind,
           here: room.here,
+          choosing: room.choose,
           agents,
           autopilot: autopilot && {
             on: autopilot.on,
@@ -460,6 +461,27 @@ function Lobby({
                 <dt>How it is won</dt>
                 <dd>{winLine(meta.rules)}</dd>
               </div>
+              {meta.rules.leaderRent && (
+                <div className="fd-terms__wide">
+                  <dt>The leader</dt>
+                  <dd>{LEADER_LINE}</dd>
+                </div>
+              )}
+              {meta.rules.tickets && (
+                <div className="fd-terms__wide">
+                  <dt>Special tickets</dt>
+                  <dd>
+                    {TICKETS_LINE}
+                    <ul className="fd-specials">
+                      {TICKET_LINES.map((line) => (
+                        <li key={line.ticket}>
+                          <b>{line.name}.</b> {line.does}
+                        </li>
+                      ))}
+                    </ul>
+                  </dd>
+                </div>
+              )}
             </dl>
           </section>
           <Link className="fd-back" href="/play">

@@ -19,6 +19,12 @@ import {
   buy,
   canBuild,
   canMortgage,
+  canPlay,
+  playFestival,
+  playSteps,
+  playWaiver,
+  takeover,
+  ticketsOf,
   canSell,
   createGame,
   currentPlayer,
@@ -45,12 +51,14 @@ import { RecordingRng, gameSeed, mulberry32, prngRng, type RngCall } from "./rng
 import { snapshot, type Snapshot } from "./snapshot.ts";
 
 export const OPS = ["start", "roll", "buy", "skip", "end", "bail", "card", "pay", "bankrupt", "build", "sell", "mortgage", "redeem", "auto", "resign"] as const;
-export type Op = (typeof OPS)[number];
+/** The ops of a game with tickets (ENGINE-RULES §10.2); `steps` takes the steps as its index. Never in a `game-` trace. */
+export const TICKET_OPS = ["waiver", "steps", "takeover", "festival"] as const;
+export type Op = (typeof OPS)[number] | (typeof TICKET_OPS)[number];
 /** Ops only the current player may do. */
 const TURN_OPS: Op[] = ["roll", "buy", "skip", "end", "bail", "card", "pay", "bankrupt"];
 const INDEXED_OPS: Op[] = ["build", "sell", "mortgage", "redeem"];
 
-export type Rules = { salary: number; cash: number; blitz: boolean; maxRounds: number };
+export type Rules = { salary: number; cash: number; blitz: boolean; maxRounds: number; tickets?: boolean; leaderRent?: boolean };
 export type TraceStep = { op: Op; player: string | null; index: number | null; rng: RngCall[]; ok: boolean; state: Snapshot };
 export type Trace = { version: 1; seed: number; rules: Rules; players: string[]; steps: TraceStep[] };
 
@@ -64,6 +72,8 @@ export function newTraceGame(players: string[], rules: Rules): Game {
   const game = createGame();
   players.forEach((id, i) => game.players.push(newPlayer(id, `secret-${id}`, id, i === 0)));
   game.settings = { limitMinutes: 0, salary: rules.salary, cash: rules.cash, autoSeconds: 0, maxRounds: rules.maxRounds, blitz: rules.blitz };
+  if (rules.tickets) game.settings.tickets = true;
+  if (rules.leaderRent) game.settings.leaderRent = true;
   return game;
 }
 
@@ -102,6 +112,14 @@ export function applyOp(game: Game, op: Op, player: string | null, index: number
       return;
     case "resign":
       return resign(game, id);
+    case "waiver":
+      return playWaiver(game, id);
+    case "steps":
+      return playSteps(game, id, index, rng);
+    case "takeover":
+      return takeover(game, id);
+    case "festival":
+      return playFestival(game, id);
   }
 }
 
@@ -286,6 +304,28 @@ function illegalMove(game: Game, random: () => number): Move {
   return { op: pick(TURN_OPS), player: pick(others), index: null, illegal: true };
 }
 
+/** A ticket the current player may play now, played about half the times it could be (a Takeover more often: it is rare). */
+function ticketMove(game: Game, me: Player, random: () => number): Move | null {
+  if (canPlay(game, me.id, "takeover") && random() < 0.8) return { op: "takeover", player: me.id, index: null };
+  for (const op of ["festival", "waiver", "steps"] as const) {
+    if (canPlay(game, me.id, op) && random() < 0.45) return { op, player: me.id, index: op === "steps" ? 2 + Math.floor(random() * 11) : null };
+  }
+  return null;
+}
+
+/** A ticket op that the rules should refuse: not the player's turn, a ticket not held, the wrong moment, steps off 2..12. */
+function illegalTicket(game: Game, me: Player, random: () => number): Move {
+  const pick = picker(random);
+  const op = pick(TICKET_OPS);
+  const others = game.players.filter((p) => p.id !== me.id);
+  const kind = Math.floor(random() * 4);
+  if (kind === 0 && others.length > 0) return { op, player: pick(others).id, index: op === "steps" ? 7 : null, illegal: true };
+  if (kind === 1) return { op: "steps", player: me.id, index: pick([0, 1, 13, 40, 255]), illegal: true };
+  const missing = TICKET_OPS.filter((ticket) => !ticketsOf(game, me.id).includes(ticket));
+  if (kind === 2 && missing.length > 0) return { op: pick(missing), player: me.id, index: 7, illegal: true };
+  return { op, player: me.id, index: op === "steps" ? 2 + Math.floor(random() * 11) : null, illegal: true };
+}
+
 function chooseMove(game: Game, random: () => number, params: Params, steps: number): Move {
   if (game.phase === "lobby") {
     // Now and then something illegal before the start.
@@ -295,6 +335,12 @@ function chooseMove(game: Game, random: () => number, params: Params, steps: num
       return { op, player: op === "auto" ? null : pick(game.players).id, index: INDEXED_OPS.includes(op) ? Math.floor(random() * 40) : null, illegal: true };
     }
     return { op: "start", player: null, index: null };
+  }
+  // Only a game with tickets draws these: a `game-` trace takes the same random values as before tickets existed.
+  if (game.settings.tickets) {
+    if (random() < 0.03) return illegalTicket(game, currentPlayer(game)!, random);
+    const play = ticketMove(game, currentPlayer(game)!, random);
+    if (play) return play;
   }
   if (random() < ILLEGAL_RATE) return illegalMove(game, random);
   const me = currentPlayer(game)!;
@@ -334,22 +380,35 @@ function effectName(effect: CardEffect): string {
   }
 }
 
-/** Plays one game and records its trace. */
-export function generateGame(seed: number, coverage: Coverage = new Coverage()): Trace {
+/**
+ * Plays one game and records its trace. `extras`: a game with the opt-in rules of ENGINE-RULES §10, mostly both, some
+ * with one of them; such a game draws more random values, so it is another game than the one of the same seed without.
+ */
+export function generateGame(seed: number, coverage: Coverage = new Coverage(), extras = false): Trace {
   const random = mulberry32(seed);
   const count = 2 + Math.floor(random() * 3);
   const players = Array.from({ length: count }, (_, i) => `p${i}`);
   const rules = pickRules(random);
+  if (extras) {
+    const r = random();
+    if (r < 0.85) rules.tickets = true;
+    if (r > 0.15) rules.leaderRent = true;
+    // Tickets come at Departure: most of these games are long enough to pass it a few times.
+    if (rules.maxRounds > 0 && rules.maxRounds < 8 && random() < 0.7) rules.maxRounds = 12;
+  }
   const params = pickParams(random);
   const source = prngRng(random, params.doubles);
   const rng = new RecordingRng(source);
   const game = newTraceGame(players, rules);
   coverage.add(`rules: ${rules.blitz ? "blitz" : "classic"}, ${rules.maxRounds === 0 ? "no round limit" : rules.maxRounds === 3 && rules.blitz ? "maxRounds 3" : "maxRounds > 0"}`);
+  if (extras) coverage.add(`extras: ${rules.tickets ? "tickets" : ""}${rules.tickets && rules.leaderRent ? " + " : ""}${rules.leaderRent ? "leader's rent" : ""}`);
   coverage.add(`players: ${count}`);
 
   let drawing = false;
-  rng.onBelow = (_n, value) => {
+  rng.onBelow = (n, value) => {
     if (!drawing) return;
+    // A ticket drawn passing Departure: `below(4)` (a deck holds 14 cards).
+    if (game.tickets && n === TICKET_OPS.length) return coverage.add(`ticket: drawn passing Departure (${TICKET_OPS[value]})`);
     const square = SQUARES[currentPlayer(game)!.position];
     if (square.kind !== "card") throw new Error("a card was drawn off a card square");
     coverage.add(`card ${square.deck}[${value}]`);
@@ -362,6 +421,8 @@ export function generateGame(seed: number, coverage: Coverage = new Coverage()):
     const move = chooseMove(game, random, params, steps.length);
     const me = currentPlayer(game);
     const was = me && { jail: me.jail, doubles: game.doubles, stage: game.stage, pendingMove: game.pendingMove, debt: game.debt, freeCards: me.freeCards.length };
+    const logged = game.log.length;
+    const [waiverWas, heldWas] = [game.tickets?.waiver ?? false, me ? ticketsOf(game, me.id).length : 0];
     source.reset();
     drawing = move.op !== "start";
     applyOp(game, move.op, move.player, move.index, rng);
@@ -408,6 +469,22 @@ export function generateGame(seed: number, coverage: Coverage = new Coverage()):
         if (was.freeCards > 0) coverage.add(toPlayer ? "bankrupt: free cards passed to the creditor" : "bankrupt: free cards dropped");
       }
     }
+    if (extras) {
+      // The text log says what the rules of section 10 did in this step (it never holds more than 30 lines: a step adds few).
+      const lines = game.log.slice(Math.max(0, game.log.length - Math.max(0, game.log.length - logged) - (game.log.length === 30 ? 6 : 0)));
+      if (move.op === "start" && game.tickets) coverage.add("ticket: dealt at the start", game.order.length);
+      if ((TICKET_OPS as readonly string[]).includes(move.op)) coverage.add(`ticket played: ${move.op}`);
+      if (waiverWas && !game.tickets?.waiver && me && currentPlayer(game)?.id === me.id && game.phase === "playing") coverage.add("waiver: a rent not charged");
+      if (waiverWas && me && currentPlayer(game)?.id !== me.id) coverage.add("waiver: unused when the turn passed");
+      if (me && me.bankrupt && heldWas > 0) coverage.add("ticket: lost in bankruptcy");
+      if (move.op === "roll" || move.op === "steps" || move.op === "auto" || move.op === "pay") {
+        if (lines.some((line) => line.startsWith("Triple rent"))) coverage.add("rent: tripled (Festival and the leader)");
+        else if (lines.some((line) => line.startsWith("Double rent") && line.includes("Festival"))) coverage.add("rent: doubled by a Festival");
+        else if (lines.some((line) => line.startsWith("Double rent"))) coverage.add("rent: doubled for the leader");
+      }
+      if (move.op === "steps" && calls.length > 0) coverage.add("steps: drew a card or a ticket");
+      if (me && (move.op === "roll" || move.op === "steps") && heldWas === 2 && lines.some((line) => line.includes(" passes ")) && ticketsOf(game, me.id).length === 2) coverage.add("ticket: none drawn at Departure (holds 2)");
+    }
     if (move.op === "build" && game.props[move.index!].houses === 5) coverage.add("build: hotel");
     if (move.op === "build" && game.settings.blitz) coverage.add("build: blitz");
     if (move.op === "build" && !game.settings.blitz) coverage.add("build: classic");
@@ -425,7 +502,7 @@ function printCoverage(coverage: Coverage, games: number, seed: number, out: str
   console.log("\nRules and players");
   for (const key of keys.filter((k) => k.startsWith("rules: ") || k.startsWith("players: "))) line(key, c(key));
   console.log(`\n  ${"op".padEnd(12)} ${"ok".padStart(9)} ${"illegal".padStart(9)}`);
-  for (const op of OPS) console.log(`  ${op.padEnd(12)} ${String(c(`op ${op} ok`)).padStart(9)} ${String(c(`op ${op} illegal`)).padStart(9)}`);
+  for (const op of [...OPS, ...TICKET_OPS]) console.log(`  ${op.padEnd(12)} ${String(c(`op ${op} ok`)).padStart(9)} ${String(c(`op ${op} illegal`)).padStart(9)}`);
   line("illegal picks that turned out legal", c("illegal pick that was legal"));
   console.log("\nCard effects");
   for (const key of keys.filter((k) => k.startsWith("effect "))) line(key.slice(7), c(key));
@@ -434,7 +511,7 @@ function printCoverage(coverage: Coverage, games: number, seed: number, out: str
   line(`distinct cards drawn (of ${cards.length})`, cards.filter((key) => c(key) > 0).length);
   line(`least drawn: ${least.slice(5)}`, c(least));
   console.log("\nTurns, jail, debt, bankruptcy, building");
-  for (const prefix of ["doubles", "jail: ", "auto: ", "debt: ", "bankrupt: ", "resign: ", "build: ", "blitz deal"])
+  for (const prefix of ["doubles", "jail: ", "auto: ", "debt: ", "bankrupt: ", "resign: ", "build: ", "blitz deal", "extras: ", "ticket", "waiver: ", "rent: ", "steps: "])
     for (const key of keys.filter((k) => k.startsWith(prefix))) line(key, c(key));
   console.log("\nEnd reasons");
   for (const key of keys.filter((k) => k.startsWith("end: "))) line(key.slice(5), c(key));
@@ -447,6 +524,8 @@ function main(): void {
     return at >= 0 && args[at + 1] !== undefined ? args[at + 1] : fallback;
   };
   const games = Number(option("games", "2000"));
+  // Games with the opt-in rules of ENGINE-RULES §10, written as tickets-NNNNN.json beside the others: a fifth as many unless told.
+  const withExtras = Number(option("tickets", String(Math.ceil(games / 5))));
   const seed = Number(option("seed", "1"));
   const out = option("out", "traces");
   if (!Number.isInteger(games) || games < 1 || !Number.isInteger(seed)) {
@@ -461,15 +540,19 @@ function main(): void {
     throw new Error("unrecorded below()");
   };
   mkdirSync(out, { recursive: true });
-  for (const file of readdirSync(out)) if (/^game-\d+\.json$/.test(file)) rmSync(join(out, file));
+  for (const file of readdirSync(out)) if (/^(game|tickets)-\d+\.json$/.test(file)) rmSync(join(out, file));
   const coverage = new Coverage();
   const started = performance.now();
   for (let g = 0; g < games; g++) {
     const trace = generateGame(gameSeed(seed, g), coverage);
     writeFileSync(join(out, `game-${String(g).padStart(5, "0")}.json`), JSON.stringify(trace));
   }
-  printCoverage(coverage, games, seed, out);
-  console.log(`\nWrote ${games} traces to ${out}/ in ${((performance.now() - started) / 1000).toFixed(1)} s`);
+  for (let g = 0; g < withExtras; g++) {
+    const trace = generateGame(gameSeed(seed, games + g), coverage, true);
+    writeFileSync(join(out, `tickets-${String(g).padStart(5, "0")}.json`), JSON.stringify(trace));
+  }
+  printCoverage(coverage, games + withExtras, seed, out);
+  console.log(`\nWrote ${games} + ${withExtras} traces to ${out}/ in ${((performance.now() - started) / 1000).toFixed(1)} s`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

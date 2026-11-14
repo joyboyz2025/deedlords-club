@@ -24,7 +24,8 @@
 //!
 //! Public API:
 //! - [`Rng`]: `die()` (1..=6) and `below(n)` (0..n), the only randomness.
-//! - [`Rules`]: salary, starting cash, Blitz, round limit.
+//! - [`Rules`]: salary, starting cash, Blitz, round limit. [`Extras`]: the opt-in rules of ENGINE-RULES §10 (tickets,
+//!   the leader's rent), set with [`Game::with_extras`]; off by default.
 //! - [`Game::new`] (lobby), [`Game::apply`] (`Err` leaves the state and the Rng untouched), [`Game::check`],
 //!   [`Game::snapshot`] (ENGINE-RULES §8 JSON), [`Game::net_worth`], [`Game::current_player`],
 //!   [`Game::legal_actions`] (exact), [`Game::rent_for`].
@@ -37,9 +38,11 @@ pub mod board;
 mod game;
 
 pub use game::{
-    Action, CardRef, EngineError, Event, Game, GameResult, Owned, Payee, Phase, Player, Reason, Release, RentMod, Rng, Rules, Stage,
-    BLITZ_DEAL, HOTEL, MAX_LOG, MAX_SEATS, MIN_PLAYERS,
+    Action, CardRef, EngineError, Event, Extras, Game, GameResult, Owned, Payee, Phase, Player, Reason, Release, RentMod, Rng, Rules,
+    Stage, Ticket, Tickets, BLITZ_DEAL, HOTEL, MAX_LOG, MAX_SEATS, MAX_TICKETS, MIN_PLAYERS,
 };
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod ticket_tests;

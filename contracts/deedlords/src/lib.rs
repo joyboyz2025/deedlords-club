@@ -22,10 +22,12 @@ pub mod autoplay;
 pub mod rng;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod ticket_tests;
 
 use std::collections::BTreeMap;
 
-use deedlords_engine::{Action, Game, Phase, Reason, Rules};
+use deedlords_engine::{Action, Extras, Game, Phase, Reason, Rules, Tickets};
 use near_contract_standards::non_fungible_token::core::{NonFungibleTokenCore, NonFungibleTokenResolver};
 use near_contract_standards::non_fungible_token::events::NftMint;
 use near_contract_standards::non_fungible_token::metadata::{
@@ -39,8 +41,8 @@ use near_sdk::serde_json::{self, json, Value};
 use near_sdk::store::{IterableMap, LookupMap};
 use near_sdk::{assert_one_yocto, env, near, require, AccountId, Gas, NearToken, PanicOnDefault, Promise, PromiseOrValue};
 
-use autoplay::{apply_logged, play_turn, timeout_step, MAX_PLAN_LIST};
-pub use autoplay::{Plan, Step};
+use autoplay::{apply_logged, play_turn_with, timeout_step, MAX_PLAN_LIST};
+pub use autoplay::{Plan, Step, TicketPlan};
 use rng::{near_sha256, ChainRng};
 
 /// Engine player id of each seat.
@@ -100,7 +102,12 @@ pub struct Seat {
 }
 
 /// Full state of an unfinished match. Deleted when the match is settled or abandoned.
-#[near(serializers = [borsh])]
+///
+/// Stored with borsh, by hand (below): the fields in this order, which is the layout every deployment has stored, and
+/// then, only for a match opened with tickets or the leader's rent, a tail ([`MATCH_TAIL_V1`]) that the top bit of the
+/// stored status byte announces ([`MATCH_TAIL_FLAG`]). A match without them is stored byte for byte as before those
+/// rules existed, and a match stored before them reads as one without. (The map that holds the matches writes its own
+/// bytes after each of them, so the end of the value cannot tell whether a tail is there: the flag does.)
 #[derive(Clone, Debug)]
 pub struct Match {
     pub rules: Rules,
@@ -120,6 +127,80 @@ pub struct Match {
     /// Rng hashes drawn so far (see [`rng`]).
     pub draws: u64,
     pub game: Game,
+}
+
+/// First byte of the tail of a stored [`Match`]: after it come the game's `extras` and `tickets` (ENGINE-RULES §10),
+/// which the engine leaves out of its own borsh form.
+pub const MATCH_TAIL_V1: u8 = 1;
+/// Set on the stored status byte (a [`Status`] is 0..=3) of a match that has a tail after its game.
+pub const MATCH_TAIL_FLAG: u8 = 0x80;
+
+impl BorshSerialize for Match {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        BorshSerialize::serialize(&self.rules, writer)?;
+        BorshSerialize::serialize(&self.stake, writer)?;
+        BorshSerialize::serialize(&self.split, writer)?;
+        BorshSerialize::serialize(&self.seats, writer)?;
+        BorshSerialize::serialize(&self.solo_player, writer)?;
+        BorshSerialize::serialize(&self.creator, writer)?;
+        BorshSerialize::serialize(&self.storage_deposit, writer)?;
+        let tail = !self.game.extras.is_off();
+        let mut status = [0u8; 1];
+        BorshSerialize::serialize(&self.status, &mut status.as_mut_slice())?;
+        writer.write_all(&[status[0] | if tail { MATCH_TAIL_FLAG } else { 0 }])?;
+        BorshSerialize::serialize(&self.created_at, writer)?;
+        BorshSerialize::serialize(&self.last_activity, writer)?;
+        BorshSerialize::serialize(&self.turn_seconds, writer)?;
+        BorshSerialize::serialize(&self.turn_deadline, writer)?;
+        BorshSerialize::serialize(&self.draws, writer)?;
+        BorshSerialize::serialize(&self.game, writer)?;
+        if tail {
+            BorshSerialize::serialize(&MATCH_TAIL_V1, writer)?;
+            BorshSerialize::serialize(&self.game.extras, writer)?;
+            BorshSerialize::serialize(&self.game.tickets, writer)?;
+        }
+        Ok(())
+    }
+}
+
+impl BorshDeserialize for Match {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let rules = BorshDeserialize::deserialize_reader(reader)?;
+        let stake = BorshDeserialize::deserialize_reader(reader)?;
+        let split = BorshDeserialize::deserialize_reader(reader)?;
+        let seats = BorshDeserialize::deserialize_reader(reader)?;
+        let solo_player = BorshDeserialize::deserialize_reader(reader)?;
+        let creator = BorshDeserialize::deserialize_reader(reader)?;
+        let storage_deposit = BorshDeserialize::deserialize_reader(reader)?;
+        let status = u8::deserialize_reader(reader)?;
+        let tail = status & MATCH_TAIL_FLAG != 0;
+        let mut m = Match {
+            rules,
+            stake,
+            split,
+            seats,
+            solo_player,
+            creator,
+            storage_deposit,
+            status: Status::try_from_slice(&[status & !MATCH_TAIL_FLAG])?,
+            created_at: BorshDeserialize::deserialize_reader(reader)?,
+            last_activity: BorshDeserialize::deserialize_reader(reader)?,
+            turn_seconds: BorshDeserialize::deserialize_reader(reader)?,
+            turn_deadline: BorshDeserialize::deserialize_reader(reader)?,
+            draws: BorshDeserialize::deserialize_reader(reader)?,
+            game: BorshDeserialize::deserialize_reader(reader)?,
+        };
+        // No flag: a match without the later rules, or one stored before they existed.
+        if !tail {
+            return Ok(m);
+        }
+        if u8::deserialize_reader(reader)? != MATCH_TAIL_V1 {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "unknown match tail"));
+        }
+        m.game.extras = Extras::deserialize_reader(reader)?;
+        m.game.tickets = Option::<Tickets>::deserialize_reader(reader)?;
+        Ok(m)
+    }
 }
 
 /// Permanent summary of a settled match.
@@ -153,7 +234,9 @@ pub struct Stats {
     pub earned: NearToken,
 }
 
-/// `rules` argument of `create_match`. Accepts `max_rounds` or `maxRounds`.
+/// `rules` argument of `create_match`. Accepts `max_rounds` or `maxRounds`. The same JSON object may also carry
+/// `tickets: true` and `leaderRent: true` (or `leader_rent`), which switch on the rules of ENGINE-RULES §10 for this
+/// match; absent means off. They are read from the call's arguments by [`extras_of_call`], not through this struct.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
 pub struct RulesArg {
@@ -163,6 +246,29 @@ pub struct RulesArg {
     #[serde(alias = "maxRounds", default)]
     pub max_rounds: u8,
 }
+
+/// The opt-in rules a `create_match` call asks for: `rules.tickets` and `rules.leaderRent` of its JSON arguments.
+/// Anything else there (no such keys, not booleans) means off.
+fn extras_of_call() -> Extras {
+    let rules = call_arg("rules");
+    let on = |keys: [&str; 2]| keys.iter().any(|key| rules[*key] == json!(true));
+    Extras { tickets: on(["tickets", "tickets"]), leader_rent: on(["leaderRent", "leader_rent"]) }
+}
+
+/// The tickets a `turn` call's plan plays: `plan.tickets` of its JSON arguments ([`TicketPlan`]). Absent, or not such
+/// an object: none.
+fn tickets_of_call() -> TicketPlan {
+    serde_json::from_value(call_arg("plan")["tickets"].clone()).unwrap_or_default()
+}
+
+/// One argument of the call being run, as the JSON it was sent as; `null` when there is none.
+fn call_arg(name: &str) -> Value {
+    env::input().and_then(|input| serde_json::from_slice::<Value>(&input).ok()).map_or(Value::Null, |args| args[name].clone())
+}
+
+/// What `get_config` lists under `features`: the opt-in rules this code knows. A page opens a match with one of them
+/// only when the contract it talks to lists it (a contract deployed before them ignores the fields it does not know).
+pub const FEATURES: [&str; 2] = ["tickets", "leaderRent"];
 
 #[near(contract_state)]
 #[derive(PanicOnDefault)]
@@ -353,6 +459,18 @@ impl Match {
         caller
     }
 
+    /// `{ salary, cash, blitz, maxRounds }`, with `tickets: true` and `leaderRent: true` only when the match has them.
+    fn rules_json(&self) -> Value {
+        let mut rules = json!(self.rules);
+        if self.game.extras.tickets {
+            rules["tickets"] = json!(true);
+        }
+        if self.game.extras.leader_rent {
+            rules["leaderRent"] = json!(true);
+        }
+        rules
+    }
+
     fn meta_json(&self, id: &str, house: &AccountId, fee_bps: u16) -> Value {
         let seats: Vec<Value> = self
             .seats
@@ -375,7 +493,7 @@ impl Match {
             "stake": yocto_json(self.stake),
             "split": self.split,
             "fee_bps": fee_bps,
-            "rules": self.rules,
+            "rules": self.rules_json(),
             "solo_player": self.solo_player,
             "creator": self.creator,
             "host": if self.status == Status::Lobby { host_of(id) } else { None },
@@ -453,62 +571,7 @@ impl Contract {
         turn_seconds: Option<u32>,
         host: Option<AccountId>,
     ) {
-        validate_id(&id);
-        require!(!self.matches.contains_key(&id) && !self.results.contains_key(&id), "match id already used");
-        require!((MIN_SEATS..=MAX_SEATS).contains(&seats), "seats must be 2..=4");
-        if stake.0 > self.max_stake.as_yoctonear() {
-            panic_msg(format!("stake too large: this contract allows at most {} yoctoNEAR per seat", self.max_stake.as_yoctonear()));
-        }
-        require!(solo_player.as_ref() != Some(&self.house), "the house cannot be the solo player");
-        require!(host.is_none() || solo_player.is_none(), "a solo match starts by itself: it has no host");
-        validate_split(&split, seats);
-        let rules = validate_rules(rules);
-        let turn_seconds = turn_seconds.unwrap_or(DEFAULT_TURN_SECONDS);
-        require!((1..=MAX_TURN_SECONDS).contains(&turn_seconds), "turn_seconds must be 1..=86400");
-
-        let now = env::block_timestamp();
-        let creator = env::predecessor_account_id();
-        let deposit = env::attached_deposit();
-        let players = SEAT_IDS[..usize::from(seats)].iter().map(|s| s.to_string()).collect();
-        let new_match = Match {
-            rules,
-            stake: NearToken::from_yoctonear(stake.0),
-            split,
-            seats: vec![Seat::default(); usize::from(seats)],
-            solo_player,
-            creator: creator.clone(),
-            storage_deposit: deposit,
-            status: Status::Lobby,
-            created_at: now,
-            last_activity: now,
-            turn_seconds,
-            turn_deadline: 0,
-            draws: 0,
-            game: Game::new(rules, players),
-        };
-        let before = env::storage_usage();
-        // Inside what is measured: the creator's deposit pays for the host's record and the fee's too.
-        if let Some(host) = &host {
-            env::storage_write(&host_key(&id), host.as_bytes());
-        }
-        env::storage_write(&fee_key(&id), &self.fee_bps.to_le_bytes());
-        let data = json!({ "id": id, "meta": new_match.meta_json(&id, &self.house, self.fee_bps) });
-        let id_for_error = id.clone();
-        self.matches.insert(id, new_match);
-        self.matches.flush();
-        let measured = env::storage_usage().saturating_sub(before);
-        let required = storage_cost(measured + STORAGE_RESERVE_BYTES);
-        if deposit.as_yoctonear() < required {
-            // The receipt reverts anyway; removing keeps unit-test state consistent too.
-            env::storage_remove(&host_key(&id_for_error));
-            env::storage_remove(&fee_key(&id_for_error));
-            self.matches.remove(&id_for_error);
-            self.matches.flush();
-            panic_msg(format!(
-                "attach at least {required} yoctoNEAR for storage ({measured} bytes measured + {STORAGE_RESERVE_BYTES} reserved)"
-            ));
-        }
-        emit("create_match", data);
+        self.open_match(id, seats, stake, split, rules, extras_of_call(), solo_player, turn_seconds, host);
     }
 
     /// Backs a free seat with exactly the stake. Backing the last seat starts the game (and draws the turn order, and
@@ -645,6 +708,14 @@ impl Contract {
     pub fn turn(&mut self, id: String, seat: u8, plan: Plan) {
         require_move_gas();
         require!(plan.build.len() <= MAX_PLAN_LIST && plan.liquidate.len() <= MAX_PLAN_LIST, "plan lists hold at most 40 squares");
+        self.turn_with(id, seat, plan, tickets_of_call());
+    }
+}
+
+impl Contract {
+    /// `turn` with the tickets its plan plays: what the method does once it has read them.
+    pub(crate) fn turn_with(&mut self, id: String, seat: u8, plan: Plan, tickets: TicketPlan) {
+        require!(tickets.takeover.len() <= MAX_PLAN_LIST, "plan lists hold at most 40 squares");
         let mut m = self.load_playing(&id);
         let s = m.seat_index(seat);
         let caller = m.authorize(s);
@@ -655,7 +726,7 @@ impl Contract {
         let mut steps = Vec::new();
         let played = {
             let mut rng = ChainRng::new(env::random_seed_array(), &id, &mut m.draws, near_sha256);
-            play_turn(&mut m.game, SEAT_IDS[s], &plan, &mut rng, &mut steps)
+            play_turn_with(&mut m.game, SEAT_IDS[s], &plan, &tickets, &mut rng, &mut steps)
         };
         // The driver checks every optional action first, so no error is expected after the roll; the rule of `play`
         // applies all the same.
@@ -665,7 +736,10 @@ impl Contract {
         let reset = restarts_clock(&m.game, s, seat_before, rolls_before);
         self.after_moves(id, m, "turn", s, caller, steps, rejected, reset);
     }
+}
 
+#[near]
+impl Contract {
     /// Anyone, once the turn deadline has passed: one engine `Auto` step for the current player (roll, skip buying, or
     /// end the turn), or, in debt, the deterministic liquidation (sell houses, mortgage, pay, else bankrupt).
     ///
@@ -838,6 +912,7 @@ impl Contract {
             "fee_bps": self.fee_bps,
             "max_fee_bps": MAX_FEE_BPS,
             "min_move_gas": u64_json(MIN_MOVE_GAS.as_gas()),
+            "features": FEATURES,
         })
     }
 }
@@ -869,6 +944,78 @@ fn begin(id: &str, m: &mut Match, now: u64) {
 }
 
 impl Contract {
+    /// `create_match` with the opt-in rules given (`extras`): what the method does once it has read them.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn open_match(
+        &mut self,
+        id: String,
+        seats: u8,
+        stake: U128,
+        split: Vec<u16>,
+        rules: RulesArg,
+        extras: Extras,
+        solo_player: Option<AccountId>,
+        turn_seconds: Option<u32>,
+        host: Option<AccountId>,
+    ) {
+        validate_id(&id);
+        require!(!self.matches.contains_key(&id) && !self.results.contains_key(&id), "match id already used");
+        require!((MIN_SEATS..=MAX_SEATS).contains(&seats), "seats must be 2..=4");
+        if stake.0 > self.max_stake.as_yoctonear() {
+            panic_msg(format!("stake too large: this contract allows at most {} yoctoNEAR per seat", self.max_stake.as_yoctonear()));
+        }
+        require!(solo_player.as_ref() != Some(&self.house), "the house cannot be the solo player");
+        require!(host.is_none() || solo_player.is_none(), "a solo match starts by itself: it has no host");
+        validate_split(&split, seats);
+        let rules = validate_rules(rules);
+        let turn_seconds = turn_seconds.unwrap_or(DEFAULT_TURN_SECONDS);
+        require!((1..=MAX_TURN_SECONDS).contains(&turn_seconds), "turn_seconds must be 1..=86400");
+
+        let now = env::block_timestamp();
+        let creator = env::predecessor_account_id();
+        let deposit = env::attached_deposit();
+        let players = SEAT_IDS[..usize::from(seats)].iter().map(|s| s.to_string()).collect();
+        let new_match = Match {
+            rules,
+            stake: NearToken::from_yoctonear(stake.0),
+            split,
+            seats: vec![Seat::default(); usize::from(seats)],
+            solo_player,
+            creator: creator.clone(),
+            storage_deposit: deposit,
+            status: Status::Lobby,
+            created_at: now,
+            last_activity: now,
+            turn_seconds,
+            turn_deadline: 0,
+            draws: 0,
+            game: Game::new(rules, players).with_extras(extras),
+        };
+        let before = env::storage_usage();
+        // Inside what is measured: the creator's deposit pays for the host's record and the fee's too.
+        if let Some(host) = &host {
+            env::storage_write(&host_key(&id), host.as_bytes());
+        }
+        env::storage_write(&fee_key(&id), &self.fee_bps.to_le_bytes());
+        let data = json!({ "id": id, "meta": new_match.meta_json(&id, &self.house, self.fee_bps) });
+        let id_for_error = id.clone();
+        self.matches.insert(id, new_match);
+        self.matches.flush();
+        let measured = env::storage_usage().saturating_sub(before);
+        let required = storage_cost(measured + STORAGE_RESERVE_BYTES);
+        if deposit.as_yoctonear() < required {
+            // The receipt reverts anyway; removing keeps unit-test state consistent too.
+            env::storage_remove(&host_key(&id_for_error));
+            env::storage_remove(&fee_key(&id_for_error));
+            self.matches.remove(&id_for_error);
+            self.matches.flush();
+            panic_msg(format!(
+                "attach at least {required} yoctoNEAR for storage ({measured} bytes measured + {STORAGE_RESERVE_BYTES} reserved)"
+            ));
+        }
+        emit("create_match", data);
+    }
+
     /// `start`, and `play(["Start"])`: the host says go.
     fn start_hosted(&mut self, id: String) {
         let mut m = self.load(&id);

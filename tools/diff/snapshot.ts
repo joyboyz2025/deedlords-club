@@ -2,7 +2,7 @@
 // Lobby, time limit, trades, names, looks and the text log are left out (they are TS-only).
 
 import type { Deck } from "../../games/co-ty-phu/board.ts";
-import type { Game, Owned, Payee, Phase, Result, Stage } from "../../games/co-ty-phu/engine.ts";
+import type { Game, Owned, Payee, Phase, Result, Stage, TicketState } from "../../games/co-ty-phu/engine.ts";
 
 export type SnapshotPlayer = {
   id: string;
@@ -34,6 +34,8 @@ export type Snapshot = {
   result: Result | null;
   /** Seating order (the order of `game.players`), not turn order. */
   players: SnapshotPlayer[];
+  /** Only in a game with tickets (ENGINE-RULES §10.2). */
+  tickets?: TicketState;
 };
 
 /** A deep copy, so later moves never change a snapshot already taken. */
@@ -70,5 +72,6 @@ export function snapshot(game: Game): Snapshot {
       bankrupt: p.bankrupt,
       outAt: p.outAt,
     })),
+    ...(game.tickets ? { tickets: structuredClone(game.tickets) } : {}),
   };
 }

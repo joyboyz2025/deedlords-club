@@ -4,6 +4,11 @@
 //   node upgrade.js dry    a rehearsal on a LOCAL near-sandbox: the code that is live on testnet right now is fetched
 //                          and deployed there, matches are opened and played on it, the new wasm is deployed over it,
 //                          and those same matches must read the same and play on. Nothing is sent to testnet.
+//                          With DEEDLORDS_PARENT=deedlords.near and NEAR_RPC=<a mainnet RPC> the rehearsal starts from
+//                          the code that is live on mainnet instead (read with view_code; nothing is sent there either).
+//                          It also checks the rules added with tickets: the live code does not know them (the page
+//                          must not ask it for them), the new one lists them, old matches play on without them, and
+//                          a match opened with them after the deploy is played to its settlement.
 //   node upgrade.js run    the deploy on testnet, signed by the game account (its key is in ~/.near-credentials).
 //
 // DEEDLORDS_PARENT (default deedlords.testnet), NEAR_RPC (default FastNEAR testnet), and the wasm path as last argument
@@ -85,6 +90,20 @@ async function dry(wasm) {
     await call(alice, "join", { id: "running", seat: 0 }, Y / 10n);
     await call(bob, "join", { id: "running", seat: 1 }, Y / 10n);
     for (let i = 0; i < 5; i++) await playTurn("running");
+    // The code that is live does not know tickets: asked for them, it opens the match of before without a word. That is
+    // why the page asks get_config first (`features`), and sends the rules only to a contract that lists them.
+    const liveKnows = Array.isArray((await view("get_config")).features);
+    const withTickets = { ...rules, blitz: true, cash: 2000, max_rounds: 10, tickets: true, leaderRent: true };
+    await call(alice, "create_match", { id: "asked", seats: 2, stake: String(Y / 10n), split: [7000, 3000], rules: withTickets, solo_player: null, turn_seconds: 60 }, Y / 10n);
+    await call(alice, "join", { id: "asked", seat: 0 }, Y / 10n);
+    await call(bob, "join", { id: "asked", seat: 1 }, Y / 10n);
+    for (let i = 0; i < 3; i++) await playTurn("asked");
+    const asked = await view("get_match", { id: "asked" });
+    if (!liveKnows) {
+      assert.equal(asked.meta.rules.tickets, undefined, "the live code ignores rules it does not know");
+      assert.equal(asked.game.tickets, undefined);
+      console.log("  the live code lists no features and opens a plain match when asked for tickets");
+    } else console.log("  the live code already lists features: this rehearsal is of a later build over it");
     const before = { lobby: await view("get_match", { id: "lobby" }), running: await view("get_match", { id: "running" }), config: await view("get_config") };
     assert.equal(before.running.meta.status, "playing");
     assert.ok(before.running.log.length > 0);
@@ -94,8 +113,40 @@ async function dry(wasm) {
     const after = { lobby: await view("get_match", { id: "lobby" }), running: await view("get_match", { id: "running" }), config: await view("get_config") };
     assert.deepEqual(after.lobby, before.lobby, "the lobby reads as it was");
     assert.deepEqual(after.running, before.running, "the game in progress reads as it was, log included");
-    assert.deepEqual(after.config, before.config);
-    console.log("  the open lobby and the game in progress read the same after the deploy");
+    // The one thing get_config says more: the opt-in rules this build knows.
+    const { features, ...sameConfig } = after.config;
+    const { features: _were, ...wasConfig } = before.config;
+    assert.deepEqual(sameConfig, wasConfig);
+    assert.deepEqual(features, ["tickets", "leaderRent"], "the new build lists the opt-in rules");
+    assert.deepEqual(await view("get_match", { id: "asked" }), asked, "the match opened on the old code reads as it was: without tickets");
+    console.log("  the open lobby and the games in progress read the same after the deploy; get_config now lists features");
+
+    // A match opened on the old code plays on as the match it is, to its settlement.
+    const ticketPlan = { ...plan, tickets: { waiver: true, festival: true, steps: 7, takeover: [1, 3, 6, 8, 9, 11, 13, 14, 16, 18, 19, 21, 23, 24, 26, 27, 29, 31, 32, 34, 37, 39] } };
+    const logsOf = (outcome) => outcome.receipts_outcome.flatMap((receipt) => receipt.outcome.logs).join("\n");
+    const playOut = async (id, turnPlan) => {
+      let logs = "";
+      for (let turns = 0; turns < 200; turns++) {
+        const match = await view("get_match", { id });
+        if (match === null) break;
+        const who = [alice, bob, carol].find((account) => match.meta.seats[match.meta.current_seat].backer === account.accountId);
+        logs += logsOf(await call(who, "turn", { id, seat: match.meta.current_seat, plan: turnPlan }));
+      }
+      assert.ok(await view("get_result", { id }), `${id} settled`);
+      return logs;
+    };
+    assert.ok(!(await playOut("asked", ticketPlan)).includes('"kind":"played"'), "no ticket is played in a match opened before the deploy");
+    console.log("  a match opened before the deploy played on to its settlement, without tickets");
+
+    // Opened after the deploy with the rules: tickets are dealt, played, and the match settles.
+    await call(alice, "create_match", { id: "tickets", seats: 2, stake: String(Y / 10n), split: [7000, 3000], rules: withTickets, solo_player: null, turn_seconds: 60 }, Y / 10n);
+    await call(alice, "join", { id: "tickets", seat: 0 }, Y / 10n);
+    await call(bob, "join", { id: "tickets", seat: 1 }, Y / 10n);
+    const dealt = await view("get_match", { id: "tickets" });
+    assert.deepEqual([dealt.meta.rules.tickets, dealt.meta.rules.leaderRent], [true, true]);
+    assert.deepEqual(Object.values(dealt.game.tickets.held).map((held) => held.length), [1, 1], "a ticket each at the start");
+    assert.ok((await playOut("tickets", ticketPlan)).includes('"kind":"played"'), "tickets were played");
+    console.log("  a match opened after the deploy with tickets and the leader's rent was dealt its tickets, played them and settled");
 
     // The owner makes the fee free for matches opened from now on. The two matches opened before keep their 2.5%.
     await assert.rejects(call(alice, "set_fee", { fee_bps: 0 }, 1n), /only the owner may set the fee/);

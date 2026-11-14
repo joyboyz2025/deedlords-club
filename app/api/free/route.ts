@@ -11,7 +11,7 @@
 
 import { clientKey } from "@/games/co-ty-phu/agent/rateLimit";
 import { RULES_MODEL, llmModels } from "@/games/co-ty-phu/agent/llm";
-import { freeTableCalls, inTransactions, joinCalls, newMatchId, ROUND_CHOICES, roundsFor, SEAT_COUNTS, TURN_SECONDS } from "@/games/co-ty-phu/chain/calls";
+import { extrasOf, freeTableCalls, inTransactions, joinCalls, newMatchId, NO_EXTRAS, ROUND_CHOICES, roundsFor, SEAT_COUNTS, TURN_SECONDS, type Extras } from "@/games/co-ty-phu/chain/calls";
 import {
   MAX_FREE_TABLES,
   MAX_HOUSE_AGENTS,
@@ -112,7 +112,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     // Three agents' seats and the table do not fit the gas of one transaction: they go in turn.
     let hash = "";
-    for (const batch of inTransactions(freeTableCalls(id, rounds, TURN_SECONDS, withAgent, room, models.length))) {
+    for (const batch of inTransactions(freeTableCalls(id, rounds, TURN_SECONDS, withAgent, room, models.length, await contractExtras()))) {
       try {
         const outcome = await paying.session.transact(batch);
         hash ||= outcome.hash;
@@ -126,6 +126,24 @@ export async function POST(request: Request): Promise<Response> {
     return jsonAnswer(200, { id, opponent: withAgent ? "agent" : "friend", sponsor: paying.accountId, hash, agents: models });
   } catch (error) {
     return jsonAnswer(502, { error: `the sponsor could not open a table: ${text(error)}` });
+  }
+}
+
+/** What the contract said it supports, and when it was asked. */
+let knownExtras: { extras: Extras; at: number } | null = null;
+const EXTRAS_FOR_MS = 60_000;
+
+/**
+ * The opt-in rules a free table is opened with: those the contract lists in `get_config` (tickets, the leader's
+ * rent), asked at most once a minute. A contract from before them, or one that cannot be reached, gets today's table.
+ */
+async function contractExtras(): Promise<Extras> {
+  if (knownExtras && Date.now() - knownExtras.at < EXTRAS_FOR_MS) return knownExtras.extras;
+  try {
+    knownExtras = { extras: extrasOf(await chainClient.view<{ features?: unknown }>("get_config")), at: Date.now() };
+    return knownExtras.extras;
+  } catch {
+    return NO_EXTRAS;
   }
 }
 

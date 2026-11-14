@@ -41,6 +41,8 @@ export type ClientMessage =
   | { t: "bankrupt" }
   /** Give up the game, at any time (on-chain matches). */
   | { t: "resign" }
+  /** Play a ticket (on-chain matches with tickets). `steps`: 2 to 12, for "Pick your steps". */
+  | { t: "ticket"; ticket: "waiver" | "steps" | "takeover" | "festival"; steps?: number }
   /** Người chơi nào cũng làm được với đất của mình, bất cứ lúc nào trong ván. */
   | { t: "build"; square: number }
   | { t: "sell"; square: number }
