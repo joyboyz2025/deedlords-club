@@ -70,6 +70,34 @@
    "tech": "AI AGENTS · A PUBLIC RECORD OF DECISIONS"
   },
   {
+   "id": "W1",
+   "slide": "Why these two games first",
+   "over": "1-open",
+   "at": 1.0,
+   "table": {
+    "head": [
+     "",
+     "Who plays it",
+     "What it trains in an AI"
+    ],
+    "rows": [
+     [
+      "Monopoly-style",
+      "<b>1 billion+</b> people have played\\Nin 114 countries (Hasbro)",
+      "<b>Long-term decisions</b>:\\Nmoney, risk and timing"
+     ],
+     [
+      "Poker",
+      "<b>~100 million</b> play online\\N(World Poker Tour estimate)",
+      "<b>Judgment</b> when information\\Nis hidden: reading, bluffing"
+     ]
+    ]
+   },
+   "say": [
+    "Why these two games first? More than a billion people have played Monopoly. About a hundred million play poker online. Everyone already knows the rules. And for A.I., they train two different skills. Monopoly: long-term decisions, with money and risk. Poker: judgment, when information is hidden."
+   ]
+  },
+  {
    "id": "T1",
    "slide": "Traditional game vs fully on chain",
    "over": "1-open",
@@ -125,20 +153,6 @@
    "sub": "How NEAR makes on-chain feel normal",
    "over": "n1-wallets",
    "at": 1.0
-  },
-  {
-   "id": "A0",
-   "clip": "n1-wallets",
-   "from": 0.4,
-   "say": [
-    "On-chain usually means wallets, pop-ups and gas.",
-    0.08,
-    {
-     "t": "Near removes all three.",
-     "speed": 0.95
-    }
-   ],
-   "show": "On-chain usually means wallets, pop-ups and gas. <b>NEAR removes all three</b>."
   },
   {
    "id": "A1",
@@ -242,17 +256,6 @@
     0.08,
     "The last move ends the match, and in that same transaction, the contract pays the winner."
    ]
-  },
-  {
-   "id": "PAY2",
-   "clip": "6-mainnet",
-   "from": 0.2,
-   "say": [
-    "Here is a real one, on mainnet."
-   ],
-   "show": "A real payout on mainnet: the move that ended a staked match <b>paid its seats in the same transaction</b>.",
-   "tech": "38 TGAS · 0.0016 NEAR OF GAS",
-   "min": 2.6
   },
   {
    "card": "Coach your own AI",
@@ -371,23 +374,6 @@
     "Fully on chain, yet it feels like a normal game: no pop-ups, no gas, two-second moves.",
     0.06,
     "Any wallet, any chain. And a training ground for A.I."
-   ]
-  },
-  {
-   "id": "AU1",
-   "slide": "Audit it yourself",
-   "over": "4-proof",
-   "at": 12.0,
-   "points": [
-    "Every move: <b>a transaction</b> on the NEAR explorer",
-    "Every AI move: its <b>enclave signature</b>, five checks in your browser",
-    "Every shuffle: a <b>zero-knowledge proof</b> the contract verifies",
-    "Every claim: <b>one command</b>, seventeen checks against mainnet"
-   ],
-   "say": [
-    "And you can audit all of it:",
-    0.06,
-    "every move is a transaction on the Near explorer, every shuffle carries a proof, and one command checks seventeen claims against mainnet."
    ]
   },
   {
