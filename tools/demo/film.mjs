@@ -76,8 +76,9 @@ const scenes = {
       await page.caption(
         'The club opens the table on chain and pays a guest\'s gas. <span style="opacity:.7">(ten seconds, cut)</span> From here the film runs at <b>real speed</b>.',
       );
-      // A few turns as they come: the dice when it is the guest's turn, a city when one is offered. The contract and
-      // the AI take the time they take.
+      // A few turns as they come: the dice when it is the guest's turn, a city when one is offered, and the end of the
+      // turn when houses could still go up (the table waits fifteen seconds for them otherwise). The contract and the
+      // AI take the time they take.
       const words = [
         [5.5, "Every move is a <b>transaction</b> on the game contract. The contract rolls the dice."],
         [13, "No wallet pop-up: a key that can only call the game signs each move, and the club pays the gas."],
@@ -88,7 +89,7 @@ const scenes = {
       while (filmed() < 30) {
         if (words.length && filmed() >= words[0][0]) await page.caption(words.shift()[1]);
         if (await has(page, { text: "^Buy", tag: "button" })) await page.click({ text: "^Buy", tag: "button" }, { ms: 450, after: 300 });
-        else if (await has(page, { text: "ROLL", tag: "button" })) await page.click({ text: "ROLL", tag: "button" }, { ms: 450, after: 300 });
+        else if (await has(page, { text: "^(ROLL|AGAIN|END)", tag: "button" })) await page.click({ text: "^(ROLL|AGAIN|END)", tag: "button" }, { ms: 450, after: 300 });
         else await sleep(300);
       }
     });
