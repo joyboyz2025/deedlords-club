@@ -9,7 +9,33 @@ import { winChance } from "../games/poker/agent/hands.ts";
 import { keyProof, newKeys, openDeck, tableKey } from "../games/poker/crypto.ts";
 import { shuffle } from "../games/poker/shuffle.ts";
 import { advise, briefFor, byTheBook } from "../games/poker/table/decide.ts";
-import { type SeatStore, type TableView, betCall, betOptions, contenders, duty, fromBase64, holeCards, nextDealt, toBase64 } from "../games/poker/table/seat.ts";
+import {
+  type SeatStore,
+  type TableView,
+  betCall,
+  betOptions,
+  callsTime,
+  clockAhead,
+  clockMarginMs,
+  clockMove,
+  clockSkew,
+  coldLobby,
+  contenders,
+  duty,
+  fromBase64,
+  handNets,
+  handStory,
+  holeCards,
+  hostIsSpent,
+  houseName,
+  leaveState,
+  nextDealt,
+  nodeTrouble,
+  ruledLate,
+  toBase64,
+  tookEffect,
+} from "../games/poker/table/seat.ts";
+import { askHouse } from "../games/poker/table/useHouse.ts";
 
 const card = (name: string): number => "23456789TJQKA".indexOf(name[0]) + 13 * "cdhs".indexOf(name[1]);
 const cards = (names: string): number[] => names.split(" ").map(card);
@@ -83,6 +109,19 @@ test("a seat may bet what the contract takes", () => {
   // Nobody is left who could answer a raise: the others still in are all in.
   assert.deepEqual(betOptions(table({ chips: [0, 0, 0, 100, 0, 0], bet: [40, 40, 0, 0, 40, 0] }), 3), { owed: 40, raise: null });
   assert.deepEqual(betOptions(table({ chips: [0, 0, 0, 100, 100, 0], bet: [40, 40, 0, 0, 40, 0], folded: [false, false, false, false, true, false] }), 3), { owed: 40, raise: null });
+});
+
+test("the least raise is the size of the raise it answers, as at any no-limit table", () => {
+  // The contract takes any raise of the big blind or more. Seat 1 made it 6 over a big blind of 2, a raise of 4: the
+  // page offered seat 3 "Raise to 8"; the least re-raise is another 4, to 10.
+  const raised = table({ toAct: 3, awaited: [3], chips: [98, 94, 0, 100, 99, 0], bet: [2, 6, 0, 0, 1, 0], put: [2, 6, 0, 0, 1, 0] });
+  assert.deepEqual(betOptions(raised, 3), { owed: 6, raise: { min: 10, max: 100 } });
+  // A bet of 8 into an unopened flop is raised to 16 at least; the first bet of a street is the big blind at least.
+  const flop = { phase: "bet" as const, street: 1, board: [1, 2, 3], put: [10, 10, 0, 2, 2, 0] };
+  assert.deepEqual(betOptions(table({ ...flop, toAct: 1, awaited: [1], chips: [82, 90, 0, 98, 98, 0], bet: [8, 0, 0, 0, 0, 0], put: [18, 10, 0, 2, 2, 0] }), 1).raise, { min: 16, max: 90 });
+  assert.deepEqual(betOptions(table({ ...flop, toAct: 0, awaited: [0], chips: [90, 90, 0, 98, 98, 0], bet: [0, 0, 0, 0, 0, 0] }), 0).raise, { min: 2, max: 90 });
+  // A seat that cannot make the full raise may still go all in.
+  assert.deepEqual(betOptions(table({ toAct: 3, awaited: [3], chips: [98, 94, 0, 9, 99, 0], bet: [2, 6, 0, 0, 1, 0], put: [2, 6, 0, 0, 1, 0] }), 3).raise, { min: 9, max: 9 });
 });
 
 test("a seat owes its shuffle, then its shares for the cards it must not see alone", async () => {
@@ -178,7 +217,8 @@ test("an agent is told what its seat can see at a table of several", () => {
         { chips: 98, bet: 2, allIn: false },
         { chips: 92, bet: 8, allIn: false },
       ],
-      raiseTo: { min: 10, max: 100 },
+      // Seat 1's 8 raised the big blind by 6: the least raise over it is 6 more.
+      raiseTo: { min: 14, max: 100 },
       blinds: [1, 2],
     },
   );
@@ -225,4 +265,208 @@ test("by the odds alone it raises its best hands and folds what a call does not 
   assert.ok(sent.includes("Press every edge.") && sent.includes("two to nine seats") && sent.includes('\\"seatsDealt\\":9'));
   const failed = await advise(nine, 3, cards("7c 2d"), { llm, samples: 100, fetch: answering("no idea") });
   assert.deepEqual([failed.action, failed.driver, failed.fallback], ["fold", "the book", true]);
+});
+
+test("a call the node gave no receipt for landed only if the table shows what it would have changed", () => {
+  // Seat 0 (a.testnet) asked to leave between hands and the node did not answer. Then the button shuffled: the table
+  // changed, but the seat is still there and is not leaving. On 2026-11-14 the page wrote "the table shows it landed".
+  const before = table({ phase: "shuffle", dealt: [], shuffled: 0, awaited: [3] });
+  const shuffled = table({ phase: "shuffle", dealt: [3, 4, 0, 1], shuffled: 1, awaited: [4], seq: 21 });
+  assert.equal(tookEffect("leave", "a.testnet", 0, before, shuffled), false);
+  assert.equal(tookEffect("leave", "a.testnet", 0, before, { ...shuffled, leaving: [true, false, false, false, false, false] }), true);
+  assert.equal(tookEffect("leave", "a.testnet", 0, before, { ...shuffled, players: [null, "b.testnet", null, "d.testnet", "e.testnet", null] }), true);
+  assert.equal(tookEffect("leave", "a.testnet", 0, before, null), true);
+
+  // Shares for the flop, owed by seats 0 and 1: when seat 1's are in, seat 0's are still owed.
+  const flop = table({ phase: "open", street: 1, awaited: [0, 1] });
+  assert.equal(tookEffect("open", "a.testnet", 0, flop, { ...flop, awaited: [0], seq: 21 }), false);
+  assert.equal(tookEffect("open", "a.testnet", 0, flop, { ...flop, awaited: [1], seq: 21 }), true);
+  assert.equal(tookEffect("open", "a.testnet", 0, flop, table({ street: 1, board: [1, 2, 3], awaited: [4], toAct: 4, seq: 22 })), true);
+  // A shuffle is the seat's alone: the count of shuffles says whether it is in.
+  const mine = table({ phase: "shuffle", shuffled: 2, awaited: [0] });
+  assert.equal(tookEffect("shuffle", "a.testnet", 0, mine, { ...mine, seq: 21 }), false);
+  assert.equal(tookEffect("shuffle", "a.testnet", 0, mine, { ...mine, shuffled: 3, awaited: [1], seq: 21 }), true);
+
+  // A bet moves the table's count of bets; a seat taken shows the account; a start leaves the lobby.
+  assert.equal(tookEffect("act", "b.testnet", 1, table(), table({ seq: 21 })), false);
+  assert.equal(tookEffect("act", "b.testnet", 1, table(), table({ seq: 21, bets: 8, toAct: 3, awaited: [3] })), true);
+  assert.equal(tookEffect("join", "z.testnet", null, table(), table({ seq: 21 })), false);
+  assert.equal(tookEffect("join", "z.testnet", null, table(), table({ seq: 21, players: ["a.testnet", "b.testnet", "z.testnet", "d.testnet", "e.testnet", null] })), true);
+  assert.equal(tookEffect("start", "a.testnet", 0, table({ phase: "lobby" }), table({ phase: "lobby", seq: 21 })), false);
+  assert.equal(tookEffect("start", "a.testnet", 0, table({ phase: "lobby" }), table({ phase: "shuffle", seq: 21 })), true);
+  // Whatever it was, a table that is gone tells nothing about a bet or a share.
+  assert.equal(tookEffect("act", "b.testnet", 1, table(), null), false);
+});
+
+test("with its clock nearly out a seat's page checks for it, or folds to a bet, rather than let it be ruled late", () => {
+  // The contract cannot fold a seat that lets its bet run out before the river: the hand is called off and the seat
+  // loses all it has at the table (contracts/poker-table `timeout`). The page makes the bet a clock makes anywhere.
+  const at = 1_800_000_000_000;
+  const until = (ms: number) => String(BigInt(at + ms) * 1_000_000n);
+  // A minute's clock (a free table): the page moves with twelve seconds left; half a minute's: with seven and a half.
+  assert.equal(clockMarginMs(table({ turnSeconds: 60 })), 12_000);
+  assert.equal(clockMarginMs(table({ turnSeconds: 30 })), 7_500);
+  // Seat 1 owes the big blind: time enough, then a fold.
+  assert.equal(clockMove(table({ turnSeconds: 60, deadline: until(40_000) }), 1, at), null);
+  assert.equal(clockMove(table({ turnSeconds: 60, deadline: until(12_000) }), 1, at), "fold");
+  // Nothing owed (the big blind after a call round): a check, never a fold.
+  const free = table({ turnSeconds: 60, deadline: until(5_000), toAct: 0, awaited: [0], bet: [2, 2, 0, 2, 2, 0], put: [2, 2, 0, 2, 2, 0] });
+  assert.equal(clockMove(free, 0, at), "call");
+  // Not this seat's bet, or not a bet at all: nothing.
+  assert.equal(clockMove(free, 1, at), null);
+  assert.equal(clockMove(table({ phase: "open", street: 1, turnSeconds: 60, deadline: until(1_000), awaited: [1] }), 1, at), null);
+  // Past the deadline it is still tried: time may not have been called yet.
+  assert.equal(clockMove(table({ turnSeconds: 60, deadline: until(-3_000) }), 1, at), "fold");
+
+  // A device whose clock is 50 seconds ahead reads a fresh minute as ten seconds: seen when the clock restarts, the
+  // 50 seconds are taken off its time, and the seat is not folded at the start of its turn.
+  const fresh = table({ turnSeconds: 60, deadline: until(60_000) });
+  const wrong = at + 50_000;
+  assert.equal(clockMove(fresh, 1, wrong), "fold");
+  assert.equal(clockAhead(fresh, wrong), 50_000);
+  assert.equal(clockMove(fresh, 1, wrong - clockSkew(clockAhead(fresh, wrong))), null);
+  // A device that keeps time reads the two seconds the new table took to arrive: nothing is taken off, and its
+  // countdown shows no more time than there is. A device that is behind is put right too.
+  assert.equal(clockSkew(clockAhead(fresh, at + 2_000)), 0);
+  assert.equal(clockSkew(clockAhead(fresh, at - 20_000)), -20_000);
+  assert.equal(clockSkew(null), 0);
+});
+
+test("a seat's page calls time on the others only when its own part is in", () => {
+  const at = 1_800_000_000_000;
+  const until = (ms: number) => String(BigInt(at + ms) * 1_000_000n);
+  const flop = table({ phase: "open", street: 1, awaited: [0, 1], deadline: until(-5_000) });
+  // Seats 0 and 1 both owe their shares: whichever calls time is ruled late with the other, and loses its chips too.
+  assert.equal(callsTime(flop, 0, at, 4_000), false);
+  assert.equal(callsTime(flop, 3, at, 4_000), true);
+  // Not before the deadline and its grace; never in the lobby.
+  assert.equal(callsTime({ ...flop, deadline: until(-3_000) }, 3, at, 4_000), false);
+  assert.equal(callsTime(table({ phase: "lobby", awaited: [], deadline: "0" }), 3, at, 4_000), false);
+});
+
+test("the hand before shows what a seat ruled late really lost", () => {
+  // Hand 2 of f-mwf7vvqq-vmzn on testnet, 2026-11-14: seat 2 had put in 12 and held 88 more when it was ruled late on
+  // the river's shares; the hand was called off and seat 0 took its own 12 back and all 100 of seat 2. The page showed
+  // "-12" for the seat that had just lost its whole stack.
+  const last = { number: 1, dealt: [2, 3, 0], board: [20, 13, 32, 44], hole: [[], [], [], [], [], []], folded: [false, false, false, true, false, false], put: [12, 0, 12, 1, 0, 0], won: [112, 0, 0, 1, 0, 0], ending: "cancelled" as const, late: [2] };
+  assert.deepEqual(handNets(last), [100, 0, -100, 0, 0, 0]);
+  // Two late seats: what each had behind cannot be told from the hand.
+  assert.deepEqual(handNets({ ...last, put: [12, 0, 12, 12, 0, 0], won: [212, 0, 0, 0, 0, 0], folded: [false, false, false, false, false, false], late: [2, 3] }), [200, 0, null, null, 0, 0]);
+  // A showdown, and a seat folded by the clock at it: what it put in, no more.
+  assert.deepEqual(handNets({ ...last, ending: "showdown" as const, put: [16, 0, 16, 0, 0, 0], won: [32, 0, 0, 0, 0, 0], late: [2] }), [16, 0, -16, 0, 0, 0]);
+});
+
+test("a free table left in the lobby is closed by its host, with or without a guest at it", () => {
+  const house = (account: string) => account === "free.deedlords.testnet" || account.startsWith("pokerhouse");
+  const minutes = (n: number) => n * 60_000;
+  // f-mweoyifp-psxr on testnet: opened 2026-11-13 08:04 UTC, one guest sat down and never started it. Seventeen hours
+  // later it still held one of the four free tables: only a lobby nobody but the house sat in was ever closed.
+  const opened = parseInt("mweoyifp", 36);
+  const room = { id: "f-mweoyifp-psxr", phase: "lobby" as const, players: ["free.deedlords.testnet", "ea8b89aec73629abb5326ca2c835d90df1fcf72a33bc3421cbeb5e9e1fde12ea", null] };
+  assert.equal(coldLobby(room, house, opened + minutes(17 * 60)), true);
+  // Half an hour is left for friends to come and the table to start; a house seat asked to sit changes nothing.
+  assert.equal(coldLobby(room, house, opened + minutes(29)), false);
+  assert.equal(coldLobby({ ...room, players: [...room.players.slice(0, 2), "pokerhouse.deedlords.testnet"] }, house, opened + minutes(31)), true);
+  // Nobody came: ten minutes, as before.
+  const empty = { ...room, players: ["free.deedlords.testnet", null, null] };
+  assert.equal(coldLobby(empty, house, opened + minutes(9)), false);
+  assert.equal(coldLobby(empty, house, opened + minutes(11)), true);
+  // A table that started has a clock of its own: never closed from here.
+  assert.equal(coldLobby({ ...room, phase: "bet" as const }, house, opened + minutes(17 * 60)), false);
+});
+
+test("a house that does not answer is not waited for longer than its step can take", async () => {
+  // On 2026-11-14 the house's request hung until the host cut it off after 60 seconds (HTTP 504), twice in five hands;
+  // the page asks one question at a time, so nobody asked again and the house's seat sat still for a whole clock.
+  const real = globalThis.fetch;
+  let asked = 0;
+  globalThis.fetch = ((_url: RequestInfo | URL, init?: RequestInit) => {
+    asked += 1;
+    return new Promise<Response>((_, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal!.reason)));
+  }) as typeof fetch;
+  // The timer that gives a request up does not keep a process alive by itself: this one does, for the test.
+  const awake = setTimeout(() => undefined, 5_000);
+  try {
+    const started = Date.now();
+    await assert.rejects(askHouse("f-test-abcd", false, undefined, 40));
+    assert.equal(asked, 1);
+    assert.ok(Date.now() - started < 2_000);
+  } finally {
+    clearTimeout(awake);
+    globalThis.fetch = real;
+  }
+});
+
+test("the host of a free table asks to leave in its last hand, not before that hand is dealt", () => {
+  // Ten hands: the host leaves with the tenth (hand number 9, counted from 0).
+  const between = table({ hand: 9, phase: "shuffle", dealt: [], shuffled: 0, awaited: [1] });
+  // Between the ninth and the tenth nobody is dealt in yet: a seat that leaves now is given up at once by the
+  // contract, and the tenth hand is never played.
+  assert.equal(hostIsSpent(between, 0, 10), false);
+  // Once the button has shuffled the host is in the hand: it asks, and is paid when the hand is over.
+  const dealt = table({ hand: 9, phase: "shuffle", dealt: [1, 3, 4, 0], shuffled: 1, awaited: [3] });
+  assert.equal(hostIsSpent(dealt, 0, 10), true);
+  assert.equal(hostIsSpent({ ...dealt, leaving: [true, false, false, false, false, false] }, 0, 10), false);
+  assert.equal(hostIsSpent(table({ hand: 8 }), 0, 10), false);
+});
+
+test("a finished hand is told in a sentence: who took the pot, and with what", () => {
+  const name = (seat: number) => (seat === 1 ? "you" : `House ${seat + 1}`);
+  const hand = { number: 0, dealt: [0, 1], board: [26, 41, 33, 8, 2], hole: [[], []] as number[][], folded: [false, false], put: [16, 16], won: [0, 0], ending: "showdown" as const, late: [] as number[] };
+  // Hand 1 of f-mwfp6rwj-kqta on testnet, 2026-11-14: both seats held a nine and a queen. The felt was cleared the
+  // moment the second seat showed, and the two rows of cards with "0" beside them were all there was to read.
+  const split = { ...hand, hole: [cards("9c Qh"), cards("9d Qc")], won: [16, 16] };
+  assert.equal(handStory(split, name, () => "two pair"), "House 1 and you shared the pot of 32, two pair each.");
+  // Hand 4 there: the guest went all in with jack-four, was called, and a four came.
+  const won = { ...hand, put: [97, 97], won: [0, 194] };
+  assert.equal(handStory(won, name, (seat) => (seat === 1 ? "a pair" : "high card")), "You took the pot of 194 with a pair.");
+  assert.equal(handStory({ ...hand, ending: "fold" as const, folded: [true, false], put: [1, 2], won: [0, 3] }, name, () => null), "You took the pot of 3: everyone else folded.");
+  // The house went all in for 100, the guest could call 40 of it and won: the 60 nobody called went back to the
+  // house, which did not share any pot by that.
+  assert.equal(handStory({ ...hand, put: [100, 40], won: [60, 80] }, name, (seat) => (seat === 1 ? "a flush" : "a pair")), "You took the pot of 80 with a flush.");
+  assert.equal(handStory({ ...hand, ending: "cancelled" as const, put: [12, 12], won: [112, 0], late: [1] }, name, () => null), "Called off: you did not answer in time.");
+});
+
+test("a seat that asked to leave between two hands is gone only when the table says so", () => {
+  // f-mwfqed34-zkvq on testnet, 2026-11-14: hand 2 was over, seat 1 pressed "Leave the table" while no hand had begun.
+  // The button's shuffle reached the contract first, so the seat was dealt into hand 3 and only marked as leaving; the
+  // page wrote "Left the table and cashed out" and went back to the tables, and nobody played the seat any more.
+  const raced = table({ players: ["free.testnet", "e19e.testnet", "8909.testnet", "pokerhouse.testnet", null, null], phase: "shuffle", hand: 2, dealt: [2, 3, 0, 1], shuffled: 1, awaited: [3], leaving: [false, true, false, false, false, false] });
+  assert.equal(leaveState(raced, "e19e.testnet"), "leaving");
+  // Had the request been first, the seat would have been paid and given up at once.
+  assert.equal(leaveState({ ...raced, players: ["free.testnet", null, "8909.testnet", "pokerhouse.testnet", null, null], leaving: [false, false, false, false, false, false] }, "e19e.testnet"), "gone");
+  assert.equal(leaveState({ ...raced, leaving: [false, false, false, false, false, false] }, "e19e.testnet"), "seated");
+});
+
+test("a player whose seat was given up for running out of time is told so", () => {
+  // Hand 2 of f-mwf7vvqq-vmzn on testnet, 2026-11-14: the sponsor did not send seat 2's shares, the seat was ruled
+  // late and given up, and the page went on as if a stranger had opened it: "A free seat. Sit down for free".
+  const last = { number: 1, dealt: [2, 3, 0], board: [20, 13, 32, 44], hole: [[], [], [], [], [], []], folded: [false, false, false, true, false, false], put: [12, 0, 12, 1, 0, 0], won: [112, 0, 0, 1, 0, 0], ending: "cancelled" as const, late: [2] };
+  const after = table({ players: ["free.testnet", null, null, "pokerhouse.testnet", null, null], phase: "shuffle", hand: 2, dealt: [], last });
+  assert.equal(ruledLate(after, 2, "guest.testnet"), true);
+  // Still in its seat, or given up for another reason (it left, another seat was the late one): not told.
+  assert.equal(ruledLate({ ...after, players: ["free.testnet", null, "guest.testnet", "pokerhouse.testnet", null, null] }, 2, "guest.testnet"), false);
+  assert.equal(ruledLate({ ...after, last: { ...last, late: [3] } }, 2, "guest.testnet"), false);
+  assert.equal(ruledLate({ ...after, last: null }, 2, "guest.testnet"), false);
+});
+
+test("a node that does not answer is told to the player in plain words, a refusal of the contract in its own", () => {
+  // A public node limits how often one address may ask (HTTP 429 from test.rpc.fastnear.com while a table was played
+  // from this address, 2026-11-14): the page showed the reading loop's own words.
+  assert.equal(nodeTrouble("RPC query: HTTP 429"), true);
+  assert.equal(nodeTrouble("RPC query: no answer in time"), true);
+  assert.equal(nodeTrouble("RPC block: network error"), true);
+  // What the contract or the chain says about the call itself stays as it is.
+  assert.equal(nodeTrouble("the table is full"), false);
+  assert.equal(nodeTrouble('RPC send_tx: INVALID_TRANSACTION: {"TxExecutionError":{"InvalidTxError":"Expired"}}'), false);
+});
+
+test("the one house seat at a table is the House; several are numbered", () => {
+  const houses = ["pokerhouse.testnet", "pokerhouse2.testnet", "pokerhouse3.testnet", "free.testnet"];
+  // Heads-up at a free table: the guest's one opponent read "House 4".
+  assert.equal(houseName(houses, "free.testnet", ["free.testnet", "guest.testnet"]), "House");
+  // A room with the host and a house seat that was asked in: told apart by their numbers, as before.
+  const room = ["free.testnet", "guest.testnet", "pokerhouse.testnet", null];
+  assert.equal(houseName(houses, "free.testnet", room), "House 4");
+  assert.equal(houseName(houses, "pokerhouse.testnet", room), "House 1");
 });

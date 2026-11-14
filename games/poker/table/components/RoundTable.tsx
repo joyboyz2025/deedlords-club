@@ -13,7 +13,8 @@ import { lookFromSeat } from "../../../ma-soi/look";
 import { CardPlace, PlayingCard } from "../../components/Cards";
 import { Ledger, type LogLine } from "../../components/TableView";
 import type { Advice } from "../../agent/decide";
-import { type TableView, betOptions, nextDealt, seated } from "../seat";
+import { madeHand } from "../../agent/hands";
+import { type TableView, betOptions, clockMarginMs, handNets, handStory, houseName, nextDealt, seated } from "../seat";
 
 const FACE_PX = 112;
 const seatColour = (seat: number) => ({ "--seat": `var(--seat-${seat})` }) as CSSProperties;
@@ -199,13 +200,14 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
 
   const looks = view.players.map((player, seat) => (player ? (!houseSeats.includes(seat) && characters?.get(player)?.look) || lookFromSeat(seat) : null));
   const faces = useLookPictures(looks, FACE_PX);
+  /** Everybody who sits or sat at the table: one house seat among them is "House", several are numbered. */
+  const everyone = [...view.players, ...view.cashed.map((paid) => paid.account)];
   /** Who sits at a seat, in a word or two. */
   const name = (seat: number): string => {
     const player = view.players[seat];
     if (!player) return "Free seat";
     if (seat === mySeat) return "You";
-    const houseIndex = house?.accounts.indexOf(player) ?? -1;
-    if (houseIndex >= 0) return `House ${houseIndex + 1}`;
+    if (house?.accounts.includes(player)) return houseName(house.accounts, player, everyone);
     return characters?.get(player)?.name || shortAccount(player);
   };
   /** The same inside a sentence. */
@@ -213,7 +215,22 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
   const waitingFor = view.awaited.map(named);
   const waitingText = waitingFor.length > 3 ? `${waitingFor.length} seats` : waitingFor.join(" and ");
 
+  // Between two hands, while the next one is shuffled and dealt, the felt keeps the one before: its board, the cards
+  // that were shown and who took the pot. The contract goes on to the next hand in the very call that ends one, so a
+  // showdown was gone from the table the moment its last seat showed, and could only be read off the stub beside it.
+  const before = !inLobby && !reading && (view.phase === "shuffle" || view.phase === "deal") && view.last?.number === view.hand - 1 ? view.last : null;
+  const shownBefore = (seat: number): number[] | null => (before && view.players[seat] && before.hole[seat]?.length === 2 ? before.hole[seat] : null);
+  /** How it ended, in a sentence. A seat given up since is named by its number: who sits there now did not play it. */
+  const told = before
+    ? handStory(
+        before,
+        (seat) => (view.players[seat] ? named(seat) : `seat ${seat + 1}`),
+        (seat) => (shownBefore(seat) && before.board.length === 5 ? madeHand(shownBefore(seat)!, before.board) : null),
+      )
+    : null;
+
   const cardsOf = (seat: number): (number | null | undefined)[] => {
+    if (before) return shownBefore(seat) ?? [];
     if (!inHand || !view.dealt.includes(seat) || view.phase === "shuffle" || view.phase === "deal") return [];
     if (view.hole[seat]?.length === 2) return view.hole[seat];
     if (seat === mySeat && myCards) return myCards;
@@ -229,6 +246,7 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
       filled < 2
         ? `${filled} of ${count} seats taken. The table starts when it is full, or when its host starts it with two or more.`
         : `${filled} of ${count} seats taken. The host can start now, or wait for the table to fill.`;
+  else if (told) say = `${told} Next hand: ${view.phase === "deal" ? `dealing, waiting for ${waitingText}` : doing === "shuffle" ? "this page is shuffling for you" : `waiting for ${waitingText} to shuffle`}.`;
   else if (view.phase === "shuffle")
     say = (
       <>
@@ -305,7 +323,13 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
         {cards.length > 0 && (
           <span className="pt-pod__cards" role="group" aria-label={`${name(seat)}'s cards`}>
             {cards.map((card, index) => (
-              <PlayingCard key={`${view.hand}:${seat}:${index}`} card={card} dealt={live} order={order.indexOf(seat) * 2 + index} dim={seat === mySeat && view.folded[seat]} />
+              <PlayingCard
+                key={`${before ? "before" : view.hand}:${seat}:${index}`}
+                card={card}
+                dealt={live && !before}
+                order={order.indexOf(seat) * 2 + index}
+                dim={!before && seat === mySeat && view.folded[seat]}
+              />
             ))}
           </span>
         )}
@@ -369,6 +393,13 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
                   </span>
                   <span className="pk-label">{bets > 0 && bets < pot ? `pot · ${bets} bet this round` : "pot"}</span>
                 </div>
+                {before && before.board.length > 0 && (
+                  <div className="pt-board" role="group" aria-label={`The board of hand ${before.number + 1}`}>
+                    {before.board.map((card, index) => (
+                      <PlayingCard key={`before:${before.number}:${index}`} card={card} />
+                    ))}
+                  </div>
+                )}
                 {progress ? (
                   <p className="pt-readying" role="status">
                     {progress}
@@ -389,7 +420,7 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
                 className="pk-deck pt-deck"
                 data-pk-deck
                 data-shuffling={(view.phase === "shuffle" && !reading) || undefined}
-                data-away={inLobby || reading || (view.phase !== "shuffle" && view.phase !== "deal") || undefined}
+                data-away={inLobby || reading || (view.phase !== "shuffle" && view.phase !== "deal") || Boolean(before?.board.length) || undefined}
                 style={{ "--ddx": deckAt ? Math.cos(deckAt.angle).toFixed(3) : "-0.8", "--ddy": deckAt ? Math.sin(deckAt.angle).toFixed(3) : "0" } as CSSProperties}
                 aria-hidden="true"
               >
@@ -444,7 +475,7 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
               {view.cashed.map((paid, at) => (
                 <li key={`${paid.account}:${at}`}>
                   <span title={paid.account}>
-                    {paid.account === you ? "You" : house?.accounts.includes(paid.account) ? `House ${house.accounts.indexOf(paid.account) + 1}` : shortAccount(paid.account)}
+                    {paid.account === you ? "You" : house?.accounts.includes(paid.account) ? houseName(house.accounts, paid.account, everyone) : shortAccount(paid.account)}
                   </span>
                   <b>{paid.chips}</b>
                 </li>
@@ -465,6 +496,7 @@ function LastHand({ view, name: nameNow }: { view: TableView; name: (seat: numbe
   const name = (seat: number): string => (view.players[seat] ? nameNow(seat) : `Seat ${seat + 1}`);
   const ending =
     last.ending === "fold" ? "everyone else folded" : last.ending === "showdown" ? "showdown" : last.ending === "cancelled" ? "called off: a seat did not answer in time" : "void";
+  const nets = handNets(last);
   return (
     <div className="pk-ticket">
       <section className="pk-stub pk-last" aria-label="The hand before">
@@ -482,17 +514,20 @@ function LastHand({ view, name: nameNow }: { view: TableView; name: (seat: numbe
         )}
         <ul className="pt-results">
           {last.dealt.map((seat) => {
-            const net = (last.won[seat] ?? 0) - (last.put[seat] ?? 0);
+            const net = nets[seat];
+            // What the cards a seat showed made with the board, as the contract ranked them.
+            const made = last.hole[seat]?.length === 2 && last.board.length === 5 ? madeHand(last.hole[seat], last.board) : null;
             return (
-              <li key={seat} style={seatColour(seat)} data-won={net > 0 || undefined}>
+              <li key={seat} style={seatColour(seat)} data-won={(net !== null && net > 0) || undefined}>
                 <span>
                   <i className="pk-seal" data-given />
                   {name(seat)}
                   {last.late.includes(seat) && <em> late</em>}
                   {last.folded[seat] && <em> folded</em>}
+                  {made && <em> {made}</em>}
                 </span>
                 <span className="pk-last__cards">{last.hole[seat]?.length === 2 && last.hole[seat].map((card, at) => <PlayingCard key={at} card={card} />)}</span>
-                <b>{net > 0 ? `+${net}` : net}</b>
+                <b title={net === null ? "It lost the chips it had at the table" : undefined}>{net === null ? "out" : net > 0 ? `+${net}` : net}</b>
               </li>
             );
           })}
@@ -614,7 +649,11 @@ function ActionStub({
   const options = toAct ? betOptions(view, mySeat) : null;
   const raise = options?.raise ?? null;
   const amount = raise ? Math.min(raise.max, Math.max(raise.min, Math.round(Number(raiseTo)) || raise.min)) : 0;
-  const late = !inLobby && left < 0 && view.awaited.some((seat) => seat !== mySeat);
+  // Not while this seat's own part is owed: time called then rules it late with the others.
+  const late = !inLobby && left < 0 && view.awaited.some((seat) => seat !== mySeat) && (mySeat === null || !view.awaited.includes(mySeat));
+  // With nothing bet on the street yet a raise is a bet, and is called one.
+  const opening = Math.max(0, ...view.bet) === 0;
+  const clockSeconds = Math.round(clockMarginMs(view) / 1_000);
   const isHost = you !== null && view.host === you;
   // A table with a stake of nothing: its host is the server, which starts it when a seated player asks.
   const noStake = BigInt(view.stake) === 0n;
@@ -742,7 +781,7 @@ function ActionStub({
           <div className="pk-raise">
             <input
               type="range"
-              aria-label="Raise to"
+              aria-label={opening ? "Bet" : "Raise to"}
               min={raise.min}
               max={raise.max}
               value={amount}
@@ -751,7 +790,7 @@ function ActionStub({
             />
             <input
               type="number"
-              aria-label="Raise to, in chips"
+              aria-label={opening ? "Bet, in chips" : "Raise to, in chips"}
               inputMode="numeric"
               min={raise.min}
               max={raise.max}
@@ -766,10 +805,10 @@ function ActionStub({
               data-busy={pressed?.key === "raise" || undefined}
               onClick={() => {
                 press({ key: "raise", amount });
-                on.act("raise", amount, `raises to ${amount}`);
+                on.act("raise", amount, opening ? `bets ${amount}` : `raises to ${amount}`);
               }}
             >
-              Raise to {amount}
+              {opening ? "Bet" : "Raise to"} {amount}
             </button>
             <button
               type="button"
@@ -785,9 +824,15 @@ function ActionStub({
             </button>
           </div>
         )}
+        {left <= clockSeconds + 10 && (
+          <p className="pk-fine pk-move__clock" role="status">
+            With {clockSeconds} seconds left this page {options.owed > 0 ? "folds" : "checks"} for you, so that your seat is not ruled late.
+          </p>
+        )}
       </div>
     );
-  } else if (!inHand) {
+  } else if (!inHand && (view.dealt.length > 0 || view.leaving[mySeat])) {
+    // Not before a hand has begun: the seats taken then are all dealt in, and the page is about to shuffle for this one.
     title = view.leaving[mySeat] ? "Leaving" : "Next hand";
     line = view.leaving[mySeat] ? "You are paid when this hand is over." : "You sit at the table and are dealt in from the next hand.";
   } else if (view.folded[mySeat]) {
@@ -821,6 +866,12 @@ function ActionStub({
             )}
           </div>
           {body}
+          {mine && inHand && view.leaving[mySeat] && (
+            <p className="pk-fine" role="status">
+              You leave when this hand is over, and are paid then. Keep this page open until it is: it still plays your seat&apos;s part, and a seat that does not answer loses
+              its chips.
+            </p>
+          )}
           {doing && doing !== "shuffle" && (
             <p className="pk-fine" role="status">
               {doing}

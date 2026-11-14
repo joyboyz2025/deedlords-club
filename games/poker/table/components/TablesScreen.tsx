@@ -43,8 +43,25 @@ import {
   takeSeat,
   viewResult,
 } from "../chain";
-import { FREE_TABLE_HANDS, RECORD_FEE } from "../contract";
-import { type TableResult, type TableView, betCall, duty, holeCards, movedOn, seated } from "../seat";
+import { FREE_TABLE_HANDS, FREE_TURN_SECONDS, RECORD_FEE } from "../contract";
+import {
+  type TableResult,
+  type TableView,
+  betCall,
+  callsTime,
+  clockAhead,
+  clockMove,
+  clockSkew,
+  duty,
+  holeCards,
+  houseName,
+  leaveState,
+  movedOn,
+  nodeTrouble,
+  ruledLate,
+  seated,
+  tookEffect,
+} from "../seat";
 import { useHouse } from "../useHouse";
 import { useSeatAgent } from "../useSeatAgent";
 import { type Tables, useTables } from "../useTables";
@@ -507,7 +524,9 @@ export function TablesLobby({
                 </div>
                 <div>
                   <dt>Clock</dt>
-                  <dd>{TURN_SECONDS} seconds a step; a seat that is late is folded or given up</dd>
+                  <dd>
+                    {gratis ? FREE_TURN_SECONDS : TURN_SECONDS} seconds a step; a seat that does not answer in time is given up, and before the river loses its chips to the others
+                  </dd>
                 </div>
                 <div>
                   <dt>Starts</dt>
@@ -567,7 +586,7 @@ const WALL_LINES = 5;
 function TableWall({ wall, you, houses, onOpen }: { wall: Tables; you: string | null; houses: string[]; onOpen: (id: string) => void }) {
   const { tables, offline } = wall;
   const rows = tables ?? [];
-  const who = (account: string): string => (account === you ? "You" : houses.includes(account) ? `House ${houses.indexOf(account) + 1}` : shortAccount(account));
+  const who = (account: string, at: (string | null)[]): string => (account === you ? "You" : houses.includes(account) ? houseName(houses, account, at) : shortAccount(account));
   return (
     <section className="pk-board pk-wall-board" aria-label="Tables on the contract">
       <h2 className="pk-board__title">
@@ -619,7 +638,7 @@ function TableWall({ wall, you, houses, onOpen }: { wall: Tables; you: string | 
                         <i key={seat} data-taken={player ? true : undefined} style={{ "--seat": `var(--seat-${seat})` } as CSSProperties} />
                       ))}
                     </span>
-                    <small>host {who(table.host)}</small>
+                    <small>host {who(table.host, table.players)}</small>
                   </span>
                   <span role="cell">{isFreeStake(table) ? "Free" : asNear(table.stake, 2)}</span>
                   <span role="cell" className="pk-tables__now">
@@ -686,9 +705,17 @@ function LiveTable({
   /** After a click the buttons stay off until the page has read the table that click made. */
   const [lockUntil, setLockUntil] = useState(0);
   const [now, setNow] = useState(() => Date.now());
+  /** How far this device's clock runs ahead of the chain's (seat.ts `clockAhead`); `null` until a clock was seen to restart. */
+  const [ahead, setAhead] = useState<number | null>(null);
+  /** The deadline of the table as last read, and when that was: a restart counts only if the table was read just before it. */
+  const lastDeadline = useRef<{ deadline: string; at: number } | null>(null);
   const seq = useRef(firstSeq);
-  /** A call the node did not answer: once the table is read past the change it was sent at, it landed. */
-  const unsure = useRef<{ seq: number; line: string; seat?: number } | null>(null);
+  /**
+   * A call the node did not answer. Whether it landed is read from the table: `took` says whether a table shows what
+   * the call would have changed. That the table moved on does not: on 2026-11-14 a "Leave the table" the sponsor never
+   * sent was written down as landed because the house had shuffled meanwhile, and the seat ran out of time unattended.
+   */
+  const unsure = useRef<{ seq: number; at: number; line: string; seat?: number; duty?: boolean; took: (table: TableView | null) => boolean } | null>(null);
   /** The change of the table a refused click was sent against: once the table has moved on, its error is old news. */
   const refusedAt = useRef<number | null>(null);
   /**
@@ -716,12 +743,21 @@ function LiveTable({
 
   useEffect(() => {
     let alive = true;
-    const landed = () => {
+    const settle = (at: TableView | null) => {
       const pending = unsure.current;
       if (!pending) return;
+      const took = pending.took(at);
+      // Not there yet: it may still be on its way until the table has moved on and a while has passed.
+      if (!took && at && (at.seq <= pending.seq || Date.now() - pending.at < UNSURE_MS)) return;
       unsure.current = null;
       setRefused("");
-      say(`${pending.line} (the node gave no receipt; the table shows it landed)`, undefined, pending.seat);
+      if (took) say(`${pending.line} (the node gave no receipt; the table shows it landed)`, undefined, pending.seat);
+      // The seat's own step is sent again at once; a click is the player's to make again.
+      else if (pending.duty) playedStep.current = null;
+      else if (at) {
+        refusedAt.current = at.seq;
+        setRefused(`This did not reach the table: "${pending.line}". Press it again.`);
+      }
     };
     const run = async () => {
       while (alive) {
@@ -729,7 +765,7 @@ function LiveTable({
           const at = await readTable(id, seq.current, () => alive);
           if (!alive) return;
           if (!at) {
-            landed();
+            settle(null);
             setResult(await viewResult(id));
             setView(null);
             return;
@@ -738,7 +774,15 @@ function LiveTable({
           seq.current = at.seq;
           setView(at);
           setTrouble("");
-          if (unsure.current && at.seq > unsure.current.seq) landed();
+          // A page that was not reading (a tab put away, a node that did not answer) learns of a restart long after
+          // it happened: that reading would say the clock is ahead by as long as it was away.
+          const read = lastDeadline.current;
+          if (read !== null && at.deadline !== read.deadline && at.deadline !== "0" && Date.now() - read.at < FRESH_READ_MS) {
+            const seen = clockAhead(at, Date.now());
+            setAhead((before) => (before === null ? seen : Math.min(before, seen)));
+          }
+          lastDeadline.current = { deadline: at.deadline, at: Date.now() };
+          settle(at);
           if (refusedAt.current !== null && at.seq > refusedAt.current + 1) {
             refusedAt.current = null;
             setRefused("");
@@ -773,7 +817,7 @@ function LiveTable({
                 } catch (error) {
                   if (!unanswered(error)) throw error;
                   playedStep.current = { step, at: Date.now(), sure: false };
-                  unsure.current = { seq: at.seq, line, seat };
+                  unsure.current = { seq: at.seq, at: Date.now(), line, seat, duty: true, took: (now) => tookEffect(call.method, session.accountId, seat, at, now) };
                   setTrouble(NO_ANSWER);
                   await sleep(2_000);
                 }
@@ -801,8 +845,8 @@ function LiveTable({
     };
   }, [id, session, store, say, seatOf]);
 
-  /** Sends a call a click asked for. Returns whether the contract took it. */
-  const click = async (line: string, seat: number | undefined, send_: () => Promise<{ hash?: string }>): Promise<boolean> => {
+  /** Sends a call a click asked for: `method` of the contract. Returns whether the contract took it. */
+  const click = async (line: string, seat: number | undefined, method: string, send_: () => Promise<{ hash?: string }>): Promise<boolean> => {
     if (!view) return false;
     setSending(true);
     setRefused("");
@@ -816,7 +860,7 @@ function LiveTable({
       // A copy of a bet whose first sending the node did not answer, refused because the table moved on: nothing was
       // bet, and the table read next shows what did happen. Not an error for the player.
       if (stale(error)) return false;
-      if (unanswered(error)) unsure.current = { seq: view.seq, line, seat };
+      if (unanswered(error)) unsure.current = { seq: view.seq, at: Date.now(), line, seat, took: (now) => tookEffect(method, accountId ?? "", mySeat, view, now) };
       else refusedAt.current = view.seq;
       setRefused(unanswered(error) ? NO_ANSWER : text(error));
       return false;
@@ -827,6 +871,12 @@ function LiveTable({
 
   const mySeat = view ? seatOf(view) : null;
   const myCards = hole.hand === view?.hand ? hole.cards : null;
+  // The seat this browser sat in, kept after it was given up: a player ruled late is told so (seat.ts `ruledLate`).
+  const satAt = useRef<number | null>(null);
+  useEffect(() => {
+    if (mySeat !== null) satAt.current = mySeat;
+  }, [mySeat]);
+  const late = view && accountId && mySeat === null && satAt.current !== null && ruledLate(view, satAt.current, accountId) ? RULED_LATE(view.last!) : "";
 
   // What the seat's account holds. At a table with a stake the seat pays its own gas, and the check of its shuffle
   // proof must be able to reserve about a quarter of a NEAR: an account without it cannot play its seat.
@@ -869,10 +919,12 @@ function LiveTable({
       const { view: at, click: send_, mySeat: seat } = latest.current;
       if (!at || seat === null || !session) return false;
       const owed = Math.min(at.chips[seat], Math.max(...at.bet) - at.bet[seat]);
-      const line = words ?? (action === "fold" ? "folds" : action === "raise" ? `raises to ${amount}` : owed > 0 ? `calls ${owed}` : "checks");
+      // With nothing bet on the street yet a raise is a bet.
+      const raised = Math.max(...at.bet) === 0 ? `bets ${amount}` : `raises to ${amount}`;
+      const line = words ?? (action === "fold" ? "folds" : action === "raise" ? raised : owed > 0 ? `calls ${owed}` : "checks");
       const keys = seatKeys(id, session.accountId);
       if (!keys) return false;
-      const took = await send_(`Seat ${seat + 1}${byAgent ? "'s agent" : ""} ${line}`, seat, async () => send(session, await betCall(at, seat, action, amount, keys, store)));
+      const took = await send_(`Seat ${seat + 1}${byAgent ? "'s agent" : ""} ${line}`, seat, "act", async () => send(session, await betCall(at, seat, action, amount, keys, store)));
       if (took && byAgent) setAgentSaid(line);
       return took;
     },
@@ -908,7 +960,7 @@ function LiveTable({
   useEffect(() => {
     if (sitting && session && view) {
       setSitting(false);
-      void click("Took a seat", undefined, () => takeSeat(session, id, BigInt(view.stake)));
+      void click("Took a seat", undefined, "join", () => takeSeat(session, id, BigInt(view.stake)));
     }
   });
 
@@ -916,9 +968,11 @@ function LiveTable({
   // player who walked away does not hold the others. Tried again every few seconds while the table stays late (the
   // chain's clock may be a little behind this one's, and somebody else's call may have been quicker).
   const calledTime = useRef<{ seq: number; at: number } | null>(null);
+  /** The time by the chain's clock, as near as this page can tell. */
+  const clock = now - clockSkew(ahead);
   useEffect(() => {
-    if (!session || !view || mySeat === null || view.phase === "lobby" || !view.awaited.some((seat) => seat !== mySeat)) return;
-    if (now < Number(view.deadline) / 1_000_000 + TIME_GRACE_MS) return;
+    // Never while this seat's own part is owed: it would be ruled late with the others.
+    if (!session || !view || mySeat === null || !callsTime(view, mySeat, clock, TIME_GRACE_MS)) return;
     const last = calledTime.current;
     if (last && last.seq === view.seq && now - last.at < TIME_RETRY_MS) return;
     calledTime.current = { seq: view.seq, at: now };
@@ -926,13 +980,34 @@ function LiveTable({
       (outcome) => say("Time was called on the late seats", outcome.hash),
       () => undefined,
     );
-  }, [now, view, mySeat, session, id, say]);
+  }, [now, clock, view, mySeat, session, id, say]);
+
+  // The seat's own bet with its clock nearly out: the page checks for it, or folds to a bet (seat.ts `clockMove`).
+  // Once per bet, and again a few seconds later if that did not go through.
+  const clocked = useRef<{ bets: number; at: number } | null>(null);
+  useEffect(() => {
+    if (!view || mySeat === null || locked) return;
+    const move = clockMove(view, mySeat, clock);
+    const last = clocked.current;
+    if (!move || (last && last.bets === view.bets && now - last.at < CLOCK_RETRY_MS)) return;
+    clocked.current = { bets: view.bets, at: now };
+    void bet(move, undefined, move === "fold" ? "folds: its clock ran down" : "checks: its clock ran down");
+  }, [now, clock, view, mySeat, locked, bet]);
+
+  // "Leave the table", pressed while the seat was in no hand: the page goes back to the tables once the table shows
+  // the seat given up (or is gone itself), not before. If the next hand's first shuffle reached the contract before
+  // the request, the seat is in that hand after all and is paid when it is over (seat.ts `leaveState`): the page
+  // stays and plays the seat's part until then.
+  const [wantsOut, setWantsOut] = useState(false);
+  useEffect(() => {
+    if (wantsOut && accountId && (view === null || (view && leaveState(view, accountId) === "gone"))) onBack();
+  }, [wantsOut, view, accountId, onBack]);
 
   // The NEAR for a seat that was asked for has arrived: the seat is taken.
   useEffect(() => {
     if (!wantSeat || !session || !view || mySeat !== null || holds < seatNeeds) return;
     setWantSeat(false);
-    void latest.current.click("Took a seat", undefined, () => takeSeat(session, id, stakeHere));
+    void latest.current.click("Took a seat", undefined, "join", () => takeSeat(session, id, stakeHere));
   }, [wantSeat, session, view, mySeat, holds, seatNeeds, id, stakeHere]);
   /** The club account behind the poker account brings it up to what the seat lacks: one approval. */
   const addFromClub = async () => {
@@ -961,8 +1036,8 @@ function LiveTable({
         myCards={myCards}
         locked={locked || !view}
         doing={sending ? "Sending to the contract…" : doing}
-        now={now}
-        problems={[refused, trouble].filter(Boolean).map((problem) => (/NotEnoughBalance/.test(problem) ? LACKS_NEAR : problem))}
+        now={clock}
+        problems={[refused, trouble, late].filter(Boolean).map((problem) => (/NotEnoughBalance/.test(problem) ? LACKS_NEAR : nodeTrouble(problem) ? NODE_BUSY : problem))}
         log={log}
         link={`${typeof window === "undefined" ? "" : window.location.origin}${ROUTE}?t=${id}`}
         explorer={explorerLink}
@@ -997,7 +1072,7 @@ function LiveTable({
               setWantSeat(true);
               return;
             }
-            void click("Took a seat", undefined, async () => {
+            void click("Took a seat", undefined, "join", async () => {
               // A seat with a stake: the poker account is brought up to it from the club account first, in one approval.
               if (backer && stake > 0n) await fundPoker(backer, session.accountId, stake + RECORD_FEE + NEAR / 2n);
               return takeSeat(session, id, stake);
@@ -1007,17 +1082,18 @@ function LiveTable({
           start: () =>
             session &&
             view &&
-            void click("Started the table", undefined, () => (isFreeStake(view) && view.host !== session.accountId ? startFreeTable(id) : startTable(session, id))),
-          // Off a table between hands the seat is cashed out at once, and the page goes back to the tables.
+            void click("Started the table", undefined, "start", () => (isFreeStake(view) && view.host !== session.accountId ? startFreeTable(id) : startTable(session, id))),
+          // Off a table between hands the seat is cashed out at once, if the request is there before the next hand
+          // begins: the page goes back to the tables when the table shows it.
           leave: () => {
             if (!session) return;
             const inHand = mySeat !== null && Boolean(view?.dealt.includes(mySeat));
-            void click(inHand ? "Asked to leave after this hand" : "Left the table and cashed out", mySeat ?? undefined, () => leaveTable(session, id)).then(
-              (left) => left && !inHand && onBack(),
+            void click(inHand ? "Asked to leave after this hand" : "Asked to leave the table", mySeat ?? undefined, "leave", () => leaveTable(session, id)).then(
+              (left) => left && !inHand && setWantsOut(true),
             );
           },
           back: onBack,
-          callTime: () => session && void click("Called time on the late seats", undefined, () => callTime(session, id)),
+          callTime: () => session && void click("Called time on the late seats", undefined, "timeout", () => callTime(session, id)),
           addHouse: (models) => {
             setRefused("");
             void seatHouses(models);
@@ -1066,14 +1142,26 @@ function LiveTable({
   );
 }
 
+/** A call the node did not answer is given this long to show in the table before it is taken as not sent. */
+const UNSURE_MS = 8_000;
 /** A seated page calls time this long after a step's deadline, and again this often while the table stays late. */
 const TIME_GRACE_MS = 4_000;
 const TIME_RETRY_MS = 12_000;
+/** A bet the page made because the clock ran down is tried again this often while it has not gone through. */
+const CLOCK_RETRY_MS = 5_000;
+/** A clock's restart tells how the device's clock stands only if the table had been read this short a while before. */
+const FRESH_READ_MS = 4_000;
 /** Below this a seat at a table with a stake cannot send its shuffle: the call must be able to reserve 0.26 NEAR. */
 const PLAY_RESERVE = (27n * NEAR) / 100n;
 /** What a seat that ran low is brought back up to. */
 const PLAY_TOP_UP = (4n * NEAR) / 10n;
 const LACKS_NEAR = "Your account holds too little NEAR for this step. Add some below: the page goes on by itself when it lands.";
+const NODE_BUSY = "A NEAR node did not answer just now: the public ones limit how often one address may ask. The page keeps trying by itself.";
+/** Told to a player whose seat ran out of time. Its chips went to the others only when the hand took more in than was put into it. */
+const RULED_LATE = (last: NonNullable<TableView["last"]>): string =>
+  `Your seat was given up in hand ${last.number + 1}: the table did not get its step before the clock ran out, and the contract ruled it late.${
+    last.won.reduce((sum, chips) => sum + chips, 0) > last.put.reduce((sum, chips) => sum + chips, 0) ? " The chips it held went to the seats still in the hand." : ""
+  }`;
 
 /** What a seat may cost at a table opened here, in NEAR: the contract takes 0.1 and up; the page stops at 1. */
 const STAKE_CHIPS = [0.1, 0.25, 0.5, 1];
@@ -1156,20 +1244,24 @@ export function TableSettled({
     );
   }
   // A long account id is cut short here as at the table; the whole of it is in the title of each line.
-  const who = (account: string) => (account === you ? "You" : houses.includes(account) ? `House ${houses.indexOf(account) + 1}` : shortAccount(account));
+  const everyone = result.cashed.map((seat) => seat.account);
+  const who = (account: string) => (account === you ? "You" : houses.includes(account) ? houseName(houses, account, everyone) : shortAccount(account));
   const fees = result.cashed.reduce((sum, seat) => sum + BigInt(seat.fee), 0n);
+  // A free table staked nothing and paid nothing: its seats left with chips, and that is all there is to show.
+  const free = BigInt(result.stake) === 0n;
   return (
     <div className="pk-hall">
       <div>
         <h1 className="pk-line">Table settled.</h1>
         <p className="pk-lede">
-          Table <span className="pk-code">{id}</span> closed after {result.hands} {result.hands === 1 ? "hand" : "hands"}. Every seat was paid the chips it held when it left, by
-          the contract
-          {result.feeBps ? `, less a fee of ${result.feeBps / 100}% of what it won` : ", with no fee"}.
+          Table <span className="pk-code">{id}</span> closed after {result.hands} {result.hands === 1 ? "hand" : "hands"}.{" "}
+          {free
+            ? "It was a free table: the chips were only chips, and no NEAR was staked or paid."
+            : `Every seat was paid the chips it held when it left, by the contract${result.feeBps ? `, less a fee of ${result.feeBps / 100}% of what it won` : ", with no fee"}.`}
         </p>
-        <section className="pk-board" aria-label="What the table paid">
+        <section className="pk-board" aria-label={free ? "The chips each seat left with" : "What the table paid"}>
           <h2 className="pk-board__title">
-            <Seat size={22} /> <span>Paid by the contract</span>
+            <Seat size={22} /> <span>{free ? "Chips at the end" : "Paid by the contract"}</span>
           </h2>
           <ul className="pk-result pt-paid">
             {result.cashed.map((seat, at) => (
@@ -1178,13 +1270,13 @@ export function TableSettled({
                   {at + 1}
                 </span>
                 <span>
-                  <small className="pk-label">{seat.chips} chips</small>
+                  <small className="pk-label">{free ? "started with 100" : `${seat.chips} chips`}</small>
                   <strong title={seat.account}>{who(seat.account)}</strong>
                 </span>
                 <Flap text={seat.chips > 100 ? "AHEAD" : seat.chips === 100 ? "EVEN" : "BEHIND"} />
                 <span className="pk-result__paid">
-                  <b>{asNear(seat.payout).replace(" NEAR", "")}</b>
-                  <small className="pk-label">{BigInt(seat.fee) > 0n ? `NEAR · fee ${asNear(seat.fee, 3).replace(" NEAR", "")}` : "NEAR"}</small>
+                  <b>{free ? seat.chips : asNear(seat.payout).replace(" NEAR", "")}</b>
+                  <small className="pk-label">{free ? "chips" : BigInt(seat.fee) > 0n ? `NEAR · fee ${asNear(seat.fee, 3).replace(" NEAR", "")}` : "NEAR"}</small>
                 </span>
               </li>
             ))}
@@ -1196,7 +1288,9 @@ export function TableSettled({
         <div className="pk-ticket">
           <section className="pk-stub">
             <h2 className="pk-stub__title">Play again</h2>
-            <p className="pk-small">A new table takes a new stake; what this one paid is already in the accounts above.</p>
+            <p className="pk-small">
+              {free ? "Another free table costs nothing: open one at the desk." : "A new table takes a new stake; what this one paid is already in the accounts above."}
+            </p>
             {back}
           </section>
         </div>

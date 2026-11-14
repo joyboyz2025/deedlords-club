@@ -88,6 +88,23 @@ export type SeatStore = {
 /** The contract's answer to a bet sent again, or chosen on a view the table has moved past: nothing was bet. */
 export const movedOn = (error: unknown): boolean => /the table moved on since this bet was chosen/.test(error instanceof Error ? error.message : String(error));
 
+/**
+ * Whether a call the node gave no receipt for shows in the table read afterwards (`after`; `null`: the table is
+ * settled): `method` sent by `account`, for `seat` when it has one, on the table as it was `before`. That the table
+ * changed says nothing: another seat's call changes it too. Only what this call alone could have changed counts.
+ */
+export function tookEffect(method: string, account: string, seat: number | null, before: TableView, after: TableView | null): boolean {
+  if (!after) return method === "leave" || method === "timeout";
+  const sameStep = after.hand === before.hand && after.phase === before.phase && after.street === before.street && after.shuffled === before.shuffled;
+  if (method === "join") return after.players.includes(account);
+  if (method === "start") return after.phase !== "lobby";
+  if (method === "leave") return !after.players.includes(account) || (seat !== null && after.leaving[seat]);
+  if (method === "act") return after.bets > before.bets;
+  if (method === "timeout") return !sameStep || before.awaited.some((late) => !after.awaited.includes(late));
+  // A shuffle, or shares: the hand is past the step, or no longer waits for this seat at it.
+  return !sameStep || seat === null || !after.awaited.includes(seat);
+}
+
 export const toBase64 = (bytes: Uint8Array): string => btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
 export const fromBase64 = (text: string): Uint8Array => Uint8Array.from(atob(text), (char) => char.charCodeAt(0));
 
@@ -160,10 +177,154 @@ export function holeCards(view: TableView, seat: number, keys: Keys, deck: Uint8
  * What the seat to act may do: what a call costs it (all it has, when that is less than it owes), and the smallest
  * and largest bet it may raise to. `null`: no raise, because it cannot pay more than the bet it answers or because
  * nobody is left who could answer one.
+ *
+ * The smallest raise adds what the bet it answers added to the one before it, and the big blind at least, as at any
+ * no-limit table; less only all in. The contract itself asks for the big blind and no more, so every raise offered
+ * here is one it takes.
  */
 export function betOptions(view: TableView, seat: number): { owed: number; raise: { min: number; max: number } | null } {
   const top = Math.max(...view.bet);
   const all = view.bet[seat] + view.chips[seat];
   const answering = contenders(view).some((other) => other !== seat && view.chips[other] > 0);
-  return { owed: Math.min(view.chips[seat], top - view.bet[seat]), raise: all > top && answering ? { min: Math.min(top + 2, all), max: all } : null };
+  const before = Math.max(0, ...view.bet.filter((chips) => chips < top));
+  return { owed: Math.min(view.chips[seat], top - view.bet[seat]), raise: all > top && answering ? { min: Math.min(top + Math.max(2, top - before), all), max: all } : null };
 }
+
+/**
+ * What each seat won or lost by a finished hand, by seat. A seat that ran out of time in a hand that was called off
+ * also lost the chips it had behind, which went to the seats still in: with one late seat that is what the others
+ * took beyond what was put in; with several, their shares cannot be told apart and `null` stands for each.
+ */
+export function handNets(last: Hand): (number | null)[] {
+  const fined = last.won.reduce((sum, chips) => sum + chips, 0) - last.put.reduce((sum, chips) => sum + chips, 0);
+  return last.won.map((won, seat) => {
+    const net = won - (last.put[seat] ?? 0);
+    if (fined <= 0 || !last.late.includes(seat)) return net;
+    return last.late.length === 1 ? net - fined : null;
+  });
+}
+
+/**
+ * How long before its deadline a seat's own bet is made for it (`clockMove`), in milliseconds: room for the bet to be
+ * signed, sent and taken into a block, and at a free table to wait its turn behind the sponsor's other transactions.
+ */
+export const clockMarginMs = (view: Pick<TableView, "turnSeconds">): number => Math.min(12_000, view.turnSeconds * 250);
+
+/**
+ * The bet a seat's page makes for it when its clock is nearly out: a check when nothing is owed, a fold when a bet
+ * is, as the clock does at any online table. `null`: not this seat's bet, or time enough. Left to run out, the bet
+ * costs far more than a fold: before the river the contract cannot fold the seat (a fold carries the seat's shares
+ * for the board), so the hand is called off and the seat loses all it has at the table.
+ */
+export function clockMove(view: TableView, seat: number, nowMs: number): "call" | "fold" | null {
+  if (view.phase !== "bet" || view.toAct !== seat) return null;
+  if (Number(view.deadline) / 1_000_000 - nowMs > clockMarginMs(view)) return null;
+  return betOptions(view, seat).owed > 0 ? "fold" : "call";
+}
+
+/**
+ * Read when a step's clock has just been restarted (the contract sets the deadline a whole `turnSeconds` ahead): how
+ * far this device's clock runs ahead of the chain's, in milliseconds, plus the moment the new table took to get here.
+ * The least of several readings is the nearest. Taken off the device's time, a countdown and `clockMove` no longer
+ * depend on a clock that is set wrong: one a minute ahead would otherwise fold every hand at once.
+ */
+export const clockAhead = (view: Pick<TableView, "turnSeconds" | "deadline">, nowMs: number): number => view.turnSeconds * 1_000 - (Number(view.deadline) / 1_000_000 - nowMs);
+
+/**
+ * What a page takes off its device's time, from the least `clockAhead` it has read (`null`: none yet). A reading is
+ * the clock's error plus the second or two a new table takes to get here, so up to five seconds ahead is taken for
+ * none: a device that keeps time keeps its own, and its countdown never shows more time than there is. A clock that
+ * is behind, or far ahead, is put right.
+ */
+export const clockSkew = (ahead: number | null): number => (ahead === null || (ahead >= 0 && ahead <= 5_000) ? 0 : ahead);
+
+/**
+ * Whether the page of `seat` calls time by itself: the deadline passed `graceMs` ago and the table waits for others,
+ * not for this seat. Time called while its own part is still owed would rule this seat late with them.
+ */
+export const callsTime = (view: TableView, seat: number, nowMs: number, graceMs: number): boolean =>
+  view.phase !== "lobby" && view.awaited.length > 0 && !view.awaited.includes(seat) && nowMs >= Number(view.deadline) / 1_000_000 + graceMs;
+
+/** When a free table was opened, from its id (`f-<time in base 36>-…`); 0 for any other id. */
+export const openedAt = (id: string): number => (/^f-([0-9a-z]{6,9})-/.test(id) ? parseInt(id.split("-")[1], 36) : 0);
+/** A free table nobody came to is closed by its host this long after it was opened. */
+export const FREE_LOBBY_MS = 10 * 60_000;
+/** One somebody did sit at, and that still has not started this long after it was opened: whoever sat there walked away. */
+export const FREE_ROOM_MS = 30 * 60_000;
+
+/**
+ * Whether the host of a free table closes it in the lobby: nobody came, or those who came never started it. A table
+ * in the lobby has no clock, so nothing else ever ends it, and every one left open holds one of the few free tables
+ * the sponsor keeps open at once (and a house seat, if one was asked to sit): on 2026-11-14 three rooms, 8 to 17
+ * hours old, each with one guest long gone, held three of the testnet site's four.
+ */
+export const coldLobby = (table: Pick<TableView, "id" | "phase" | "players">, isHouse: (account: string) => boolean, now: number): boolean =>
+  table.phase === "lobby" && now > openedAt(table.id) + (table.players.some((player) => player !== null && !isHouse(player)) ? FREE_ROOM_MS : FREE_LOBBY_MS);
+
+/**
+ * Whether the host of a free table, which plays `hands` hands there, asks to leave now: during the last of them, once
+ * it is dealt into it. The contract then gives the seat up when that hand is over. Asked between two hands, before
+ * the button has shuffled, the contract gives the seat up at once: the last hand was never played, and a table of two
+ * closed under a guest whose page was shuffling for it.
+ */
+export const hostIsSpent = (view: Pick<TableView, "hand" | "dealt" | "leaving">, seat: number, hands: number): boolean =>
+  view.hand >= hands - 1 && view.dealt.includes(seat) && !view.leaving[seat];
+
+/**
+ * How a finished hand ended, in a sentence for the table: who took the pot and with what. `name`: a seat inside a
+ * sentence ("you", "House 1"). `made`: what the cards a seat showed made with the board ("two pair"), `null` when it
+ * showed none.
+ */
+export function handStory(last: Hand, name: (seat: number) => string, made: (seat: number) => string | null): string {
+  const list = (seats: number[]): string => {
+    const names = seats.map(name);
+    const said = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? "nobody");
+    return said.charAt(0).toUpperCase() + said.slice(1);
+  };
+  if (last.ending === "void") return "The hand was void: every chip went back.";
+  if (last.ending === "cancelled") return `Called off: ${list(last.late).replace(/^./, (first) => first.toLowerCase())} did not answer in time.`;
+  // Who came out ahead took the pot. A seat that only got back the part of its bet nobody called did not; when
+  // nobody is ahead (equal hands, equal bets) the seats that took chips shared it.
+  const took = last.dealt.filter((seat) => (last.won[seat] ?? 0) > 0 && !last.folded[seat]);
+  const ahead = took.filter((seat) => last.won[seat] > (last.put[seat] ?? 0));
+  const winners = ahead.length ? ahead : took;
+  const pot = winners.reduce((sum, seat) => sum + last.won[seat], 0);
+  if (last.ending === "fold") return `${list(winners)} took the pot of ${pot}: everyone else folded.`;
+  const hands = winners.map(made);
+  const same = hands[0] !== null && hands.every((hand) => hand === hands[0]) ? hands[0] : null;
+  if (winners.length === 1) return `${list(winners)} took the pot of ${pot}${same ? ` with ${same}` : ""}.`;
+  return `${list(winners)} shared the pot of ${pot}${same ? `, ${same} each` : ""}.`;
+}
+
+/**
+ * What became of an account that asked to leave a table: "gone", it was paid and its seat given up; "leaving", it is
+ * still in its seat and leaves when the hand it is in is over; "seated", nothing shows of the request.
+ *
+ * "Leave the table" pressed between two hands is paid at once only if it reaches the contract before the next hand's
+ * first shuffle. If the button was quicker the seat is dealt into that hand and still owes it its part: a page that
+ * walks off then leaves the seat to run out of time, and with it its chips.
+ */
+export function leaveState(view: Pick<TableView, "players" | "leaving">, account: string): "gone" | "leaving" | "seated" {
+  const seat = view.players.indexOf(account);
+  return seat < 0 ? "gone" : view.leaving[seat] ? "leaving" : "seated";
+}
+
+/**
+ * Whether the seat an account sat in was given up because it ran out of time in the hand before: `seat` is where the
+ * account sat. The contract rules a seat late when its step has not reached it by the deadline, whoever is at fault.
+ */
+export const ruledLate = (view: Pick<TableView, "players" | "last">, seat: number, account: string): boolean => view.players[seat] !== account && Boolean(view.last?.late.includes(seat));
+
+/**
+ * Whether what the reading loop could not do was a node not answering (a rate limit, a gateway error, no answer at
+ * all), as lib/chain/rpc.ts words it: nothing for the player to act on, and not to be read out as "RPC query: HTTP 429".
+ */
+export const nodeTrouble = (problem: string): boolean => /^RPC \w+: (HTTP \d{3}|no answer in time|network error)$/.test(problem);
+
+/**
+ * What a seat of the house is called at a table: "House" when it is the only one of the house's accounts there, else
+ * numbered as the server lists them. `at`: everybody who sits or sat at the table. Heads-up against the house, the
+ * one opponent was "House 4": the free tables' host is the fourth account on the server's list.
+ */
+export const houseName = (houses: string[], account: string, at: (string | null)[]): string =>
+  new Set(at.filter((other) => other !== null && houses.includes(other))).size > 1 ? `House ${houses.indexOf(account) + 1}` : "House";

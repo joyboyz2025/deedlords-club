@@ -126,3 +126,68 @@ test("a server reads the chain's nonce before each signature: one used elsewhere
     restore();
   }
 });
+
+// What the public nodes answered on 2026-11-14 when asked to wait for a transaction they did not know: the question
+// held for ten seconds and then HTTP 408 with this body, or (two times in three, test.rpc.fastnear.com) no answer at all.
+const HELD = { error: { name: "HANDLER_ERROR", cause: { info: { cause: "NOT_OBSERVED" }, name: "TIMEOUT_ERROR" }, code: -32000, message: "Server error", data: "Timeout" } };
+
+/** `fakeNode`, but asked to wait for a transaction it does not know it answers as `held` says, as a real node does. */
+function realisticNode(start: number, held: (init?: RequestInit) => Promise<Response>) {
+  const made = fakeNode(start);
+  const fake = globalThis.fetch;
+  globalThis.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+    const { method, params } = JSON.parse(String(init?.body)) as { method: string; params: Record<string, string> };
+    if (method === "tx" && params.wait_until !== "NONE" && !made.node.ran.has(params.tx_hash)) return held(init);
+    return fake(url, init);
+  }) as typeof fetch;
+  return made;
+}
+
+/** The first transaction goes out with a nonce another server's has taken; the second is the one the chain runs. */
+const passedOverOnce = (node: ReturnType<typeof fakeNode>["node"]) => (sent: { hash: string; nonce: number }) => {
+  if (node.sent.length === 1) node.nonce = sent.nonce;
+  else node.ran.add(sent.hash);
+};
+async function within<T>(ms: number, job: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<T>((_, reject) => (timer = setTimeout(() => reject(new Error(`still waiting after ${ms} ms`)), ms)));
+  try {
+    return await Promise.race([job, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+test("a node that gives up waiting with HTTP 408, as the public ones do, does not hide a transaction that was passed over", async () => {
+  const { node, restore } = realisticNode(10, async () => new Response(JSON.stringify(HELD), { status: 408 }));
+  try {
+    const session = new ChainClient(config).session("free.test", generateKeyPair(), { pipelined: true, passedOverAfterMs: 20 });
+    node.onSend = passedOverOnce(node);
+    const outcome = await within(3_000, session.sendTo("game.test", call));
+    assert.deepEqual(
+      node.sent.map((sent) => sent.nonce),
+      [11, 12],
+    );
+    assert.equal(outcome.hash, node.sent[1].hash);
+  } finally {
+    restore();
+  }
+});
+
+test("a node that does not answer at all does not hold the wait: the transaction passed over is signed again", async () => {
+  // Like fetch: nothing until the request is given up, then the reason it was given up for.
+  const silent = (init?: RequestInit) => new Promise<Response>((_, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal!.reason)));
+  const { node, restore } = realisticNode(10, silent);
+  try {
+    const session = new ChainClient(config).session("free.test", generateKeyPair(), { pipelined: true, passedOverAfterMs: 20 });
+    node.onSend = passedOverOnce(node);
+    const outcome = await within(3_000, session.sendTo("game.test", call));
+    assert.deepEqual(
+      node.sent.map((sent) => sent.nonce),
+      [11, 12],
+    );
+    assert.equal(outcome.hash, node.sent[1].hash);
+  } finally {
+    restore();
+  }
+});
