@@ -11,10 +11,23 @@ import type { TableView } from "./seat";
 /** While the table waits for the house, it is asked again after this long. */
 const RETRY_MS = 4_000;
 
+/**
+ * The longest a step of the house is waited for: a model's twelve seconds for a bet, a shuffle's proof, a transaction
+ * and a look at the key if the chain passed it over. A request that hangs longer than that is given up, so that the
+ * house can be asked again: the page asks one question at a time, and on 2026-11-14 two that hung until the host cut
+ * them off after a minute (HTTP 504) left the house's seat still for a whole clock.
+ */
+const HOUSE_ASK_MS = 30_000;
+
 /** Asks the house for one step at table `id`; with `add`, to take one more free seat there, betting by `model`. */
-export async function askHouse(id: string, add = false, model?: string): Promise<Played> {
+export async function askHouse(id: string, add = false, model?: string, timeoutMs = HOUSE_ASK_MS): Promise<Played> {
   for (let tries = 0; ; tries++) {
-    const response = await fetch("/api/poker/table/house", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, add, model }) });
+    const response = await fetch("/api/poker/table/house", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id, add, model }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
     const answer = (await response.json()) as Played & { error?: string };
     if (!response.ok) throw new Error(answer.error ?? `the house answered ${response.status}`);
     // A table opened a moment ago may not have reached the node the server read from: ask again for a few seconds.

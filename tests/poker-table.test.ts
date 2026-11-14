@@ -28,6 +28,7 @@ import {
   toBase64,
   tookEffect,
 } from "../games/poker/table/seat.ts";
+import { askHouse } from "../games/poker/table/useHouse.ts";
 
 const card = (name: string): number => "23456789TJQKA".indexOf(name[0]) + 13 * "cdhs".indexOf(name[1]);
 const cards = (names: string): number[] => names.split(" ").map(card);
@@ -346,4 +347,26 @@ test("a free table left in the lobby is closed by its host, with or without a gu
   assert.equal(coldLobby(empty, house, opened + minutes(11)), true);
   // A table that started has a clock of its own: never closed from here.
   assert.equal(coldLobby({ ...room, phase: "bet" as const }, house, opened + minutes(17 * 60)), false);
+});
+
+test("a house that does not answer is not waited for longer than its step can take", async () => {
+  // On 2026-11-14 the house's request hung until the host cut it off after 60 seconds (HTTP 504), twice in five hands;
+  // the page asks one question at a time, so nobody asked again and the house's seat sat still for a whole clock.
+  const real = globalThis.fetch;
+  let asked = 0;
+  globalThis.fetch = ((_url: RequestInfo | URL, init?: RequestInit) => {
+    asked += 1;
+    return new Promise<Response>((_, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal!.reason)));
+  }) as typeof fetch;
+  // The timer that gives a request up does not keep a process alive by itself: this one does, for the test.
+  const awake = setTimeout(() => undefined, 5_000);
+  try {
+    const started = Date.now();
+    await assert.rejects(askHouse("f-test-abcd", false, undefined, 40));
+    assert.equal(asked, 1);
+    assert.ok(Date.now() - started < 2_000);
+  } finally {
+    clearTimeout(awake);
+    globalThis.fetch = real;
+  }
 });
