@@ -92,6 +92,23 @@ def assemble(voice, pieces, out):
     return seconds(out)
 
 
+def mix(film, said, out, voice, film_seconds):
+    """Lays each line's sound at its second (`at`, `wav`) over the film and writes `out`."""
+    inputs, parts = [], []
+    for i, entry in enumerate(said):
+        inputs += ["-i", entry["wav"]]
+        parts.append("[%d:a]adelay=%d:all=1[a%d]" % (i, int(entry["at"] * 1000), i))
+    parts.append("%samix=inputs=%d:normalize=0,apad=whole_dur=%.2f[voice]" % ("".join("[a%d]" % i for i in range(len(said))), len(said), film_seconds))
+    track = os.path.join(KEEP, voice, "track.wav")
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error"] + inputs + ["-filter_complex", ";".join(parts), "-map", "[voice]", track], check=True)
+    report = subprocess.run(["ffmpeg", "-hide_banner", "-i", track, "-af", "loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json", "-f", "null", "-"], capture_output=True, text=True).stderr
+    loud = float(json.JSONDecoder().raw_decode(report[report.rindex("{") :])[0]["input_i"])
+    gain = -15.0 - loud  # the limiter takes about one decibel back
+    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", film, "-i", track, "-filter_complex", "[1:a]volume=%.2fdB,alimiter=limit=0.75:level=false[voice]" % gain]
+    subprocess.run(cmd + ["-map", "0:v", "-map", "[voice]", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", out], check=True)
+    print("voice %s: %d lines, %.1f LUFS before a gain of %+.1f dB; wrote %s, %.1f s" % (voice, len(said), loud, gain, out, seconds(out)))
+
+
 def main():
     film, captions_path, out = sys.argv[1:4]
     voice = sys.argv[4] if len(sys.argv) > 4 else "am_michael"
@@ -128,23 +145,12 @@ def main():
     if late and not os.environ.get("FORCE"):
         print("%d lines too long: not mixed" % late)
         return 1
-    inputs, parts = [], []
-    for i, entry in enumerate(said):
-        inputs += ["-i", entry["wav"]]
-        parts.append("[%d:a]adelay=%d:all=1[a%d]" % (i, int(entry["at"] * 1000), i))
-    parts.append("%samix=inputs=%d:normalize=0,apad=whole_dur=%.2f[voice]" % ("".join("[a%d]" % i for i in range(len(said))), len(said), film_seconds))
-    track = os.path.join(KEEP, voice, "track.wav")
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error"] + inputs + ["-filter_complex", ";".join(parts), "-map", "[voice]", track], check=True)
-    report = subprocess.run(["ffmpeg", "-hide_banner", "-i", track, "-af", "loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json", "-f", "null", "-"], capture_output=True, text=True).stderr
-    loud = float(json.JSONDecoder().raw_decode(report[report.rindex("{") :])[0]["input_i"])
-    gain = -15.0 - loud  # the limiter takes about one decibel back
-    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", film, "-i", track, "-filter_complex", "[1:a]volume=%.2fdB,alimiter=limit=0.75:level=false[voice]" % gain]
-    subprocess.run(cmd + ["-map", "0:v", "-map", "[voice]", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", out], check=True)
-    print("voice %s: %d lines, %.1f LUFS before a gain of %+.1f dB; wrote %s, %.1f s" % (voice, len(said), loud, gain, out, seconds(out)))
+    mix(film, said, out, voice, film_seconds)
     return 0
 
 
-if len(sys.argv) > 2 and sys.argv[1] == "--worker":
-    worker(sys.argv[2])
-else:
-    sys.exit(main())
+if __name__ == "__main__":
+    if len(sys.argv) > 2 and sys.argv[1] == "--worker":
+        worker(sys.argv[2])
+    else:
+        sys.exit(main())

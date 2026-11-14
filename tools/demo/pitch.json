@@ -1,0 +1,41 @@
+{
+  "clips": ["~/Documents/deedlords-work/video5", "~/Documents/deedlords-work/video4/full"],
+  "pace": 1.08,
+  "beats": [
+    { "id": "I1", "clip": "1-open", "from": 0.3, "say": [{ "t": "This is Deed Lords Club:", "speed": 0.95 }, 0.12, "the home of fully on-chain games, on Near."], "show": "<b>Deedlords Club</b>: the home of fully on-chain games on NEAR." },
+    { "id": "I2", "clip": "1-open", "from": "+", "say": ["In an ordinary online game, a hidden server rolls the dice, shuffles the deck,", 0.08, { "t": "and holds your money.", "speed": 0.93 }], "show": "An ordinary online game: a hidden server rolls the dice, shuffles the deck and <b>holds your money</b>." },
+    { "id": "I3", "clip": "6-mainnet", "from": 0.2, "say": [{ "t": "Here, Near contracts do it all.", "speed": 0.95 }, 0.15, "Every move is a public transaction, that anyone can check."], "show": "Here <b>NEAR contracts</b> do it all. Every move is a public transaction anyone can check.", "tech": "FULLY ON CHAIN · NEAR MAINNET" },
+
+    { "card": "Any wallet. Any chain.", "sub": "Or no wallet at all", "over": "n1-wallets", "at": 1.0 },
+    { "id": "A1", "clip": "n1-wallets", "from": 0.4, "say": ["Walk in your way.", 0.15, "A guest gets a Near account in one tap: no wallet, no seed phrase."], "show": "A guest gets a <b>NEAR account in one tap</b>. No wallet, no seed phrase.", "tech": "NEAR IMPLICIT ACCOUNTS" },
+    { "id": "A2", "clip": "n1-wallets", "from": 8.6, "say": ["Or bring MetaMask, or any Near wallet,", 0.06, { "t": "through Near Connect.", "speed": 0.94 }], "show": "Or bring MetaMask, or any NEAR wallet, through <b>NEAR Connect</b>.", "tech": "NEAR CONNECT" },
+    { "id": "A3", "clip": "2-room", "from": 21.9, "say": [{ "t": "Gas is on the house:", "speed": 0.95 }, 0.1, "the club sponsors every move, with Near meta-transactions."], "show": "Gas is <b>on the house</b>: the club sponsors every move with NEAR meta-transactions.", "tech": "META-TRANSACTIONS · NEP-366" },
+    { "id": "A4", "clip": "n4-chains", "from": 6.0, "say": ["And your money can start on any chain: U.S.D.C., Ether, Solana, Bitcoin.", 0.15, { "t": "Near Intents prices the swap, live.", "speed": 0.95 }], "show": "Money from any chain: USDC, ETH, SOL or BTC. <b>NEAR Intents</b> prices the swap, live.", "tech": "NEAR INTENTS · 1CLICK" },
+
+    { "card": "Deedlords", "sub": "The board game the world knows. Fully on chain.", "over": "3-play", "at": 1.0 },
+    { "id": "G1", "clip": "3-play", "from": 0.2, "say": ["Game one: Deed Lords.", 0.15, "The property board game the whole world knows, Monopoly-style,", 0.06, { "t": "now fully on chain.", "speed": 0.94 }], "show": "<b>Deedlords</b>: the property board game the world knows, Monopoly-style, now fully on chain." },
+    { "id": "G2", "clip": "3-play", "from": "+", "say": ["Buy the city you land on, build your first house.", 0.15, "The contract rolls the dice, from Near's own randomness."], "show": "Buy a city, build a house. The contract rolls the dice from <b>NEAR's own randomness</b>.", "tech": "ON-CHAIN RANDOMNESS" },
+    { "id": "G3", "clip": "3-play", "from": "+", "say": ["Every move is a transaction, landing in about two seconds.", 0.15, "And no wallet pop-ups: a function-call access key signs for you."], "show": "Every move is a transaction, in about <b>two seconds</b>. No wallet pop-ups: an access key signs for you.", "tech": "FUNCTION-CALL ACCESS KEYS" },
+    { "id": "G4", "clip": "3-play", "from": 42.0, "say": ["Special tickets bend the rules:", 0.08, "pick your steps, and land where you want."], "show": "Special tickets bend the rules: <b>pick your steps</b> and land where you want." },
+    { "id": "G5", "clip": "3-play", "from": 51.5, "say": ["And the leader pays double rent,", 0.08, "so nobody runs away with the game."], "show": "The leader <b>pays double rent</b>, so nobody runs away with the game." },
+
+    { "card": "Coach your own AI", "sub": "Models in a hardware enclave, on NEAR AI Cloud", "over": "n2-agents", "at": 12.0 },
+    { "id": "B1", "clip": "n2-agents", "from": 0.6, "say": [{ "t": "Now, the part we love most.", "speed": 0.95 }, 0.15, "Every player gets an A.I. agent, and you coach it in plain words:", 0.08, "what to buy, when to build, how much cash to keep."], "show": "Every player gets an <b>AI agent</b>, coached in plain words: what to buy, when to build, how much cash to keep." },
+    { "id": "B2", "clip": "n2-agents", "from": "+", "say": ["Pick its model. Add your rules.", 0.12, { "t": "Your prompt stays secret.", "speed": 0.94 }], "show": "Pick its model, add your rules. <b>Your prompt stays secret</b>." },
+    { "id": "B3", "clip": "n3-selfplay", "from": 0.4, "say": ["Then it takes your seat, and plays against the house agent.", 0.15, { "t": "A.I. against A.I.", "speed": 0.94 }], "show": "It takes your seat and plays the house's AI: <b>agent against agent</b>.", "tech": "AI AGENTS" },
+    { "id": "B4", "clip": "4-proof", "from": 4.3, "say": ["The models run in a hardware enclave, on Near A.I. Cloud, and every move is signed there.", 0.15, "Anyone can prove which model played."], "show": "Models run in a hardware enclave on <b>NEAR AI Cloud</b>. Every move is signed there: anyone can verify it.", "tech": "NEAR AI CLOUD · TEE ATTESTATION" },
+    { "id": "B5", "clip": "n3-selfplay", "from": "+", "say": [{ "t": "Our goal:", "speed": 0.93 }, 0.1, "an open arena, where A.I. agents, and the models behind them, are trained and tested against each other, in public."], "show": "Our goal: an <b>open arena</b> where AI agents, and the models behind them, are trained and tested in public." },
+
+    { "card": "Poker. No dealer.", "sub": "Zero-knowledge shuffles, verified on chain", "over": "5-poker", "at": 9.5 },
+    { "id": "P1", "clip": "5-poker", "from": 0.4, "say": ["Game two: poker.", 0.12, "Two to nine seats, and no dealer."], "show": "<b>Poker</b> for two to nine seats, with no dealer." },
+    { "id": "P2", "clip": "5-poker", "from": 4.1, "say": ["Every seat shuffles the deck, and proves it in zero knowledge.", 0.15, "The contract verifies each proof on chain, with Near's built-in curve functions."], "show": "Each seat shuffles and <b>proves it in zero knowledge</b>. The contract verifies every proof on chain.", "tech": "ZK SHUFFLE PROOFS · ALT_BN128" },
+    { "id": "P3", "clip": "5-poker", "from": "+", "say": ["Nobody can see your cards.", 0.12, "Not the house. Not us."], "show": "Nobody can see your cards: <b>not the house, not us</b>." },
+    { "id": "P4", "clip": "6-mainnet", "from": 3.3, "say": ["Fifty-two encrypted cards and their proof,", 0.06, { "t": "in one transaction.", "speed": 0.94 }], "show": "52 encrypted cards and their proof in <b>one transaction</b>: 0.021 NEAR.", "tech": "221 TGAS · ONE TRANSACTION" },
+
+    { "card": "Arena", "sub": "Launching next", "over": "n5-arena", "at": 1.0 },
+    { "id": "R1", "clip": "n5-arena", "from": 0.5, "say": ["Next to launch: Arena.", 0.12, "Bid in secret, then fight with no dice."], "show": "<b>Arena</b>: a sealed-bid market, then a fight with no dice. Launching next." },
+
+    { "id": "Z0", "clip": "6-mainnet", "from": 8.6, "say": ["The club is live on Near mainnet.", 0.15, { "t": "Don't trust this film:", "speed": 0.95 }, 0.08, "one command checks every claim."], "show": "Live on <b>NEAR mainnet</b>. Don't trust this film: one command checks every claim.", "tech": "NPM RUN CHECK:LIVE" },
+    { "id": "Z1", "clip": "1-open", "from": 0.3, "say": [{ "t": "Deed Lords Club.", "speed": 0.9 }, 0.25, "Fully on-chain games.", 0.15, { "t": "Built on Near.", "speed": 0.92 }], "show": "<b>deedlords-club.vercel.app</b> · fully on-chain games · built on NEAR", "pad": 0.9 }
+  ]
+}
