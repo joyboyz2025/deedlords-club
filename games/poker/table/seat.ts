@@ -281,10 +281,14 @@ export function handStory(last: Hand, name: (seat: number) => string, made: (sea
     const said = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? "nobody");
     return said.charAt(0).toUpperCase() + said.slice(1);
   };
-  const pot = last.put.reduce((sum, chips) => sum + chips, 0);
   if (last.ending === "void") return "The hand was void: every chip went back.";
   if (last.ending === "cancelled") return `Called off: ${list(last.late).replace(/^./, (first) => first.toLowerCase())} did not answer in time.`;
-  const winners = last.dealt.filter((seat) => (last.won[seat] ?? 0) > 0 && !last.folded[seat]);
+  // Who came out ahead took the pot. A seat that only got back the part of its bet nobody called did not; when
+  // nobody is ahead (equal hands, equal bets) the seats that took chips shared it.
+  const took = last.dealt.filter((seat) => (last.won[seat] ?? 0) > 0 && !last.folded[seat]);
+  const ahead = took.filter((seat) => last.won[seat] > (last.put[seat] ?? 0));
+  const winners = ahead.length ? ahead : took;
+  const pot = winners.reduce((sum, seat) => sum + last.won[seat], 0);
   if (last.ending === "fold") return `${list(winners)} took the pot of ${pot}: everyone else folded.`;
   const hands = winners.map(made);
   const same = hands[0] !== null && hands.every((hand) => hand === hands[0]) ? hands[0] : null;

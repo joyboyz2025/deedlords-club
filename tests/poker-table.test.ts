@@ -421,6 +421,9 @@ test("a finished hand is told in a sentence: who took the pot, and with what", (
   const won = { ...hand, put: [97, 97], won: [0, 194] };
   assert.equal(handStory(won, name, (seat) => (seat === 1 ? "a pair" : "high card")), "You took the pot of 194 with a pair.");
   assert.equal(handStory({ ...hand, ending: "fold" as const, folded: [true, false], put: [1, 2], won: [0, 3] }, name, () => null), "You took the pot of 3: everyone else folded.");
+  // The house went all in for 100, the guest could call 40 of it and won: the 60 nobody called went back to the
+  // house, which did not share any pot by that.
+  assert.equal(handStory({ ...hand, put: [100, 40], won: [60, 80] }, name, (seat) => (seat === 1 ? "a flush" : "a pair")), "You took the pot of 80 with a flush.");
   assert.equal(handStory({ ...hand, ending: "cancelled" as const, put: [12, 12], won: [112, 0], late: [1] }, name, () => null), "Called off: you did not answer in time.");
 });
 
