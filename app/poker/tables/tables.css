@@ -505,6 +505,12 @@
     --ry: calc(var(--ow) / 0.82 * 0.3);
     --rx: calc(var(--ow) * 0.28);
   }
+
+  /* The oval is narrow here: thrown as far in as on a wide table, the bets of the seats at its sides landed on the
+     pot's figure. They lie nearer their seat, by the corner of its cards. */
+  .pt-pod__bet {
+    left: calc(50% + var(--dx) * (var(--half-w) * 0.7 + var(--cwb) * 2.1 + 4px));
+  }
 }
 
 @media (max-width: 719px) {
