@@ -8,7 +8,7 @@
 // shuffles, deals and shows by itself either way; the agent only bets. Turning it off gives the seat back at once.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isOwnModel, modelLabel, ownLlm } from "@/lib/agentKey";
+import { modelLabel, onOwnKey, ownLlm } from "@/lib/agentKey";
 import { readStored, writeStored } from "@/lib/storage";
 import { RULES_MODEL } from "../../co-ty-phu/agent/llm";
 import { instructions } from "../../co-ty-phu/agent/roster";
@@ -93,8 +93,8 @@ export function useSeatAgent(
     // Read at each bet: the owner may have rewritten the agent in another tab since the last one.
     const flying = readAgent(accountId);
     const own = hole as number[];
-    // An agent on the player's own key asks NEAR AI from this tab; without the key it plays by the odds.
-    const asked = isOwnModel(flying.model)
+    // An agent on the player's own key asks NEAR AI from this tab; without the key the desk is asked.
+    const asked = onOwnKey(flying.model)
       ? advise(view, seat, own, { llm: ownLlm(flying.model), style: instructions(flying) })
       : askDesk(id, seat, own, flying.model, instructions(flying));
     void asked
@@ -107,5 +107,5 @@ export function useSeatAgent(
     // `tick` is here so a bet that failed is looked at again.
   }, [on, view, seat, mine, hole, locked, thinking, key, id, accountId, bet, tick]);
 
-  return { on, toggle, thinking, last, name: agent.name, model: agent.model === RULES_MODEL ? "the odds alone" : modelLabel(agent.model) };
+  return { on, toggle, thinking, last, name: agent.name, model: agent.model === RULES_MODEL ? "the odds alone" : modelLabel(agent.model, onOwnKey(agent.model)) };
 }

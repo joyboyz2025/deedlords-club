@@ -3,8 +3,10 @@
 // the player's key is asked from the player's tab, never through this site's server. The player pays NEAR AI for what
 // their agents ask, and may pick any model NEAR AI serves rather than only the ones this server offers.
 //
-// An agent's model names the key it runs on: `near:<model>` is NEAR AI on the player's key (`near:openai/gpt-5-mini`),
-// a bare name is a model this server offers on its own key, and `rules` asks no model.
+// An agent's model names the key it runs on: `near:<model>` is NEAR AI (`near:openai/gpt-5-mini`), a bare name is a
+// model this server offers on its own key, and `rules` asks no model. A `near:` model runs on the player's key while
+// that key is in this browser; without it the name can only be one the server offers on its own NEAR AI key, and the
+// agent's desk is asked (see `onOwnKey`).
 
 import type { LlmConfig } from "@/games/co-ty-phu/agent/llm";
 
@@ -15,7 +17,10 @@ const STORE = "deedlords:nearai-key";
 export const isOwnModel = (model: string): boolean => model.startsWith(OWN_PREFIX);
 export const ownModelName = (model: string): string => model.slice(OWN_PREFIX.length);
 /** How a model is shown: its last path part, and "your key" for one on the player's key. */
-export const modelLabel = (model: string): string => (isOwnModel(model) ? `${ownModelName(model).split("/").pop()} · your key` : (model.split("/").pop() ?? model));
+export const modelLabel = (model: string, own = isOwnModel(model)): string => {
+  const name = (isOwnModel(model) ? ownModelName(model) : model).split("/").pop() ?? model;
+  return own ? `${name} · your key` : name;
+};
 
 export function readNearAiKey(): string | null {
   try {
@@ -33,6 +38,9 @@ export function writeNearAiKey(key: string | null): void {
     // A private window: the key lasts as long as the page.
   }
 }
+
+/** Whether an agent with this model is asked from this tab on the player's own NEAR AI key: a `near:` model, and a key here. */
+export const onOwnKey = (model: string, hasKey = readNearAiKey() !== null): boolean => isOwnModel(model) && hasKey;
 
 /** The model client for an agent on the player's own key, or `null` without a key. */
 export function ownLlm(model: string): LlmConfig | null {

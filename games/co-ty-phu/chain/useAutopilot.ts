@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isOwnModel, ownLlm } from "@/lib/agentKey";
+import { onOwnKey, ownLlm } from "@/lib/agentKey";
 import type { TeeProof } from "@/lib/teeProof";
 import { readStored, writeStored } from "@/lib/storage";
 import { advise, type Advice } from "../agent/advise";
@@ -89,7 +89,8 @@ export function useAutopilot(id: string, state: RoomState, playTurn: (plan: Plan
     setThinking(true);
     // Read at each turn: the owner may have adjusted the playbook in another tab since the last one.
     const agent = readAgent(accountId);
-    const asked = isOwnModel(agent.model) ? askOwn(match, seat, agent) : askDesk(id, seat, agent);
+    // A `near:` model with no key in this browser is one of the server's: the desk is asked, as for any model it offers.
+    const asked = onOwnKey(agent.model) ? askOwn(match, seat, agent) : askDesk(id, seat, agent);
     void asked
       // No desk (a page served without its server): the playbook runs right here.
       .catch(() => advise(match, seat, { llm: null, playbook: agent.playbook }))

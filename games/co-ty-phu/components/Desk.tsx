@@ -689,8 +689,10 @@ export function AgentStub({ desk, signedIn, roomy = false, compact = false }: { 
   const ids = useId();
   const nearAi = useNearAi();
   // A model on the player's own NEAR AI key plays while the key is in this browser; one of the server's while it is offered.
-  const hasModel = agent.model !== RULES_MODEL && (isOwnModel(agent.model) ? nearAi.hasKey : (models ?? []).includes(agent.model));
-  const shown = modelLabel(agent.model);
+  // A `near:` name the server offers needs no key of the player's; with a key here it runs on that key.
+  const ownKey = isOwnModel(agent.model) && nearAi.hasKey;
+  const hasModel = agent.model !== RULES_MODEL && (ownKey || (models ?? []).includes(agent.model));
+  const shown = modelLabel(agent.model, ownKey || !hasModel);
   const preset = PRESETS.find((entry) => JSON.stringify(entry.book) === JSON.stringify(agent.playbook));
   const set = (change: Partial<Playbook>) => save({ playbook: { ...agent.playbook, ...change }, written: null });
   const told = instructions(agent);
@@ -877,7 +879,7 @@ export function AgentStub({ desk, signedIn, roomy = false, compact = false }: { 
       </div>
       <p className="fd-fine">
         {hasModel
-          ? `Your prompt and rules stay in this browser and go to ${shown}${isOwnModel(agent.model) ? " at NEAR AI, straight from this tab," : ""} with each of your turns. Nobody else at the table is shown them, or what your agent says. ${told.length.toLocaleString("en-US")} of ${MAX_STYLE.toLocaleString("en-US")} characters.`
+          ? `Your prompt and rules stay in this browser and go to ${shown}${ownKey ? " at NEAR AI, straight from this tab," : ""} with each of your turns. Nobody else at the table is shown them, or what your agent says. ${told.length.toLocaleString("en-US")} of ${MAX_STYLE.toLocaleString("en-US")} characters.`
           : "A prompt and rules need a model to read them. Without one, this agent plays by its fallback numbers."}
       </p>
 
