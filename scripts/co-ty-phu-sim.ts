@@ -608,8 +608,8 @@ function main(): void {
       console.log(describe("with the leader's rent alone", measure(seats, { ...now, leaderRent: true }, games, seed, PACE_NOW)));
       console.log(describe("with tickets alone", measure(seats, { ...now, tickets: true }, games, seed, PACE_NOW)));
       console.log(describe("with tickets and the leader's rent (what a match is opened with on a contract that has them)", measure(seats, both, games, seed, PACE_NOW)));
-      console.log(describe("the same, building only where one stops (buildHere)", measure(seats, { ...both, buildHere: true }, games, seed, PACE_NOW)));
-      console.log(describe("the same, one house a turn on a city of one's choice (buildOne: what a match is opened with now)", measure(seats, { ...both, buildOne: true }, games, seed, PACE_NOW)));
+      console.log(describe("the same, building only where one stops (buildHere: what a match is opened with now)", measure(seats, { ...both, buildHere: true }, games, seed, PACE_NOW)));
+      console.log(describe("the same, one house a turn on a city of one's choice (buildOne)", measure(seats, { ...both, buildOne: true }, games, seed, PACE_NOW)));
       // What a ticket is worth: seat 0 alone plays it (or all four), nobody else plays any. An even table wins 1 in `seats`.
       const none = onlyTickets([]);
       const worth = [["none", []], ["all four", [...TICKETS]], ...TICKETS.map((ticket) => [ticket, [ticket]])] as [string, Ticket[]][];

@@ -61,8 +61,9 @@ test("the page asks for buildHere only from a contract that lists it", () => {
   assert.deepEqual(rulesOf(["tickets", "leaderRent"]), { ...RULES, max_rounds: 20, tickets: true, leaderRent: true });
   assert.deepEqual(rulesOf(["tickets", "leaderRent", "buildHere"]), { ...RULES, max_rounds: 20, tickets: true, leaderRent: true, buildHere: true });
   assert.equal(extrasOf({ features: ["buildHere"] }, true).buildHere, false, "switched off for this deployment of the page");
-  // A contract that has the later rule is asked for that one, not for both.
-  assert.deepEqual(rulesOf(["tickets", "leaderRent", "buildHere", "buildOne"]), { ...RULES, max_rounds: 20, tickets: true, leaderRent: true, buildOne: true });
+  // A contract that knows both building rules is asked for the one the page plays: a house where the piece stops.
+  assert.deepEqual(rulesOf(["tickets", "leaderRent", "buildHere", "buildOne"]), { ...RULES, max_rounds: 20, tickets: true, leaderRent: true, buildHere: true });
+  assert.equal(extrasOf({ features: ["buildOne"] }).buildOne, false, "never one house a turn unless the page is set to it");
 });
 
 test("a model is told the rule only in a match that has it", () => {

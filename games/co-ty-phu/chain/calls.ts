@@ -50,6 +50,11 @@ export type DuelTerms = { stake: bigint; maxRounds: number; turnSeconds: number;
  */
 export type Extras = { tickets: boolean; leaderRent: boolean; buildHere: boolean; buildOne: boolean };
 export const NO_EXTRAS: Extras = { tickets: false, leaderRent: false, buildHere: false, buildOne: false };
+/**
+ * Which of the contract's two building rules a match opened from the page gets: "here", a house only on the own city
+ * the piece has just stopped on (the rule players know from the board game); "one", one house a turn on any own city.
+ */
+export const BUILD_RULE: "here" | "one" = "here";
 
 /**
  * What a match is opened with here, from the contract's `get_config`: `features` lists the opt-in rules it knows; an
@@ -58,10 +63,12 @@ export const NO_EXTRAS: Extras = { tickets: false, leaderRent: false, buildHere:
  */
 export function extrasOf(config: { features?: unknown } | null | undefined, off: boolean = process.env.NEXT_PUBLIC_DEEDLORDS_EXTRAS === "off"): Extras {
   const features = !off && Array.isArray(config?.features) ? config.features : [];
-  // How houses go up: one a turn on a city of the player's choice where the contract has that rule; on a contract that
-  // only has the rule before it, on the city stopped on; on one from before both, as Blitz always did.
-  const buildOne = features.includes("buildOne");
-  return { tickets: features.includes("tickets"), leaderRent: features.includes("leaderRent"), buildHere: !buildOne && features.includes("buildHere"), buildOne };
+  // How houses go up in a match opened here: on the own city the piece stops on, one house a stop (`BUILD_RULE`), where
+  // the contract has that rule; on a contract from before it, as Blitz always did. The contract also knows one house a
+  // turn on a city of the player's choice (`buildOne`); the owner chose the first on 2026-11-14.
+  const buildHere = BUILD_RULE === "here" && features.includes("buildHere");
+  const buildOne = BUILD_RULE === "one" && features.includes("buildOne");
+  return { tickets: features.includes("tickets"), leaderRent: features.includes("leaderRent"), buildHere, buildOne };
 }
 
 /**

@@ -232,5 +232,6 @@ any of the player's own cities, at any moment of their turn except in debt (as i
 section 5 (not mortgaged, fewer than five houses, cash for the house). In a classic game the rule changes nothing.
 
 The contract stores it after `buildHere`, in a tail of version 3 that only a match with this rule has; `get_config`
-lists it as `buildOne`. The page asks for it where the contract lists it, and then not for `buildHere`.
+lists it as `buildOne`. The page opens its matches with `buildHere`, not with this rule (`BUILD_RULE` in
+`games/co-ty-phu/chain/calls.ts`): the owner chose the rule players know from the board game.
 
