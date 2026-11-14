@@ -1090,25 +1090,28 @@ function TurnControls({
             {view.props[index].houses === 4 ? "Build a hotel" : "Build a house"} · {money(houseCost(index))}
           </button>
         )}
-        {sites !== null && sites > 0 && !placing && (
-          <button type="button" className="tp-btn tp-btn--main" onClick={() => onPlacing(true)}>
-            Build houses · {sites}
-          </button>
-        )}
         {autopilot && (
           <button type="button" className="tp-btn tp-turn__ai" onClick={autopilot.toggle}>
             Let AI play
           </button>
         )}
-        <button type="button" className="tp-roll" onClick={() => send({ t: roll ? "roll" : "end" })} aria-label={roll ? "Roll the dice" : "End the turn"}>
-          {roll ? (again ? "AGAIN" : "ROLL") : "END"}
-          {/* Số giây còn lại trước khi máy bấm hộ. */}
-          {autoLeft !== null && (
-            <span className="tp-roll__timer" data-low={autoLeft <= 5 || undefined} aria-label={`The game moves for you in ${autoLeft} seconds`}>
-              {autoLeft}
-            </span>
+        {/* Blitz: the way to the houses sits beside the dice, under the board, not over its corner. */}
+        <div className="tp-turn__row">
+          {sites !== null && sites > 0 && !placing && (
+            <button type="button" className="tp-btn tp-btn--main" onClick={() => onPlacing(true)}>
+              Build houses · {sites}
+            </button>
           )}
-        </button>
+          <button type="button" className="tp-roll" onClick={() => send({ t: roll ? "roll" : "end" })} aria-label={roll ? "Roll the dice" : "End the turn"}>
+            {roll ? (again ? "AGAIN" : "ROLL") : "END"}
+            {/* Số giây còn lại trước khi máy bấm hộ. */}
+            {autoLeft !== null && (
+              <span className="tp-roll__timer" data-low={autoLeft <= 5 || undefined} aria-label={`The game moves for you in ${autoLeft} seconds`}>
+                {autoLeft}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
     );
   }
