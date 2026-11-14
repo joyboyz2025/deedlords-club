@@ -7,7 +7,7 @@ import type { Plan } from "../games/co-ty-phu/agent/plan.ts";
 import { OWNABLE_SQUARES, SQUARES } from "../games/co-ty-phu/board.ts";
 import { RULES, TO_THE_END, roundsFor } from "../games/co-ty-phu/chain/calls.ts";
 import { createGame, currentPlayer, newPlayer, startGame, type Game, type Rng } from "../games/co-ty-phu/engine.ts";
-import { PACE_BEFORE, PACE_NOW, RULES_BEFORE, measure, playMatch, playTurn, tableSeconds, type MatchSeen, type RollSeen } from "../scripts/co-ty-phu-sim.ts";
+import { PACE_BEFORE, PACE_NOW, PROPOSED, RULES_BEFORE, measure, playMatch, playTurn, tableSeconds, type MatchSeen, type RollSeen } from "../scripts/co-ty-phu-sim.ts";
 import { mulberry32, prngRng } from "../tools/diff/rng.ts";
 
 function newGame(seats: number, blitz: boolean, rng: Rng, maxRounds = 30): Game {
@@ -125,4 +125,14 @@ test("the rules matches are opened with: about ten minutes on the table, where t
   assert.ok(before.minutes.solo.mean > 25 && before.minutes.people.mean > 35);
   const short = measure(2, { ...RULES_BEFORE, maxRounds: 12 }, 60, 5, PACE_BEFORE);
   assert.ok(short.houses < 4, "under the rules before a house went up only where a piece happened to stop");
+});
+
+test("the rules proposed are modelled on top of the engine: no coin is made or lost, and the leader's hold loosens", () => {
+  const rules = { ...RULES, maxRounds: roundsFor(4) };
+  const deployed = measure(4, rules, 300, 9, PACE_NOW);
+  for (const [name, mods] of PROPOSED) {
+    // `playMatch` throws when the cash on the table is not what the bank issued.
+    const proposed = measure(4, rules, 300, 9, PACE_NOW, mods);
+    assert.ok(proposed.leaderWins.half < deployed.leaderWins.half, `${name}: whoever leads at half wins ${proposed.leaderWins.half}, as deployed ${deployed.leaderWins.half}`);
+  }
 });

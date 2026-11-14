@@ -11,8 +11,8 @@
 // end of turn is given the time the client spends on it (the chain's answer, the dice, the walk, the waits), with the
 // timings of the client as it was and as it is now.
 //
-// `MODS` are rules the deployed contract does not have. They are modelled here only, on top of the engine, to put
-// numbers behind a proposal; the engine and the contract are untouched.
+// `Mods` are rules the deployed contract does not have. They are modelled here only, on top of the engine, to put
+// numbers behind a proposal (`--proposal`); the engine and the contract are untouched.
 
 import { pathToFileURL } from "node:url";
 import { briefFor, type Brief } from "../games/co-ty-phu/agent/brief.ts";
@@ -159,12 +159,12 @@ export function playTurn(game: Game, id: string, plan: Plan, rng: Rng, afterRoll
 // ----- Rules the contract does not have, for the proposal -----------------------------------------------------------
 
 export type Mods = {
-  /** Rents grow as the match goes on: a multiplier by the rounds completed and the round limit. */
-  rentRamp?: (round: number, maxRounds: number) => number;
+  /** Whoever leads on net worth pays this many times the rent. */
+  leaderRent?: number;
   /** Whoever is last by net worth collects this many times the salary when passing Departure. */
   underdogSalary?: number;
-  /** Landing on somebody's city with no house on it: it may be bought from them at this many times its price. */
-  takeover?: number;
+  /** Rents grow as the match goes on: a multiplier by the rounds completed and the round limit. */
+  rentRamp?: (round: number, maxRounds: number) => number;
 };
 
 const rentPaid = / pays (\S+) (\d+) rent at /;
@@ -174,36 +174,24 @@ const passedStart = / passes .* and collects (\d+)\.$/;
 function applyMods(game: Game, id: string, mods: Mods, lines: string[]): void {
   const me = game.players.find((player) => player.id === id)!;
   const others = game.players.filter((player) => player.color !== null && !player.bankrupt && player.id !== id);
-  if (mods.underdogSalary && lines.some((line) => line.startsWith(`${id} `) && passedStart.test(line))) {
-    const mine = netWorth(game, id);
-    if (others.length > 0 && others.every((other) => netWorth(game, other.id) > mine)) {
-      const extra = Math.round((mods.underdogSalary - 1) * (game.settings.salary ?? 0));
-      me.cash += extra;
-      game.minted += extra;
-    }
+  if (others.length === 0) return;
+  const mine = netWorth(game, id);
+  if (mods.underdogSalary && lines.some((line) => line.startsWith(`${id} `) && passedStart.test(line)) && others.every((other) => netWorth(game, other.id) > mine)) {
+    const extra = Math.round((mods.underdogSalary - 1) * (game.settings.salary ?? 0));
+    me.cash += extra;
+    game.minted += extra;
   }
   const rent = lines.map((line) => rentPaid.exec(line)).find((found) => found !== null);
-  if (!rent || me.bankrupt) return;
-  const owner = game.players.find((player) => player.id === rent[1]);
-  if (!owner) return;
-  if (mods.rentRamp) {
-    const extra = Math.round((Number(rent[2]) * (mods.rentRamp(game.round, game.settings.maxRounds ?? 0) - 1)) / 5) * 5;
-    if (extra > 0) {
-      if (game.stage === "debt" && game.debt) game.debt[0].amount += extra;
-      else if (me.cash >= extra) [me.cash, owner.cash] = [me.cash - extra, owner.cash + extra];
-      else Object.assign(game, { debt: [{ id: owner.id, amount: extra }], stage: "debt" });
-    }
-  }
-  const square = SQUARES[me.position];
-  const owned = game.props[me.position];
-  if (mods.takeover && game.stage === "end" && square.kind === "city" && owned && owned.owner === owner.id && owned.houses === 0 && !owned.mortgaged) {
-    const price = square.price * mods.takeover;
-    // Worth it for whoever is behind: the square counts at its price, so a takeover at twice the price costs one price in net worth.
-    if (me.cash - price >= 300 && netWorth(game, id) < netWorth(game, owner.id)) {
-      [me.cash, owner.cash] = [me.cash - price, owner.cash + price];
-      owned.owner = id;
-    }
-  }
+  const owner = rent && game.players.find((player) => player.id === rent[1]);
+  if (!rent || !owner || me.bankrupt) return;
+  const leads = others.every((other) => netWorth(game, other.id) < mine);
+  const times = (mods.rentRamp ? mods.rentRamp(game.round, game.settings.maxRounds ?? 0) : 1) * (mods.leaderRent && leads ? mods.leaderRent : 1);
+  const extra = Math.round((Number(rent[2]) * (times - 1)) / 5) * 5;
+  if (extra <= 0) return;
+  // The rest of the rent is owed like the rent itself: paid from cash, or a debt to settle.
+  if (game.stage === "debt" && game.debt) game.debt[0].amount += extra;
+  else if (me.cash >= extra) [me.cash, owner.cash] = [me.cash - extra, owner.cash + extra];
+  else Object.assign(game, { debt: [{ id: owner.id, amount: extra }], stage: "debt" });
 }
 
 // ----- One match ----------------------------------------------------------------------------------------------------
@@ -264,6 +252,8 @@ export function playMatch(seats: number, rules: Rules, seed: number, mods: Mods 
     if (game.round > round || over(game)) seen.worth.push(worthNow());
   }
   if (!over(game) || !game.result) throw new Error(`match ${seed} did not end`);
+  // Whatever the rules, modelled ones included: every coin on the table was issued by the bank.
+  if (game.players.reduce((sum, player) => sum + player.cash, 0) !== game.minted) throw new Error(`match ${seed} made or lost money`);
   return { ...seen, reason: game.result.reason, rounds: game.round, ranking: game.result.ranking };
 }
 
@@ -486,9 +476,10 @@ export function describe(name: string, report: Report): string {
 export const RULES_BEFORE = { cash: 1500, salary: 200, blitz: false };
 /** Rules the contract does not have, as proposed: see `Mods`. */
 export const PROPOSED: [string, Mods][] = [
+  ["whoever leads on net worth pays double rent", { leaderRent: 2 }],
   ["whoever is last collects 3 salaries at Departure", { underdogSalary: 3 }],
   ["rents double in the last third of the rounds", { rentRamp: (round, maxRounds) => (round >= Math.floor((2 * maxRounds) / 3) ? 2 : 1) }],
-  ["whoever is behind may buy a bare city they land on at twice its price", { takeover: 2 }],
+  ["the first two together", { leaderRent: 2, underdogSalary: 3 }],
 ];
 
 function main(): void {
