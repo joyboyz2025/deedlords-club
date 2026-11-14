@@ -5,6 +5,7 @@
 // shares) and asks the player for the bets only. How it looks is in RoundTable.tsx and app/poker/tables/tables.css;
 // this file reads the table and sends the calls.
 
+import { seatName } from "@/lib/seatName";
 import Link from "next/link";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import goldFoil from "@/assets/plates/gold-foil.webp";
@@ -586,7 +587,7 @@ const WALL_LINES = 5;
 function TableWall({ wall, you, houses, onOpen }: { wall: Tables; you: string | null; houses: string[]; onOpen: (id: string) => void }) {
   const { tables, offline } = wall;
   const rows = tables ?? [];
-  const who = (account: string, at: (string | null)[]): string => (account === you ? "You" : houses.includes(account) ? houseName(houses, account, at) : shortAccount(account));
+  const who = (account: string, at: (string | null)[]): string => (account === you ? "You" : houses.includes(account) ? houseName(houses, account, at) : seatName(account, shortAccount));
   return (
     <section className="pk-board pk-wall-board" aria-label="Tables on the contract">
       <h2 className="pk-board__title">
@@ -1245,7 +1246,7 @@ export function TableSettled({
   }
   // A long account id is cut short here as at the table; the whole of it is in the title of each line.
   const everyone = result.cashed.map((seat) => seat.account);
-  const who = (account: string) => (account === you ? "You" : houses.includes(account) ? houseName(houses, account, everyone) : shortAccount(account));
+  const who = (account: string) => (account === you ? "You" : houses.includes(account) ? houseName(houses, account, everyone) : seatName(account, shortAccount));
   const fees = result.cashed.reduce((sum, seat) => sum + BigInt(seat.fee), 0n);
   // A free table staked nothing and paid nothing: its seats left with chips, and that is all there is to show.
   const free = BigInt(result.stake) === 0n;

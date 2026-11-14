@@ -3,6 +3,7 @@
 // other, maps the screen's messages to contract actions, and applies the actions that need no dice with the reference
 // engine, which replays the Rust engine step for step (tools/diff), so a move shows at once instead of after a block.
 
+import { seatName } from "../../../lib/seatName.ts";
 import { characterOf } from "../../chibi/known.ts";
 import { lookFromSeat, roomLook } from "../../ma-soi/look.ts";
 import { BOARD_SIZE, CARDS, DECK_NAMES, JAIL, JAIL_FINE, SQUARES } from "../board.ts";
@@ -73,10 +74,10 @@ const houseSeatName = (meta: ChainMeta, seat: number): string => {
 };
 
 /** An account as a line of text names it: the sponsor's as what it is here, any other by `shortAccount`. */
-export const accountLabel = (accountId: string): string => (accountId === houseAgent ? "the house agent" : shortAccount(accountId));
+export const accountLabel = (accountId: string): string => (accountId === houseAgent ? "the house agent" : seatName(accountId, shortAccount));
 
-/** An account by its chibi character's name when this page has read one (games/chibi), else by `shortAccount`. */
-export const playerName = (accountId: string): string => characterOf(accountId)?.name ?? shortAccount(accountId);
+/** An account by its chibi character's name when this page has read one (games/chibi), else by its seat name (lib/seatName). */
+export const playerName = (accountId: string): string => characterOf(accountId)?.name ?? seatName(accountId, shortAccount);
 
 /** A name per seat, by seat. Seats that would share a name are numbered. */
 export function seatNames(meta: ChainMeta): string[] {

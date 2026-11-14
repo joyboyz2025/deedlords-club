@@ -4,6 +4,7 @@
 // and pot, the action stub and the ledger. It only draws: what it shows comes from a match view, and every click goes
 // back to the Table that talks to the chain (or to the demo, which talks to nothing).
 
+import { seatName } from "@/lib/seatName";
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import { Arrow, Bot, Chain, Clock, Copy, Out } from "@/components/landing/icons";
 import type { Character } from "../../chibi/chain";
@@ -290,7 +291,7 @@ export function TableView({ id, view, hole, mine, locked, doing, dealt, now, pro
             ) : (
               <>
                 <b>{view.chips[number]}</b>
-                {move ? <em>{move}</em> : <small title={view.players[number]}>{isHouse ? "the house" : (called(number) ?? shortAccount(view.players[number] ?? ""))}</small>}
+                {move ? <em>{move}</em> : <small title={view.players[number]}>{isHouse ? "the house" : (called(number) ?? seatName(view.players[number] ?? "", shortAccount))}</small>}
               </>
             )}
           </span>
@@ -326,7 +327,7 @@ export function TableView({ id, view, hole, mine, locked, doing, dealt, now, pro
           Seat {number + 1}
           {mine.includes(number) ? " · you" : isHouse ? " · the house" : ""}
         </span>
-        <strong title={view.players[number] ?? undefined}>{free ? "Open seat" : isHouse ? "The house" : (called(number) ?? shortAccount(view.players[number] ?? ""))}</strong>
+        <strong title={view.players[number] ?? undefined}>{free ? "Open seat" : isHouse ? "The house" : (called(number) ?? seatName(view.players[number] ?? "", shortAccount))}</strong>
         {!free && (
           <span className="pk-guest__chips">
             <b>{view.chips[number]}</b> chips
@@ -828,7 +829,7 @@ const WALL_LINES = 5;
 /** The tables the contract holds: open seats to take, hands under way to watch. Every row opens its table. */
 export function Wall({ wall, you, house, onOpen }: { wall: Tables; you: string | null; house: string | null; onOpen: (id: string) => void }) {
   const { tables, offline } = wall;
-  const who = (account: string | undefined) => (!account ? "" : account === you ? "You" : account === house ? "The house" : shortAccount(account));
+  const who = (account: string | undefined) => (!account ? "" : account === you ? "You" : account === house ? "The house" : seatName(account, shortAccount));
   const rows = tables ?? [];
   return (
     <section className="pk-board pk-wall-board" aria-label="Tables on the contract">

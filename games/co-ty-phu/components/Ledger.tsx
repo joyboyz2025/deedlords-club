@@ -1,5 +1,6 @@
 "use client";
 
+import { seatName } from "@/lib/seatName";
 import { useEffect, useState } from "react";
 import { CHAIN } from "@/lib/chain/config";
 import { shortAccount } from "../chain/adapt";
@@ -58,7 +59,7 @@ export function Ledger({ id, sent, nameOf, onClose }: { id: string; sent: MoveTx
       ) : (
         <ol className="dl-ledger__list">
           {rows.map((row) => {
-            const who = nameOf(row.signer) ?? shortAccount(row.signer);
+            const who = nameOf(row.signer) ?? seatName(row.signer, shortAccount);
             const inside = (
               <>
                 <span className="dl-ledger__what">{row.what}</span>

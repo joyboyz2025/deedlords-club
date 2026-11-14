@@ -1,5 +1,6 @@
 "use client";
 
+import { seatName } from "@/lib/seatName";
 import type { CSSProperties } from "react";
 import { shortAccount } from "../../co-ty-phu/chain/adapt";
 import type { Character } from "../chain";
@@ -20,7 +21,7 @@ export function ChibiFace({ character, size = 40, fallback = null }: { character
 
 export function CharacterTag({ accountId, size = 32, you = false }: { accountId: string; size?: number; you?: boolean }) {
   const character = useCharacter(accountId);
-  const name = character?.name ?? shortAccount(accountId);
+  const name = character?.name ?? seatName(accountId, shortAccount);
   return (
     <span className="cb-tag" title={accountId}>
       <ChibiFace character={character} size={size} fallback={name.slice(0, 1).toUpperCase()} />

@@ -3,6 +3,7 @@
 // (cargo test) and on a local near-sandbox (contracts/sandbox/chibi-run.js); the pages were played on testnet.
 
 import assert from "node:assert/strict";
+import { guestHandle } from "../lib/seatName.ts";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { BASIC_ITEMS, BOX_ITEMS, CATALOG, catalogRust, isBasicLook, itemOfToken, kindOf, wornKinds } from "../games/chibi/catalog.ts";
@@ -121,7 +122,8 @@ test("a table shows a seat by its backer's character once read, and draws its lo
       { seat: 1, player: "s1", backer: "bob.testnet", driver: null, house: false },
     ],
   };
-  assert.deepEqual(seatNames(meta as never), [`${guest.slice(0, 6)}…${guest.slice(-4)}`, "bob"]);
+  // A guest with no character yet is shown by its handle (lib/seatName), not by its hex digits.
+  assert.deepEqual(seatNames(meta as never), [guestHandle(guest), "bob"]);
   remember(guest, { accountId: guest, tokenId: "char:1", name: "Cô Lồng Đèn", look: { ...LOOK, pet: 3, ride: 2 }, worn: {} });
   try {
     assert.deepEqual(seatNames(meta as never), ["Cô Lồng Đèn", "bob"]);

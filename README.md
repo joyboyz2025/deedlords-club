@@ -50,7 +50,7 @@ It prints seventeen checks in five groups and exits 0 when all pass (`scripts/ch
 4. an AI agent's move: the five checks of its TEE proof (the same ones the `/verify` page runs in the browser);
 5. a staked match whose last move made the contract pay the stakes out.
 
-`npm test` runs the 315 unit tests of the rules engines, the chain adapters, the relayer's rules and the proofs (about
+`npm test` runs the 317 unit tests of the rules engines, the chain adapters, the relayer's rules and the proofs (about
 ten seconds, no network).
 
 ## Try it in the browser: do X, see Y
@@ -244,7 +244,7 @@ Needs Node 22.6 or newer (tested on 22.12). Rust is needed only to rebuild or te
 
 ```bash
 npm ci
-npm test              # 315 tests, about 10 s, no network
+npm test              # 317 tests, about 10 s, no network
 npm run typecheck
 npm run check:live    # reads mainnet, sends nothing
 npm run build         # the production build of the web app
@@ -386,7 +386,7 @@ server/ worker/         The board game as it was before the hackathon, refereed 
                         contracts uses it
 scripts/check-live.ts   npm run check:live
 scripts/co-ty-phu-sim.ts  Whole Deedlords matches simulated: how long, how open, under which rules
-tests/                  315 unit tests
+tests/                  317 unit tests
 docs/ENGINE-RULES.md    The exact contract between the TypeScript and Rust rules engines
 PROVENANCE.md           What predates the hackathon, what was written during it, how art was generated
 PRODUCT.md DESIGN.md    Design briefs as they were written during the week (also .impeccable/, docs/design/). Where

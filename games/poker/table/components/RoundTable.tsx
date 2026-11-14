@@ -7,6 +7,7 @@
 // was paid, what the AIs thought once a hand is over, the transactions) is folded away under the table. It only draws:
 // what it shows comes from a table view, every click goes back to whoever feeds it (the live table or the demo).
 
+import { seatName } from "@/lib/seatName";
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { Bot, Copy, Seat as SeatIcon } from "@/components/landing/icons";
@@ -211,7 +212,7 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
     if (!player) return "Free seat";
     if (seat === mySeat) return "You";
     if (house?.accounts.includes(player)) return houseName(house.accounts, player, everyone);
-    return characters?.get(player)?.name || shortAccount(player);
+    return characters?.get(player)?.name || seatName(player, shortAccount);
   };
   /** The same inside a sentence. */
   const named = (seat: number): string => (seat === mySeat ? "you" : name(seat));
@@ -649,7 +650,7 @@ export function RoundTable({ id, view, you, mySeat, myCards, locked, doing, now,
                   {view.cashed.map((paid, at) => (
                     <li key={`${paid.account}:${at}`}>
                       <span title={paid.account}>
-                        {paid.account === you ? "You" : house?.accounts.includes(paid.account) ? houseName(house.accounts, paid.account, everyAccount) : shortAccount(paid.account)}
+                        {paid.account === you ? "You" : house?.accounts.includes(paid.account) ? houseName(house.accounts, paid.account, everyAccount) : seatName(paid.account, shortAccount)}
                       </span>
                       <b>{paid.chips}</b>
                     </li>
