@@ -58,7 +58,7 @@ export type Op = (typeof OPS)[number] | (typeof TICKET_OPS)[number];
 const TURN_OPS: Op[] = ["roll", "buy", "skip", "end", "bail", "card", "pay", "bankrupt"];
 const INDEXED_OPS: Op[] = ["build", "sell", "mortgage", "redeem"];
 
-export type Rules = { salary: number; cash: number; blitz: boolean; maxRounds: number; tickets?: boolean; leaderRent?: boolean };
+export type Rules = { salary: number; cash: number; blitz: boolean; maxRounds: number; tickets?: boolean; leaderRent?: boolean; buildHere?: boolean };
 export type TraceStep = { op: Op; player: string | null; index: number | null; rng: RngCall[]; ok: boolean; state: Snapshot };
 export type Trace = { version: 1; seed: number; rules: Rules; players: string[]; steps: TraceStep[] };
 
@@ -74,6 +74,7 @@ export function newTraceGame(players: string[], rules: Rules): Game {
   game.settings = { limitMinutes: 0, salary: rules.salary, cash: rules.cash, autoSeconds: 0, maxRounds: rules.maxRounds, blitz: rules.blitz };
   if (rules.tickets) game.settings.tickets = true;
   if (rules.leaderRent) game.settings.leaderRent = true;
+  if (rules.buildHere) game.settings.buildHere = true;
   return game;
 }
 
@@ -395,6 +396,9 @@ export function generateGame(seed: number, coverage: Coverage = new Coverage(), 
     if (r > 0.15) rules.leaderRent = true;
     // Tickets come at Departure: most of these games are long enough to pass it a few times.
     if (rules.maxRounds > 0 && rules.maxRounds < 8 && random() < 0.7) rules.maxRounds = 12;
+    // Building only where one stops (ENGINE-RULES §10.5), in every other Blitz game: by the seed, so that it draws no
+    // random value and the games without it stay the games they were.
+    if (rules.blitz && seed % 2 === 0) rules.buildHere = true;
   }
   const params = pickParams(random);
   const source = prngRng(random, params.doubles);
@@ -402,6 +406,7 @@ export function generateGame(seed: number, coverage: Coverage = new Coverage(), 
   const game = newTraceGame(players, rules);
   coverage.add(`rules: ${rules.blitz ? "blitz" : "classic"}, ${rules.maxRounds === 0 ? "no round limit" : rules.maxRounds === 3 && rules.blitz ? "maxRounds 3" : "maxRounds > 0"}`);
   if (extras) coverage.add(`extras: ${rules.tickets ? "tickets" : ""}${rules.tickets && rules.leaderRent ? " + " : ""}${rules.leaderRent ? "leader's rent" : ""}`);
+  if (rules.buildHere) coverage.add("extras: build only where one stops");
   coverage.add(`players: ${count}`);
 
   let drawing = false;

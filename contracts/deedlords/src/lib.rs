@@ -132,6 +132,9 @@ pub struct Match {
 /// First byte of the tail of a stored [`Match`]: after it come the game's `extras` and `tickets` (ENGINE-RULES §10),
 /// which the engine leaves out of its own borsh form.
 pub const MATCH_TAIL_V1: u8 = 1;
+/// The same tail, followed by one more flag: `extras.build_here` (ENGINE-RULES §10.5). Written only for a match that
+/// has that rule, so that every other match is stored exactly as the build before it stored it.
+pub const MATCH_TAIL_V2: u8 = 2;
 /// Set on the stored status byte (a [`Status`] is 0..=3) of a match that has a tail after its game.
 pub const MATCH_TAIL_FLAG: u8 = 0x80;
 
@@ -155,9 +158,13 @@ impl BorshSerialize for Match {
         BorshSerialize::serialize(&self.draws, writer)?;
         BorshSerialize::serialize(&self.game, writer)?;
         if tail {
-            BorshSerialize::serialize(&MATCH_TAIL_V1, writer)?;
+            let build_here = self.game.extras.build_here;
+            BorshSerialize::serialize(&if build_here { MATCH_TAIL_V2 } else { MATCH_TAIL_V1 }, writer)?;
             BorshSerialize::serialize(&self.game.extras, writer)?;
             BorshSerialize::serialize(&self.game.tickets, writer)?;
+            if build_here {
+                BorshSerialize::serialize(&true, writer)?;
+            }
         }
         Ok(())
     }
@@ -194,11 +201,15 @@ impl BorshDeserialize for Match {
         if !tail {
             return Ok(m);
         }
-        if u8::deserialize_reader(reader)? != MATCH_TAIL_V1 {
+        let version = u8::deserialize_reader(reader)?;
+        if version != MATCH_TAIL_V1 && version != MATCH_TAIL_V2 {
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "unknown match tail"));
         }
         m.game.extras = Extras::deserialize_reader(reader)?;
         m.game.tickets = Option::<Tickets>::deserialize_reader(reader)?;
+        if version == MATCH_TAIL_V2 {
+            m.game.extras.build_here = bool::deserialize_reader(reader)?;
+        }
         Ok(m)
     }
 }
@@ -235,7 +246,7 @@ pub struct Stats {
 }
 
 /// `rules` argument of `create_match`. Accepts `max_rounds` or `maxRounds`. The same JSON object may also carry
-/// `tickets: true` and `leaderRent: true` (or `leader_rent`), which switch on the rules of ENGINE-RULES §10 for this
+/// `tickets: true`, `leaderRent: true` (or `leader_rent`) and `buildHere: true` (or `build_here`), which switch on the rules of ENGINE-RULES §10 for this
 /// match; absent means off. They are read from the call's arguments by [`extras_of_call`], not through this struct.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
@@ -252,7 +263,7 @@ pub struct RulesArg {
 fn extras_of_call() -> Extras {
     let rules = call_arg("rules");
     let on = |keys: [&str; 2]| keys.iter().any(|key| rules[*key] == json!(true));
-    Extras { tickets: on(["tickets", "tickets"]), leader_rent: on(["leaderRent", "leader_rent"]) }
+    Extras { tickets: on(["tickets", "tickets"]), leader_rent: on(["leaderRent", "leader_rent"]), build_here: on(["buildHere", "build_here"]) }
 }
 
 /// The tickets a `turn` call's plan plays: `plan.tickets` of its JSON arguments ([`TicketPlan`]). Absent, or not such
@@ -268,7 +279,7 @@ fn call_arg(name: &str) -> Value {
 
 /// What `get_config` lists under `features`: the opt-in rules this code knows. A page opens a match with one of them
 /// only when the contract it talks to lists it (a contract deployed before them ignores the fields it does not know).
-pub const FEATURES: [&str; 2] = ["tickets", "leaderRent"];
+pub const FEATURES: [&str; 3] = ["tickets", "leaderRent", "buildHere"];
 
 #[near(contract_state)]
 #[derive(PanicOnDefault)]
@@ -467,6 +478,9 @@ impl Match {
         }
         if self.game.extras.leader_rent {
             rules["leaderRent"] = json!(true);
+        }
+        if self.game.extras.build_here {
+            rules["buildHere"] = json!(true);
         }
         rules
     }

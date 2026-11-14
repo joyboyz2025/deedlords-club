@@ -26,7 +26,7 @@ impl Rng for Script {
     }
 }
 
-const BOTH: Extras = Extras { tickets: true, leader_rent: true };
+const BOTH: Extras = Extras { tickets: true, leader_rent: true, build_here: false };
 
 /// Two players in seating order, classic rules; `draws`: the ticket each is dealt (`below(4)`), when tickets are on.
 fn started(extras: Extras, draws: &[u32]) -> Game {
@@ -88,7 +88,7 @@ fn the_borsh_form_of_a_game_is_the_one_from_before_and_leaves_the_new_rules_out(
 
 #[test]
 fn a_ticket_each_at_the_start_and_one_more_at_departure_up_to_two() {
-    let mut game = started(Extras { tickets: true, leader_rent: false }, &[0, 3]);
+    let mut game = started(Extras { tickets: true, leader_rent: false, build_here: false }, &[0, 3]);
     assert_eq!(game.tickets_of("p0"), [Ticket::Waiver]);
     assert_eq!(game.tickets_of("p1"), [Ticket::Festival]);
     assert_eq!(
@@ -220,4 +220,36 @@ fn a_bankrupt_player_loses_tickets_and_festival() {
     assert!(three.tickets_of("p0").is_empty());
     assert!(three.tickets.as_ref().unwrap().festival.is_empty());
     assert!(game.tickets.as_ref().unwrap().festival.contains(&"p0".to_string()));
+}
+
+/// ENGINE-RULES §10.5: in Blitz with `build_here`, a house goes up only on the own city just stopped on, one per stop.
+#[test]
+fn blitz_with_build_here_builds_only_where_the_piece_stopped() {
+    let blitz = Rules { blitz: true, max_rounds: 0, ..Rules::default() };
+    for here in [false, true] {
+        let mut game = Game::new(blitz, vec!["p0".into(), "p1".into()]).with_extras(Extras { build_here: here, ..Extras::default() });
+        // The order, then the Blitz deal's shuffle: draws that keep the deck in order.
+        let mut values = vec![0];
+        values.extend(std::iter::repeat_n(0, 64));
+        let mut rng = Script::new(&values);
+        game.apply(None, Action::Start, &mut rng).unwrap();
+        game.props.clear();
+        // Whoever goes first owns cities 1 and 3, rolls 1 + 2 from Departure and stops on its own city 3.
+        let mover = game.current_player().unwrap().to_string();
+        own(&mut game, 1, &mover, 0);
+        own(&mut game, 3, &mover, 0);
+        act(&mut game, &mover, Action::Roll, &[1, 2]).unwrap();
+        assert_eq!(game.player(&mover).unwrap().position, 3);
+        let elsewhere = game.check(Some(&mover), Action::Build(1));
+        let there = game.check(Some(&mover), Action::Build(3));
+        if here {
+            assert_eq!(elsewhere, Err(EngineError::NotAllowed), "not on a city it did not stop on");
+            assert_eq!(there, Ok(()));
+            act(&mut game, &mover, Action::Build(3), &[]).unwrap();
+            assert_eq!(game.check(Some(&mover), Action::Build(3)), Err(EngineError::NotAllowed), "one house per stop");
+        } else {
+            assert_eq!(elsewhere, Ok(()), "plain Blitz: any own city");
+            assert_eq!(there, Ok(()));
+        }
+    }
 }

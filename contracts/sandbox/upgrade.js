@@ -117,7 +117,7 @@ async function dry(wasm) {
     const { features, ...sameConfig } = after.config;
     const { features: _were, ...wasConfig } = before.config;
     assert.deepEqual(sameConfig, wasConfig);
-    assert.deepEqual(features, ["tickets", "leaderRent"], "the new build lists the opt-in rules");
+    assert.deepEqual(features, ["tickets", "leaderRent", "buildHere"], "the new build lists the opt-in rules");
     assert.deepEqual(await view("get_match", { id: "asked" }), asked, "the match opened on the old code reads as it was: without tickets");
     console.log("  the open lobby and the games in progress read the same after the deploy; get_config now lists features");
 
@@ -135,8 +135,18 @@ async function dry(wasm) {
       assert.ok(await view("get_result", { id }), `${id} settled`);
       return logs;
     };
-    assert.ok(!(await playOut("asked", ticketPlan)).includes('"kind":"played"'), "no ticket is played in a match opened before the deploy");
-    console.log("  a match opened before the deploy played on to its settlement, without tickets");
+    const askedLogs = await playOut("asked", ticketPlan);
+    if (!liveKnows) {
+      assert.ok(!askedLogs.includes('"kind":"played"'), "no ticket is played in a match opened before the deploy");
+      console.log("  a match opened before the deploy played on to its settlement, without tickets");
+    } else {
+      // The live code already had tickets: its match, stored with the tail of before, is read by the new build and
+      // plays on with them.
+      assert.equal(asked.meta.rules.tickets, true);
+      assert.equal(asked.meta.rules.buildHere, undefined, "a match opened before the deploy does not get the new rule");
+      assert.ok(askedLogs.includes('"kind":"played"'), "tickets of a match opened before the deploy are still played");
+      console.log("  a match with tickets opened before the deploy played on with them to its settlement");
+    }
 
     // Opened after the deploy with the rules: tickets are dealt, played, and the match settles.
     await call(alice, "create_match", { id: "tickets", seats: 2, stake: String(Y / 10n), split: [7000, 3000], rules: withTickets, solo_player: null, turn_seconds: 60 }, Y / 10n);
@@ -147,6 +157,23 @@ async function dry(wasm) {
     assert.deepEqual(Object.values(dealt.game.tickets.held).map((held) => held.length), [1, 1], "a ticket each at the start");
     assert.ok((await playOut("tickets", ticketPlan)).includes('"kind":"played"'), "tickets were played");
     console.log("  a match opened after the deploy with tickets and the leader's rent was dealt its tickets, played them and settled");
+
+    // Opened after the deploy with every opt-in rule: building only where one stops is on, and the match settles.
+    await call(alice, "create_match", { id: "here", seats: 2, stake: String(Y / 10n), split: [7000, 3000], rules: { ...withTickets, buildHere: true }, solo_player: null, turn_seconds: 60 }, Y / 10n);
+    await call(alice, "join", { id: "here", seat: 0 }, Y / 10n);
+    await call(bob, "join", { id: "here", seat: 1 }, Y / 10n);
+    const here = await view("get_match", { id: "here" });
+    assert.deepEqual([here.meta.rules.tickets, here.meta.rules.leaderRent, here.meta.rules.buildHere], [true, true, true]);
+    // Before a throw nothing may be built in such a match (plain Blitz would allow any own city).
+    const mine = Object.entries(here.game.props).find(([square, owned]) => owned.owner === here.meta.seats[here.meta.current_seat].player && ticketPlan.tickets.takeover.includes(Number(square)));
+    assert.ok(mine, "the seat to move was dealt a city");
+    const first = [alice, bob].find((account) => here.meta.seats[here.meta.current_seat].backer === account.accountId);
+    // The contract refuses the move: by failing the call, or by answering without a build.
+    const tried = await call(first, "play", { id: "here", seat: here.meta.current_seat, actions: [{ Build: Number(mine[0]) }] }).then(logsOf, () => "");
+    assert.ok(!tried.includes('"kind":"build"'), "no house before the piece has stopped on that city");
+    assert.equal((await view("get_match", { id: "here" })).game.props[mine[0]].houses, 0);
+    await playOut("here", ticketPlan);
+    console.log("  a match opened after the deploy with buildHere builds only where the piece stops, and settled");
 
     // The owner makes the fee free for matches opened from now on. The two matches opened before keep their 2.5%.
     await assert.rejects(call(alice, "set_fee", { fee_bps: 0 }, 1n), /only the owner may set the fee/);

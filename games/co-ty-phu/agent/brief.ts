@@ -77,6 +77,8 @@ export type Brief = {
   };
   /** Only in a match where the leader on net worth pays double rent: whether this seat leads now (`reach` and `threat` already say so). */
   leads?: boolean;
+  /** Only in a match where a house goes up only on the own city stood on (ENGINE-RULES §10.5). */
+  buildHere?: true;
 };
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
@@ -195,5 +197,6 @@ export function briefFor(match: ChainMatch, seat: number): Brief | null {
         }
       : {}),
     ...(match.meta.rules.leaderRent ? { leads: leads(game, playerId) } : {}),
+    ...(match.meta.rules.buildHere ? { buildHere: true as const } : {}),
   };
 }

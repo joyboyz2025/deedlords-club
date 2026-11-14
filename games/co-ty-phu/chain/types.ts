@@ -15,8 +15,8 @@ export type ChainSeat = {
   house: boolean;
 };
 
-/** `tickets`, `leaderRent`: the opt-in rules of ENGINE-RULES §10; the contract leaves them out of a match that has none. */
-export type ChainRules = { salary: number; cash: number; blitz: boolean; maxRounds: number; tickets?: boolean; leaderRent?: boolean };
+/** `tickets`, `leaderRent`, `buildHere`: the opt-in rules of ENGINE-RULES §10; the contract leaves them out of a match that has none. */
+export type ChainRules = { salary: number; cash: number; blitz: boolean; maxRounds: number; tickets?: boolean; leaderRent?: boolean; buildHere?: boolean };
 
 export type ChainMeta = {
   id: string;

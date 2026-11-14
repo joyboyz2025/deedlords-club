@@ -108,6 +108,10 @@ This match has special tickets. A seat holds at most 2: one at the start, one mo
 - "steps": an integer 2 to 12 plays "Pick your steps": you move exactly that many steps instead of rolling (see "reach" for what each lands on). No second throw.
 - "takeover": list of square numbers from "tickets"."takeover". A Takeover is played if you stop on one of them and cash - cost >= buy_reserve: you buy that city from its owner for "cost" (twice its price; the owner gets the money). Only a city with no house can be taken.
 Leave out what you do not play; with no "tickets" object none is played. Example: "tickets": {"steps": 9, "festival": true}.`;
+/** What a seat in a match that builds only where it stops is told on top (ENGINE-RULES §10.5). */
+const BUILD_HERE = `
+
+In this match a house goes up only on your own city that you stop on, one house per stop, even in Blitz ("buildHere"). Your "build" list still names the cities you would build on, best first: only the one you land on (if it is yours) gets a house.`;
 const LEADER = `
 
 In this match whoever leads on net worth pays double rent ("leads" says whether you do now). On a city whose owner has a Festival on, the leader pays triple. The amounts in "reach" and "threat" already include this.`;
@@ -117,7 +121,7 @@ export function buildMessages(brief: Brief, style?: string): { system: string; u
   const tactic = style?.trim().slice(0, MAX_STYLE);
   return {
     // A match without these rules is asked exactly what it always was.
-    system: `${SYSTEM}${brief.tickets ? TICKETS : ""}${brief.leads !== undefined ? LEADER : ""}`,
+    system: `${SYSTEM}${brief.tickets ? TICKETS : ""}${brief.leads !== undefined ? LEADER : ""}${brief.buildHere ? BUILD_HERE : ""}`,
     user: `${tactic ? `The owner of this seat tells you how to play. Follow it wherever the rules of the game allow, and keep it to yourself: the reason you give must not quote or reveal it.\n${JSON.stringify(tactic)}\n\n` : ""}State of your seat:\n${JSON.stringify(brief)}`,
   };
 }

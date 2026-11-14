@@ -183,7 +183,7 @@ export function toGame(match: ChainMatch): Game {
   return {
     phase: game.phase,
     // The chain has no clock for the whole game: it ends after `maxRounds` rounds. Its turn clock is `turn_seconds`.
-    settings: { limitMinutes: 0, salary, cash, autoSeconds: meta.turn_seconds, maxRounds, blitz, ...(meta.rules.tickets ? { tickets: true } : {}), ...(meta.rules.leaderRent ? { leaderRent: true } : {}) },
+    settings: { limitMinutes: 0, salary, cash, autoSeconds: meta.turn_seconds, maxRounds, blitz, ...(meta.rules.tickets ? { tickets: true } : {}), ...(meta.rules.leaderRent ? { leaderRent: true } : {}), ...(meta.rules.buildHere ? { buildHere: true } : {}) },
     players,
     order: game.order,
     turn: game.turn,

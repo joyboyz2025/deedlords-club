@@ -213,3 +213,14 @@ So Festival and the leader's rent add up: the leader pays three times the base r
 ### 10.4 `auto`
 
 `auto` plays no ticket. In `stage == "end"` it ends the turn as before.
+
+### 10.5 Building only where one stops (`rules.buildHere`)
+
+A third opt-in rule, for Blitz games. With it, `build` follows the classic condition of section 5 in a Blitz game too:
+a house goes up only on the player's own city they have just stopped on (`buildAt == index`), one house per stop,
+and `buildAt` is cleared by the build. `builtThisTurn` is still recorded and plays no part. Everything else of Blitz
+(the deal, the round limit, the worth of a house) is unchanged. In a classic game the rule changes nothing.
+
+The contract stores it after the tickets, in a tail of version 2 that only a match with this rule has; `get_config`
+lists it as `buildHere`.
+

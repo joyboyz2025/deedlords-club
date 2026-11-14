@@ -567,7 +567,7 @@ function Rules({ view, open = false }: { view: View; open?: boolean }) {
           {blitz && ` and is dealt ${BLITZ_DEAL} properties, paid for at their price out of it`}. Passing Departure pays {money(view.settings.salary ?? SALARY)}. The turn order is drawn at random.
         </li>
         <li>Land on an unowned property and you may buy it; if you don't, it stays free. There is no auction.</li>
-        {blitz ? (
+        {blitz && !view.settings.buildHere ? (
           <li>Land on somebody else's property and you pay rent. On your turn you may add one house to each of your cities; the fifth is a hotel. Owning a whole colour group doubles the rent of its empty lots.</li>
         ) : (
           <li>Land on somebody else's property and you pay rent. When you later stop on your own city you may add one house; after 4 houses the next stop makes it a hotel. Owning a whole colour group doubles the rent of its empty lots.</li>
@@ -720,22 +720,15 @@ function Game({
   // Đang nợ thì chờ quân tới nơi mới bật; tự chọn thì bật ngay, kể cả lúc quân người khác đang chạy.
   const selling = has3D && view.phase === "playing" && active && ((debt && !holding) || raising);
   const offers = sellOffers(view);
-  // Blitz: a house may go up on any of the viewer's cities, once a turn each. Asked for with "Build", the board lights
-  // the cities that can take one, each with what it costs, and a tap builds; the same board as for selling.
-  const [building, setBuilding] = useState(false);
-  const sites = buildSites(view);
-  const placing = has3D && view.phase === "playing" && myTurn && building && !selling && !holding && sites.size > 0 && view.stage !== "buy";
+  // A house goes up only from the turn's corner, on the city the piece stands on ("Build a house"): no mode that lights
+  // several cities at once (it read as buying many places in one go).
   const tap = (index: number) => {
-    if (placing) return sites.has(index) ? send({ t: "build", square: index }) : undefined;
     if (!selling) return pick(index);
     if (offers.has(index)) send({ t: view.props[index].houses > 0 ? "sell" : "mortgage", square: index });
   };
   useEffect(() => {
     if (!active || view.phase !== "playing") setRaising(false);
   }, [active, view.phase]);
-  useEffect(() => {
-    if (!myTurn) setBuilding(false);
-  }, [myTurn]);
   // With their tickets open on their own turn the viewer is deciding: whoever runs the match throws nothing for them
   // meanwhile (for a while: chain/room.ts `choose`).
   const choosing = chain?.choosing;
@@ -768,7 +761,7 @@ function Game({
             selected={selected}
             mode={camera}
             insets={insets}
-            focus={selling ? offers : placing ? sites : null}
+            focus={selling ? offers : null}
             rolling={rolling}
             onTile={tap}
             onArrive={onArrive}
@@ -807,12 +800,6 @@ function Game({
               raising={raising && !debt}
               offers={offers.size}
               onStopRaising={() => setRaising(false)}
-              sites={isBlitz(view) ? sites.size : null}
-              placing={placing}
-              onPlacing={(on) => {
-                setBuilding(on);
-                if (on) chain?.here?.();
-              }}
               onTickets={() => {
                 chain?.here?.();
                 setSheet({ kind: "tickets" });
@@ -1022,9 +1009,6 @@ function TurnControls({
   raising,
   offers,
   onStopRaising,
-  sites,
-  placing,
-  onPlacing,
   onTickets,
 }: {
   view: View;
@@ -1037,11 +1021,6 @@ function TurnControls({
   raising: boolean;
   offers: number;
   onStopRaising: () => void;
-  /** Blitz: how many of the viewer's cities can take a house now. `null`: not Blitz, a house goes up only where the piece stands. */
-  sites: number | null;
-  /** The board is lit for building: a tap on a lit city puts a house there. */
-  placing: boolean;
-  onPlacing: (on: boolean) => void;
   /** Opens the viewer's tickets. */
   onTickets: () => void;
 }) {
@@ -1069,17 +1048,6 @@ function TurnControls({
   if (view.trade && (view.trade.from === mine.id || view.trade.to === mine.id)) center.push(<TradeNote key="trade" view={view} send={send} />);
 
   let corner: ReactNode = null;
-  // The dice and the end of the turn stay where they are while houses go up.
-  if (placing) {
-    center.push(
-      <div key="build" className="tp-strip">
-        <p>Tap a lit city to add a house: one per city each turn.</p>
-        <button type="button" className="tp-btn" onClick={() => onPlacing(false)}>
-          Done
-        </button>
-      </div>,
-    );
-  }
   if (raising) {
     center.push(
       <div key="raise" className="tp-strip">
@@ -1145,7 +1113,7 @@ function TurnControls({
     const again = view.stage === "end" && view.again;
     const roll = view.stage === "roll" || again;
     const index = mine.position;
-    const build = sites === null && view.you.can.build.includes(index);
+    const build = view.you.can.build.includes(index);
     corner = (
       <div className="tp-turn">
         {jailed && <span className="tp-turn__note">Roll a double to get out ({mine.jail! + 1}/3)</span>}
@@ -1171,13 +1139,7 @@ function TurnControls({
         )}
         {waiverOn && <span className="tp-turn__note">Rent waiver on: the next rent this turn is free</span>}
         {hand}
-        {/* Blitz: the way to the houses sits beside the dice, under the board, not over its corner. */}
         <div className="tp-turn__row">
-          {sites !== null && sites > 0 && !placing && (
-            <button type="button" className="tp-btn tp-btn--main" onClick={() => onPlacing(true)}>
-              Build houses · {sites}
-            </button>
-          )}
           <button type="button" className="tp-roll" onClick={() => send({ t: roll ? "roll" : "end" })} aria-label={roll ? "Roll the dice" : "End the turn"}>
             {roll ? (again ? "AGAIN" : "ROLL") : "END"}
             {/* Số giây còn lại trước khi máy bấm hộ. */}
@@ -1522,11 +1484,6 @@ const SIDE_COLUMN_PX = 172;
  * chỗ hình thoi của bàn không với tới, nên không cần chừa thêm.
  */
 const BAND_PX = 120;
-
-/** The viewer's cities that can take a house right now, each with what the house costs (as money leaving). */
-function buildSites(view: View): Map<number, number> {
-  return new Map(view.you.can.build.map((index) => [index, -houseCost(index)]));
-}
 
 /** Đất bán nhà hay cầm cố được ngay lúc này, kèm số tiền nhận: bán một nhà được nửa giá nhà, cầm cố được nửa giá đất. */
 function sellOffers(view: View): Map<number, number> {

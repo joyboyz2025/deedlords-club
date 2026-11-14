@@ -113,6 +113,8 @@ export type Settings = {
   tickets?: boolean;
   /** Whoever leads on net worth pays double rent (ENGINE-RULES §10.1). Missing: off. */
   leaderRent?: boolean;
+  /** Blitz builds only where the player stops: one house on the own city stood on, as in classic (ENGINE-RULES §10.5). */
+  buildHere?: boolean;
 };
 
 export type Game = {
@@ -855,12 +857,13 @@ function ownCity(game: Game, playerId: string, index: unknown) {
 /**
  * Như cờ tỷ phú trên điện thoại: lần đầu dừng ở đất trống thì chỉ mua; những lần sau dừng lại đúng ô đất của mình
  * thì xây thêm được một nhà, đủ 4 nhà thì lần dừng sau lên khách sạn. Không cần đủ bộ màu, không xây khi đang mắc nợ.
- * Blitz: any own city, any time in your turn (except in debt), once per city per turn.
+ * Blitz: any own city, any time in your turn (except in debt), once per city per turn. Blitz with `buildHere`: as in
+ * classic, only the own city just stopped on, one house per stop (ENGINE-RULES §10.5).
  */
 export function canBuild(game: Game, playerId: string, index: number): boolean {
   const target = ownCity(game, playerId, index);
   if (!target || currentPlayer(game)?.id !== playerId || game.stage === "debt") return false;
-  if (isBlitz(game) ? (game.builtThisTurn ?? []).includes(index) : game.buildAt !== index) return false;
+  if (isBlitz(game) && !game.settings.buildHere ? (game.builtThisTurn ?? []).includes(index) : game.buildAt !== index) return false;
   const { player, owned } = target;
   return !owned.mortgaged && owned.houses < 5 && player.cash >= houseCost(index);
 }

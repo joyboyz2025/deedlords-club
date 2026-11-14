@@ -124,7 +124,7 @@ fn a_match_without_the_new_rules_is_stored_byte_for_byte_as_before_and_old_bytes
 #[test]
 fn a_match_with_the_new_rules_keeps_them_in_a_tail_after_the_old_layout() {
     let mut c = contract();
-    started(&mut c, "tix", 4, Extras { tickets: true, leader_rent: true });
+    started(&mut c, "tix", 4, Extras { tickets: true, leader_rent: true, build_here: false });
     c.matches.flush();
     let m = c.matches.get("tix").unwrap().clone();
     let bytes = borsh::to_vec(&m).unwrap();
@@ -158,7 +158,7 @@ fn a_match_with_the_new_rules_keeps_them_in_a_tail_after_the_old_layout() {
 #[test]
 fn create_match_reads_the_opt_in_rules_from_its_arguments_and_get_config_lists_them() {
     let mut c = contract();
-    assert_eq!(c.get_config()["features"], json!(["tickets", "leaderRent"]));
+    assert_eq!(c.get_config()["features"], json!(["tickets", "leaderRent", "buildHere"]));
     let args = |rules: Value| json!({ "id": "x", "seats": 2, "stake": "0", "split": [7000, 3000], "rules": rules, "solo_player": null, "turn_seconds": 30 });
     for (id, sent, want) in [
         (
@@ -189,7 +189,7 @@ fn agents_play_every_ticket_through_turn_and_the_match_settles() {
     for game_no in 0..12u64 {
         let id = format!("g{game_no}");
         let seats = if game_no % 2 == 0 { 2 } else { 4 };
-        started(&mut c, &id, seats, Extras { tickets: true, leader_rent: true });
+        started(&mut c, &id, seats, Extras { tickets: true, leader_rent: true, build_here: false });
         let plan = Plan { buy_reserve: 100, build: OWNABLE.to_vec(), keep_reserve: 300, bail: true, liquidate: vec![] };
         let tickets = TicketPlan { waiver: true, festival: true, steps: 2 + (game_no % 11) as u8, takeover: OWNABLE.to_vec() };
         for turn in 0..400u64 {
@@ -216,7 +216,7 @@ fn agents_play_every_ticket_through_turn_and_the_match_settles() {
 #[test]
 fn turn_reads_the_tickets_of_its_plan_from_its_arguments() {
     let mut c = contract();
-    started(&mut c, "t", 2, Extras { tickets: true, leader_rent: false });
+    started(&mut c, "t", 2, Extras { tickets: true, leader_rent: false, build_here: false });
     let s = current_seat(&c.matches.get("t").unwrap().game).unwrap();
     let seat = format!("s{s}");
     c.matches.get_mut("t").unwrap().game.tickets.as_mut().unwrap().held.insert(seat.clone(), vec![Ticket::Festival, Ticket::Steps]);
@@ -236,4 +236,43 @@ fn turn_reads_the_tickets_of_its_plan_from_its_arguments() {
     call(&format!("a{s}"), 0, 51, json!({ "id": "t", "seat": s, "plan": {} }));
     c.turn("t".into(), s as u8, Plan::default());
     assert!(!c.matches.get("t").unwrap().game.log.iter().rev().take(3).any(|event| matches!(event, Event::Played { .. })));
+}
+
+#[test]
+fn building_only_where_one_stops_is_stored_after_the_tickets_and_reads_back() {
+    let mut c = contract();
+    // With tickets: tail version 2, the tickets as before, then the flag.
+    let both = Extras { tickets: true, leader_rent: true, build_here: true };
+    started(&mut c, "here", 4, both);
+    // Alone: a tail all the same (the status bit is set), with no tickets in it.
+    started(&mut c, "only", 2, Extras { build_here: true, ..Extras::default() });
+    c.matches.flush();
+    for (id, extras) in [("here", both), ("only", Extras { build_here: true, ..Extras::default() })] {
+        let m = c.matches.get(id).unwrap().clone();
+        let bytes = borsh::to_vec(&m).unwrap();
+        let old = borsh::to_vec(&as_before(&m)).unwrap();
+        assert_eq!(bytes[old.len()], MATCH_TAIL_V2, "{id}: version 2 of the tail");
+        let read = Match::try_from_slice(&bytes).unwrap();
+        assert_eq!(read.game.extras, extras);
+        assert_eq!(read.game, m.game);
+        assert_eq!(stored_again(id).game.extras, extras, "{id}: and from storage");
+        assert_eq!(c.get_match(id.into()).unwrap()["meta"]["rules"]["buildHere"], json!(true));
+    }
+    // A match with tickets but not this rule keeps version 1, byte for byte what the build before wrote.
+    started(&mut c, "v1", 2, Extras { tickets: true, leader_rent: true, build_here: false });
+    c.matches.flush();
+    let m = c.matches.get("v1").unwrap().clone();
+    let old = borsh::to_vec(&as_before(&m)).unwrap();
+    assert_eq!(borsh::to_vec(&m).unwrap()[old.len()], MATCH_TAIL_V1);
+    assert!(c.get_match("v1".into()).unwrap()["meta"]["rules"].get("buildHere").is_none());
+    // And `create_match` reads it from its arguments, in either spelling.
+    let args = |rules: Value| json!({ "id": "x", "seats": 2, "stake": "0", "split": [7000, 3000], "rules": rules, "solo_player": null, "turn_seconds": 30 });
+    for (id, sent) in [
+        ("camel", json!({ "salary": 200, "cash": 2000, "blitz": true, "max_rounds": 12, "buildHere": true })),
+        ("snake2", json!({ "salary": 200, "cash": 2000, "blitz": true, "max_rounds": 12, "build_here": true })),
+    ] {
+        call("a0", NEAR, 1, args(sent));
+        c.create_match(id.into(), 2, U128(0), vec![7000, 3000], rules(), None, Some(30), None);
+        assert!(c.matches.get(id).unwrap().game.extras.build_here, "{id}");
+    }
 }

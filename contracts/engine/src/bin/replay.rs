@@ -27,7 +27,7 @@ struct Trace {
     #[serde(default)]
     #[allow(dead_code)]
     seed: Value,
-    /// `{ salary, cash, blitz, maxRounds }`, and the opt-in rules of ENGINE-RULES §10 when on (`tickets`, `leaderRent`).
+    /// `{ salary, cash, blitz, maxRounds }`, and the opt-in rules of ENGINE-RULES §10 when on (`tickets`, `leaderRent`, `buildHere`).
     rules: Value,
     players: Vec<String>,
     steps: Vec<Step>,

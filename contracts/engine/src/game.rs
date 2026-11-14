@@ -73,11 +73,15 @@ pub struct Extras {
     pub tickets: bool,
     /// Whoever leads on net worth pays double rent (ENGINE-RULES §10.1).
     pub leader_rent: bool,
+    /// Blitz builds only on the own city just stopped on, one house per stop, as in classic (ENGINE-RULES §10.5). Not in
+    /// the borsh form of `Extras`, which is the layout stored before this rule existed: the contract stores it after.
+    #[borsh(skip)]
+    pub build_here: bool,
 }
 
 impl Extras {
     pub fn is_off(&self) -> bool {
-        !self.tickets && !self.leader_rent
+        !self.tickets && !self.leader_rent && !self.build_here
     }
 }
 
@@ -829,7 +833,7 @@ impl Game {
                 let (p, owned) = self.own_square(actor, index, true)?;
                 ensure(self.current_index() == Some(p), E::NotYourTurn)?;
                 ensure(self.stage != Stage::Debt, E::WrongStage)?;
-                if self.rules.blitz {
+                if self.rules.blitz && !self.extras.build_here {
                     ensure(!self.built_this_turn.contains(&index), E::NotAllowed)?;
                 } else {
                     ensure(self.build_at == Some(index), E::NotAllowed)?;

@@ -48,8 +48,8 @@ export type DuelTerms = { stake: bigint; maxRounds: number; turnSeconds: number;
  * for whoever leads on net worth (docs/ENGINE-RULES.md §10). A contract deployed before them ignores the fields, so
  * they are sent only to a contract that lists them (`extrasOf`).
  */
-export type Extras = { tickets: boolean; leaderRent: boolean };
-export const NO_EXTRAS: Extras = { tickets: false, leaderRent: false };
+export type Extras = { tickets: boolean; leaderRent: boolean; buildHere: boolean };
+export const NO_EXTRAS: Extras = { tickets: false, leaderRent: false, buildHere: false };
 
 /**
  * What a match is opened with here, from the contract's `get_config`: `features` lists the opt-in rules it knows; an
@@ -58,7 +58,7 @@ export const NO_EXTRAS: Extras = { tickets: false, leaderRent: false };
  */
 export function extrasOf(config: { features?: unknown } | null | undefined, off: boolean = process.env.NEXT_PUBLIC_DEEDLORDS_EXTRAS === "off"): Extras {
   const features = !off && Array.isArray(config?.features) ? config.features : [];
-  return { tickets: features.includes("tickets"), leaderRent: features.includes("leaderRent") };
+  return { tickets: features.includes("tickets"), leaderRent: features.includes("leaderRent"), buildHere: features.includes("buildHere") };
 }
 
 /**
@@ -82,7 +82,7 @@ export function createDuelCall(id: string, terms: DuelTerms): FunctionCall {
     seats,
     stake: terms.stake.toString(),
     split: SPLITS[seats] ?? SPLITS[2],
-    rules: { ...RULES, max_rounds: terms.maxRounds, ...(terms.extras?.tickets ? { tickets: true } : {}), ...(terms.extras?.leaderRent ? { leaderRent: true } : {}) },
+    rules: { ...RULES, max_rounds: terms.maxRounds, ...(terms.extras?.tickets ? { tickets: true } : {}), ...(terms.extras?.leaderRent ? { leaderRent: true } : {}), ...(terms.extras?.buildHere ? { buildHere: true } : {}) },
     solo_player: null,
     turn_seconds: terms.turnSeconds,
     ...(terms.host ? { host: terms.host } : {}),
