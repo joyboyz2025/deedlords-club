@@ -99,11 +99,25 @@ The state you get is JSON. "reach" lists the 11 squares this roll can end on, wi
 Answer with one JSON object and nothing else:
 {"plan": {"buy_reserve": 0, "build": [], "keep_reserve": 0, "bail": false, "liquidate": []}, "reason": "one sentence, at most 140 characters, plain words, why this plan"}`;
 
+/** What a seat in a match with tickets, or with the leader's rent, is told on top: the rules of docs/ENGINE-RULES.md §10. */
+const TICKETS = `
+
+This match has special tickets. A seat holds at most 2: one at the start, one more each time it passes Departure. Your state has "tickets": "held" lists yours. Your plan may play them, each at most once and only if you hold it, in an optional "tickets" object:
+- "waiver": true plays a Rent waiver before the throw: the next rent you would owe this turn is not charged at all. Unused, it is lost when the turn ends.
+- "festival": true plays a Festival before the throw: your cities charge double rent until your next turn starts.
+- "steps": an integer 2 to 12 plays "Pick your steps": you move exactly that many steps instead of rolling (see "reach" for what each lands on). No second throw.
+- "takeover": list of square numbers from "tickets"."takeover". A Takeover is played if you stop on one of them and cash - cost >= buy_reserve: you buy that city from its owner for "cost" (twice its price; the owner gets the money). Only a city with no house can be taken.
+Leave out what you do not play; with no "tickets" object none is played. Example: "tickets": {"steps": 9, "festival": true}.`;
+const LEADER = `
+
+In this match whoever leads on net worth pays double rent ("leads" says whether you do now). On a city whose owner has a Festival on, the leader pays triple. The amounts in "reach" and "threat" already include this.`;
+
 /** The two messages of the request. `style` is the seat owner's own tactic, in their words. */
 export function buildMessages(brief: Brief, style?: string): { system: string; user: string } {
   const tactic = style?.trim().slice(0, MAX_STYLE);
   return {
-    system: SYSTEM,
+    // A match without these rules is asked exactly what it always was.
+    system: `${SYSTEM}${brief.tickets ? TICKETS : ""}${brief.leads !== undefined ? LEADER : ""}`,
     user: `${tactic ? `The owner of this seat tells you how to play. Follow it wherever the rules of the game allow, and keep it to yourself: the reason you give must not quote or reveal it.\n${JSON.stringify(tactic)}\n\n` : ""}State of your seat:\n${JSON.stringify(brief)}`,
   };
 }

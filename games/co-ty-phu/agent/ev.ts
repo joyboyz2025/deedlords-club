@@ -8,6 +8,7 @@
 
 import type { Brief, Holding } from "./brief.ts";
 import type { Plan } from "./plan.ts";
+import { ticketPlan } from "./tickets.ts";
 
 /** Cash kept back when nothing threatens: enough for a tax square. */
 const FLOOR = 150;
@@ -36,8 +37,10 @@ export function evPlan(brief: Brief): { plan: Plan; reason: string } {
   ];
   if (build.length > 0) parts.push(`build ${build[0].name} first`);
   if (brief.inCustody) parts.push(bail ? "pay my way out" : "sit out in custody");
+  const { tickets, says } = ticketPlan(brief, reserve);
+  parts.push(...says);
   return {
-    plan: { buy_reserve: reserve, build: build.map((holding) => holding.square), keep_reserve: reserve, bail, liquidate },
+    plan: { buy_reserve: reserve, build: build.map((holding) => holding.square), keep_reserve: reserve, bail, liquidate, ...(Object.keys(tickets).length > 0 ? { tickets } : {}) },
     reason: `${parts.join("; ")}.`,
   };
 }

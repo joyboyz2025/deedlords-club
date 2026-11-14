@@ -6,6 +6,7 @@
 import { SQUARES, isOwnable } from "../board.ts";
 import type { Brief, Holding } from "./brief.ts";
 import type { Plan } from "./plan.ts";
+import { ticketPlan } from "./tickets.ts";
 
 export const BUILD_ORDERS = ["payback", "priciest", "cheapest", "none"] as const;
 export const BAIL_RULES = ["smart", "always", "never"] as const;
@@ -155,6 +156,9 @@ export function playbookPlan(brief: Brief, book: Playbook): { plan: Plan; reason
   ];
   if (build.length > 0) parts.push(`build ${build[0].name} first`);
   if (brief.inCustody) parts.push(bail ? "pay my way out" : "sit out in custody");
+  // In a match with tickets: the ones worth playing this turn (tickets.ts). A plan that plays none has no such key.
+  const { tickets, says } = ticketPlan(brief, reserve);
+  parts.push(...says);
   return {
     plan: {
       buy_reserve: reserve,
@@ -162,6 +166,7 @@ export function playbookPlan(brief: Brief, book: Playbook): { plan: Plan; reason
       keep_reserve: reserve + book.cushion,
       bail,
       liquidate,
+      ...(Object.keys(tickets).length > 0 ? { tickets } : {}),
     },
     reason: `${parts.join("; ")}.`,
   };

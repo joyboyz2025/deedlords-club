@@ -3,8 +3,8 @@
 // contract's answer with the reference engine, so every number is one the rules would produce. No account names go in:
 // seats are numbers, squares are the board's own names.
 
-import { JAIL_FINE, SQUARES, cityRents, houseCost, isOwnable } from "../board.ts";
-import { netWorth, rentFor, type Game } from "../engine.ts";
+import { JAIL_FINE, SQUARES, cityRents, groupSquares, houseCost, isOwnable } from "../board.ts";
+import { leads, netWorth, rentDue, rentFor, ticketsOf, type Game, type Ticket } from "../engine.ts";
 import { toGame } from "../chain/adapt.ts";
 import type { ChainMatch } from "../chain/types.ts";
 
@@ -63,6 +63,20 @@ export type Brief = {
   rivals: Rival[];
   /** Squares still for sale on the whole board. */
   forSale: number;
+  /**
+   * Only in a match with tickets. `held`: this seat's tickets. `waiverOn`: its Rent waiver is played and waits for a
+   * rent. `festivalOn`: its Festival is on. `festivals`: the other seats whose Festival is on (their cities charge
+   * double; the amounts in `reach` and `threat` already say so). `takeover`: the cities a Takeover could buy.
+   */
+  tickets?: {
+    held: Ticket[];
+    waiverOn: boolean;
+    festivalOn: boolean;
+    festivals: number[];
+    takeover: { square: number; name: string; cost: number; owner: number; completesGroup: boolean }[];
+  };
+  /** Only in a match where the leader on net worth pays double rent: whether this seat leads now (`reach` and `threat` already say so). */
+  leads?: boolean;
 };
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
@@ -74,7 +88,7 @@ function seatOfPlayer(match: ChainMatch, playerId: string): number {
 /** What `playerId` would pay landing on `index` now. Utilities are worked out with the likeliest total. */
 function rentTo(game: Game, playerId: string, index: number, total = TYPICAL_ROLL): number {
   const owned = game.props[index];
-  return owned && owned.owner !== playerId ? rentFor(game, index, total) : 0;
+  return owned && owned.owner !== playerId ? rentDue(game, playerId, index, total) : 0;
 }
 
 /** `null` when `seat` is not a player of a game in progress. */
@@ -163,5 +177,23 @@ export function briefFor(match: ChainMatch, seat: number): Brief | null {
       inCustody: other.jail !== null,
     })),
     forSale: SQUARES.filter((square, index) => isOwnable(square) && !game.props[index]).length,
+    ...(game.tickets
+      ? {
+          tickets: {
+            held: [...ticketsOf(game, playerId)],
+            waiverOn: game.tickets.waiver && match.meta.current_seat === seat,
+            festivalOn: game.tickets.festival.includes(playerId),
+            festivals: game.tickets.festival.filter((id) => id !== playerId).map((id) => seatOfPlayer(match, id)),
+            takeover: Object.entries(game.props).flatMap(([key, owned]) => {
+              const index = Number(key);
+              const square = SQUARES[index];
+              if (square.kind !== "city" || owned.owner === playerId || owned.houses > 0 || owned.mortgaged) return [];
+              const completesGroup = groupSquares(square.group).every((other) => other === index || game.props[other]?.owner === playerId);
+              return [{ square: index, name: square.name, cost: 2 * square.price, owner: seatOfPlayer(match, owned.owner), completesGroup }];
+            }),
+          },
+        }
+      : {}),
+    ...(match.meta.rules.leaderRent ? { leads: leads(game, playerId) } : {}),
   };
 }

@@ -26,7 +26,9 @@ import {
   buy,
   canBuild,
   canMortgage,
+  canPlay,
   canSell,
+  canTakeover,
   createGame,
   currentPlayer,
   declareBankruptcy,
@@ -36,13 +38,19 @@ import {
   newPlayer,
   payBail,
   payDebt,
+  playFestival,
+  playSteps,
+  playWaiver,
   roll,
   sellHouse,
   skipBuying,
   startGame,
+  takeover,
   useFreeCard,
+  TICKETS,
   type Game,
   type Rng,
+  type Ticket,
 } from "../games/co-ty-phu/engine.ts";
 import { gameSeed, mulberry32, prngRng } from "../tools/diff/rng.ts";
 import { snapshot } from "../tools/diff/snapshot.ts";
@@ -68,7 +76,8 @@ export type RollSeen = {
   debt: boolean;
 };
 
-export type TurnSeen = { player: string; rolls: RollSeen[]; bankrupt: boolean };
+/** `tickets`: the tickets the seat played in the turn, in order; absent when it played none. */
+export type TurnSeen = { player: string; rolls: RollSeen[]; bankrupt: boolean; tickets?: Ticket[] };
 
 const owedOf = (game: Game) => (game.debt ?? []).reduce((sum, payee) => sum + payee.amount, 0);
 
@@ -106,11 +115,23 @@ function resolveDebt(game: Game, id: string, liquidate: number[], rng: Rng): voi
  */
 export function playTurn(game: Game, id: string, plan: Plan, rng: Rng, afterRoll: (game: Game, id: string) => void = () => {}): TurnSeen {
   const seen: TurnSeen = { player: id, rolls: [], bankrupt: false };
+  const played = (ticket: Ticket) => void (seen.tickets ??= []).push(ticket);
   let builtAfter: number | null = null;
+  const planned = plan.tickets ?? {};
+  // `throw` of autoplay.rs: the plan's Festival and Rent waiver, then the chosen steps or the dice.
   const throwDice = () => {
     const me = currentPlayer(game)!;
+    for (const [wanted, ticket, play] of [[planned.festival, "festival", playFestival], [planned.waiver, "waiver", playWaiver]] as const) {
+      if (wanted && canPlay(game, id, ticket)) {
+        play(game, id);
+        played(ticket);
+      }
+    }
     const [from, held] = [me.position, me.jail !== null];
-    roll(game, id, null, rng);
+    if (planned.steps !== undefined && canPlay(game, id, "steps")) {
+      playSteps(game, id, planned.steps, rng);
+      played("steps");
+    } else roll(game, id, null, rng);
     const moved = !(held && me.jail !== null);
     const dice = game.dice![0] + game.dice![1];
     const led = (from + dice) % SQUARES.length;
@@ -139,6 +160,11 @@ export function playTurn(game: Game, id: string, plan: Plan, rng: Rng, afterRoll
       if (last) Object.assign(last, { offered: true, bought: wants });
     } else if (builtAfter !== game.rolls) {
       builtAfter = game.rolls;
+      const square = SQUARES[me.position];
+      if (planned.takeover?.includes(me.position) && isOwnable(square) && me.cash - 2 * square.price >= plan.buy_reserve && canTakeover(game, id)) {
+        takeover(game, id);
+        played("takeover");
+      }
       if (last) last.couldBuild = Object.keys(game.props).some((key) => canBuild(game, id, Number(key)));
       for (const index of plan.build) {
         if (canBuild(game, id, index) && me.cash - houseCost(index) >= plan.keep_reserve) {
@@ -228,6 +254,8 @@ export function playMatch(seats: number, rules: Rules, seed: number, mods: Mods 
   const game = createGame();
   for (let seat = 0; seat < seats; seat++) game.players.push(newPlayer(`s${seat}`, "", `s${seat}`, seat === 0));
   game.settings = { limitMinutes: 0, salary: rules.salary, cash: rules.cash, autoSeconds: 0, maxRounds: rules.maxRounds, blitz: rules.blitz };
+  if (rules.tickets) game.settings.tickets = true;
+  if (rules.leaderRent) game.settings.leaderRent = true;
   startGame(game, new Set(game.players.map((player) => player.id)), 0, rng);
   const order = [...game.order];
   const worthNow = () => order.map((id) => netWorth(game, id));
@@ -343,9 +371,13 @@ export function tableSeconds(match: MatchSeen, pace: Pace, human: (playerId: str
     }
     // A person throws once the board shows the present. Each roll is a transaction, and so is what they do after it.
     let ready = Math.max(chain, arrived);
+    // A ticket played before the throw goes out with it, after a moment's thought.
+    const before = (turn.tickets ?? []).filter((ticket) => ticket !== "takeover").length;
     for (const [i, roll] of turn.rolls.entries()) {
-      const landed = ready + pace.react + pace.tx;
+      const landed = ready + pace.react + (i === 0 ? before * pace.thinkBuy : 0) + pace.tx;
       let at = show(roll, landed);
+      // A Takeover is a move on the square, thought over like a purchase.
+      if (i === turn.rolls.length - 1 && turn.tickets?.includes("takeover")) at += pace.thinkBuy + pace.tx;
       if (roll.debt) at += pace.thinkDebt + pace.tx;
       if (roll.offered) at += pace.thinkBuy;
       if (roll.couldBuild) at += pace.thinkBuild;
@@ -394,6 +426,11 @@ export type Report = {
    * `slow`: the same with people who take their time and agents that ask a model (`unhurried`).
    */
   minutes: { solo: Spread; people: Spread; slow: { solo: Spread; people: Spread } };
+  /**
+   * Only for rules with tickets, per ticket: how many were played a match, and the share of matches won by the seats
+   * that played at least one against the share won by the seats that played none (`null`: no such seat).
+   */
+  tickets?: Record<Ticket, { played: number; winsWith: number | null; winsWithout: number | null }>;
 };
 
 const leaderOf = (worth: number[]): number | null => {
@@ -411,9 +448,21 @@ export function measure(seats: number, rules: Rules, games: number, seed: number
   const gap = [0, 0, 0, 0];
   const count = { byRounds: 0, turns: 0, third: 0, thirdOf: 0, half: 0, halfOf: 0, last: 0, lastOf: 0, changes: 0, bankruptcies: 0, houses: 0 };
   const slow = unhurried(pace);
+  const byTicket = Object.fromEntries(TICKETS.map((ticket) => [ticket, { played: 0, withSeats: 0, withWins: 0, withoutSeats: 0, withoutWins: 0 }])) as unknown as Record<Ticket, Record<string, number>>;
   for (let g = 0; g < games; g++) {
     const match = playMatch(seats, rules, gameSeed(seed, g), mods, books);
     const winner = match.order.indexOf(match.ranking[0]);
+    if (rules.tickets) {
+      for (const ticket of TICKETS) {
+        const users = new Set(match.turns.filter((turn) => turn.tickets?.includes(ticket)).map((turn) => turn.player));
+        byTicket[ticket].played += match.turns.reduce((sum, turn) => sum + (turn.tickets ?? []).filter((one) => one === ticket).length, 0);
+        for (const id of match.order) {
+          const key = users.has(id) ? "with" : "without";
+          byTicket[ticket][`${key}Seats`] += 1;
+          if (id === match.ranking[0]) byTicket[ticket][`${key}Wins`] += 1;
+        }
+      }
+    }
     const played = match.worth.length;
     rounds.push(match.rounds);
     if (match.reason === "time") count.byRounds += 1;
@@ -458,7 +507,34 @@ export function measure(seats: number, rules: Rules, games: number, seed: number
     bankruptcies: count.bankruptcies / games,
     houses: count.houses / games,
     minutes: { solo: spread(minutes[0]), people: spread(minutes[1]), slow: { solo: spread(minutes[2]), people: spread(minutes[3]) } },
+    ...(rules.tickets
+      ? {
+          tickets: Object.fromEntries(
+            TICKETS.map((ticket) => {
+              const of = byTicket[ticket];
+              return [ticket, { played: of.played / games, winsWith: of.withSeats ? of.withWins / of.withSeats : null, winsWithout: of.withoutSeats ? of.withoutWins / of.withoutSeats : null }];
+            }),
+          ) as Report["tickets"],
+        }
+      : {}),
   };
+}
+
+/** A seat's playbook plan with only some tickets left in it (`keep`), for measuring what one ticket is worth alone. */
+export const onlyTickets =
+  (keep: Ticket[]): Book =>
+  (brief) => {
+    const { plan } = playbookPlan(brief, DEFAULT_PLAYBOOK);
+    const tickets = Object.fromEntries(Object.entries(plan.tickets ?? {}).filter(([key]) => keep.includes(key as Ticket)));
+    const { tickets: _, ...rest } = plan;
+    return Object.keys(tickets).length > 0 ? { ...rest, tickets } : rest;
+  };
+
+/** Share of matches seat 0 wins when it plays by `mine` and every other seat by `theirs`. */
+export function edge(seats: number, rules: Rules, games: number, seed: number, mine: Book, theirs: Book): number {
+  let wins = 0;
+  for (let g = 0; g < games; g++) if (playMatch(seats, rules, gameSeed(seed, g), {}, [mine, ...Array.from({ length: seats - 1 }, () => theirs)]).ranking[0] === "s0") wins += 1;
+  return wins / games;
 }
 
 // ----- The report ---------------------------------------------------------------------------------------------------
@@ -476,6 +552,15 @@ export function describe(name: string, report: Report): string {
     `    minutes   one person against agents ${span(minutes.solo)}, a table of people ${span(minutes.people)}; unhurried: ${one(minutes.slow.solo.mean)} and ${one(minutes.slow.people.mean)}`,
     `    comeback  whoever leads after a third of the match wins ${pct(leaderWins.third)}, after half ${pct(leaderWins.half)}; whoever is last at half wins ${pct(report.lastWins)}; the lead changes ${one(report.leadChanges)} times`,
     `    gap       the leader holds ${report.gap.map(pct).join(", ")} of all net worth after a quarter, half, three quarters, the end`,
+    ...(report.tickets
+      ? [
+          `    tickets   ${TICKETS.map((ticket) => {
+            const of = report.tickets![ticket];
+            const share = (value: number | null) => (value === null ? "n/a" : pct(value));
+            return `${ticket} ${one(of.played)} a match, seats that played it win ${share(of.winsWith)} (those that did not ${share(of.winsWithout)})`;
+          }).join("; ")}`,
+        ]
+      : []),
   ].join("\n");
 }
 
@@ -515,6 +600,17 @@ function main(): void {
     console.log(describe(`now: Blitz, ${now.cash} in cash, ${now.maxRounds} rounds; the client as it is`, measure(seats, now, games, seed, PACE_NOW)));
     console.log(describe("now, to the end", measure(seats, { ...RULES, maxRounds: TO_THE_END }, games, seed, PACE_NOW)));
     if (args.includes("--proposal")) for (const [name, mods] of PROPOSED) console.log(describe(`proposed: ${name}`, measure(seats, now, games, seed, PACE_NOW, mods)));
+    // The rules the contract has since tickets: measured on the engine itself, not modelled.
+    if (args.includes("--tickets")) {
+      const both = { ...now, tickets: true, leaderRent: true };
+      console.log(describe("with the leader's rent alone", measure(seats, { ...now, leaderRent: true }, games, seed, PACE_NOW)));
+      console.log(describe("with tickets alone", measure(seats, { ...now, tickets: true }, games, seed, PACE_NOW)));
+      console.log(describe("with tickets and the leader's rent (what a match is opened with on a contract that has them)", measure(seats, both, games, seed, PACE_NOW)));
+      // What a ticket is worth: seat 0 alone plays it (or all four), nobody else plays any. An even table wins 1 in `seats`.
+      const none = onlyTickets([]);
+      const worth = [["none", []], ["all four", [...TICKETS]], ...TICKETS.map((ticket) => [ticket, [ticket]])] as [string, Ticket[]][];
+      console.log(`    edge      seat 0 wins, playing only these tickets against seats that play none (even: ${pct(1 / seats)}): ${worth.map(([name, keep]) => `${name} ${pct(edge(seats, both, games, seed, onlyTickets(keep), none))}`).join(", ")}`);
+    }
   }
 }
 

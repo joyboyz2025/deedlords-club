@@ -544,12 +544,12 @@ export function rentFor(game: Game, index: number, diceTotal: number, rent: { do
 }
 
 /** Why a rent is raised, as the log says it. */
-export const raiseLine = (payer: string, owner: string, raised: { festival: boolean; leader: boolean }): string =>
+export const raiseLine = (payer: string, raised: { festival: boolean; leader: boolean }): string =>
   raised.festival && raised.leader
-    ? `Triple rent: ${owner}'s Festival is on and ${payer} leads.`
+    ? `Triple rent for ${payer}: a Festival is on here, and the leader pays double.`
     : raised.festival
-      ? `Double rent: ${owner}'s Festival is on.`
-      : `Double rent: ${payer} leads on net worth.`;
+      ? `Double rent for ${payer}: a Festival is on here.`
+      : `Double rent for ${payer}: the leader on net worth pays double.`;
 
 /** Whether `playerId` leads: their net worth is strictly above that of every other player still in the game. */
 export function leads(game: Game, playerId: string): boolean {
@@ -595,7 +595,7 @@ function land(game: Game, player: Player, rng: Rng, rent?: { double?: boolean; u
     const amount = rentDue(game, player.id, player.position, game.dice![0] + game.dice![1], rent);
     const owner = find(game, owned.owner)!;
     const raised = rentRaises(game, player.id, player.position);
-    if (raised.festival || raised.leader) note(game, raiseLine(player.name, owner.name, raised));
+    if (raised.festival || raised.leader) note(game, raiseLine(player.name, raised));
     if (game.tickets?.waiver) {
       game.tickets.waiver = false;
       note(game, `${player.name}'s Rent waiver covers ${amount} rent to ${owner.name} at ${square.name}.`);
