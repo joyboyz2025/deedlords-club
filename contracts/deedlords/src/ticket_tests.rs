@@ -114,7 +114,10 @@ fn a_match_without_the_new_rules_is_stored_byte_for_byte_as_before_and_old_bytes
     assert!(read.game.extras.is_off() && read.game.tickets.is_none());
     assert_eq!(read.game, m.game);
     assert_eq!(stored_again("plain").game, m.game, "and it comes back from storage, where the map writes its own bytes after it");
-    assert_eq!(c.get_match("plain".into()).unwrap()["meta"]["rules"], json!({ "salary": 200, "cash": 2000, "blitz": true, "maxRounds": 12 }));
+    assert_eq!(
+        c.get_match("plain".into()).unwrap()["meta"]["rules"],
+        json!({ "salary": 200, "cash": 2000, "blitz": true, "maxRounds": 12 })
+    );
     assert!(c.get_match("plain".into()).unwrap()["game"].get("tickets").is_none());
 }
 
@@ -145,7 +148,10 @@ fn a_match_with_the_new_rules_keeps_them_in_a_tail_after_the_old_layout() {
     unknown[old.len()] = 9;
     assert!(Match::try_from_slice(&unknown).is_err());
     let view = c.get_match("tix".into()).unwrap();
-    assert_eq!(view["meta"]["rules"], json!({ "salary": 200, "cash": 2000, "blitz": true, "maxRounds": 12, "tickets": true, "leaderRent": true }));
+    assert_eq!(
+        view["meta"]["rules"],
+        json!({ "salary": 200, "cash": 2000, "blitz": true, "maxRounds": 12, "tickets": true, "leaderRent": true })
+    );
     assert!(view["game"]["tickets"]["held"]["s3"].is_array());
 }
 
@@ -155,7 +161,11 @@ fn create_match_reads_the_opt_in_rules_from_its_arguments_and_get_config_lists_t
     assert_eq!(c.get_config()["features"], json!(["tickets", "leaderRent"]));
     let args = |rules: Value| json!({ "id": "x", "seats": 2, "stake": "0", "split": [7000, 3000], "rules": rules, "solo_player": null, "turn_seconds": 30 });
     for (id, sent, want) in [
-        ("both", json!({ "salary": 200, "cash": 2000, "blitz": true, "max_rounds": 12, "tickets": true, "leaderRent": true }), (true, true)),
+        (
+            "both",
+            json!({ "salary": 200, "cash": 2000, "blitz": true, "max_rounds": 12, "tickets": true, "leaderRent": true }),
+            (true, true),
+        ),
         ("snake", json!({ "salary": 200, "cash": 2000, "blitz": true, "max_rounds": 12, "leader_rent": true }), (false, true)),
         ("none", json!({ "salary": 200, "cash": 2000, "blitz": true, "max_rounds": 12 }), (false, false)),
         ("odd", json!({ "salary": 200, "cash": 2000, "blitz": true, "max_rounds": 12, "tickets": "yes", "leaderRent": 1 }), (false, false)),
@@ -210,7 +220,12 @@ fn turn_reads_the_tickets_of_its_plan_from_its_arguments() {
     let s = current_seat(&c.matches.get("t").unwrap().game).unwrap();
     let seat = format!("s{s}");
     c.matches.get_mut("t").unwrap().game.tickets.as_mut().unwrap().held.insert(seat.clone(), vec![Ticket::Festival, Ticket::Steps]);
-    call(&format!("a{s}"), 0, 50, json!({ "id": "t", "seat": s, "plan": { "buy_reserve": 0, "tickets": { "festival": true, "steps": 9 } } }));
+    call(
+        &format!("a{s}"),
+        0,
+        50,
+        json!({ "id": "t", "seat": s, "plan": { "buy_reserve": 0, "tickets": { "festival": true, "steps": 9 } } }),
+    );
     c.turn("t".into(), s as u8, Plan::default());
     let m = c.matches.get("t").unwrap();
     assert!(played(&m.game.log, Ticket::Festival) && played(&m.game.log, Ticket::Steps));

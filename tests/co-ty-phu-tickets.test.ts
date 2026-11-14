@@ -64,10 +64,24 @@ function started(extras: { tickets?: boolean; leaderRent?: boolean }, draws: num
 }
 
 function asMatch(game: Game, log: ChainEvent[] = []): ChainMatch {
-  const rules: ChainRules = { salary: 200, cash: 1500, blitz: false, maxRounds: 20, ...(game.settings.tickets ? { tickets: true } : {}), ...(game.settings.leaderRent ? { leaderRent: true } : {}) };
+  const rules: ChainRules = {
+    salary: 200,
+    cash: 1500,
+    blitz: false,
+    maxRounds: 20,
+    ...(game.settings.tickets ? { tickets: true } : {}),
+    ...(game.settings.leaderRent ? { leaderRent: true } : {}),
+  };
   const seats = game.players.map((player, seat) => ({ seat, player: player.id, backer: `${player.id}.test`, driver: null, house: false }));
   const meta = { id: "m1", status: "playing" as const, seats, stake: "0", split: [7000, 3000], fee_bps: 0, rules, solo_player: null, creator: "s0.test", storage_deposit: "0" };
-  const clock = { created_at: "1", last_activity: String(1000 + game.rolls * 10 + log.length), turn_seconds: 30, turn_deadline: "0", draws: 0, current_seat: game.phase === "playing" ? game.players.findIndex((p) => p.id === game.order[game.turn]) : null };
+  const clock = {
+    created_at: "1",
+    last_activity: String(1000 + game.rolls * 10 + log.length),
+    turn_seconds: 30,
+    turn_deadline: "0",
+    draws: 0,
+    current_seat: game.phase === "playing" ? game.players.findIndex((p) => p.id === game.order[game.turn]) : null,
+  };
   return structuredClone({ meta: { ...meta, ...clock }, game: snapshot(game) as unknown as ChainGame, log });
 }
 
@@ -141,7 +155,10 @@ test("the four tickets do what the rules sheet says", () => {
   game.props[cheap].houses = 0;
   const cash = game.players.map((p) => p.cash);
   takeover(game, "s0");
-  assert.deepEqual(game.players.map((p) => p.cash), [cash[0] - 2 * price, cash[1] + 2 * price]);
+  assert.deepEqual(
+    game.players.map((p) => p.cash),
+    [cash[0] - 2 * price, cash[1] + 2 * price],
+  );
   assert.equal(game.props[cheap].owner, "s0");
   assert.equal(canPlay(game, "s0", "takeover"), false);
 });
@@ -203,7 +220,11 @@ test("a plan without tickets is the plan it always was; one with them is cleaned
   assert.deepEqual(Object.keys(cleanPlan(old)!), ["buy_reserve", "build", "keep_reserve", "bail", "liquidate"]);
   for (const nothing of [undefined, null, {}, [], "waiver", { waiver: false, steps: 0, takeover: [] }, { steps: 13 }, { steps: 2.5 }, { takeover: [0, 5] }])
     assert.equal(JSON.stringify(cleanPlan({ ...old, tickets: nothing })), JSON.stringify(old), JSON.stringify(nothing));
-  assert.deepEqual(cleanPlan({ ...old, tickets: { waiver: true, festival: "yes", steps: 9, takeover: [1, 1, 5, 3], more: 1 } })!.tickets, { waiver: true, steps: 9, takeover: [1, 3] });
+  assert.deepEqual(cleanPlan({ ...old, tickets: { waiver: true, festival: "yes", steps: 9, takeover: [1, 1, 5, 3], more: 1 } })!.tickets, {
+    waiver: true,
+    steps: 9,
+    takeover: [1, 3],
+  });
   assert.deepEqual(parseAnswer('{"plan": {"buy_reserve": 0, "tickets": {"festival": true}}, "reason": "r"}')!.plan.tickets, { festival: true });
 });
 
@@ -227,7 +248,14 @@ test("an agent is told what it holds and plays it by rule; a match without ticke
   assert.equal(brief.leads, false);
   assert.deepEqual(brief.tickets!.takeover, [], "a city with a hotel cannot be taken over");
   const told = buildMessages(brief).system;
-  assert.ok(told.startsWith(system) && /Rent waiver/.test(told) && /Pick your steps/.test(told) && /Takeover/.test(told) && /Festival/.test(told) && /leads on net worth pays double/.test(told));
+  assert.ok(
+    told.startsWith(system) &&
+      /Rent waiver/.test(told) &&
+      /Pick your steps/.test(told) &&
+      /Takeover/.test(told) &&
+      /Festival/.test(told) &&
+      /leads on net worth pays double/.test(told),
+  );
   const { plan, reason } = playbookPlan(brief, DEFAULT_PLAYBOOK);
   // A hand of two is spent: the steps go where no rent is, so the waiver is kept for another turn.
   assert.ok(plan.tickets?.steps !== undefined && plan.tickets.steps !== 7);
@@ -265,7 +293,15 @@ test("the room: a Takeover is something to decide, tickets before the throw are 
     { kind: "waived", player: "s0", owner: "s1", square: cheap, amount: 10 },
   ];
   const news = ticketNews(log, 5, (id) => id);
-  assert.deepEqual(news.map((item) => [item.kind, item.after, item.ticket ?? null]), [["drew", 4, "waiver"], ["played", 4, "waiver"], ["raised", 5, null], ["waived", 5, null]]);
+  assert.deepEqual(
+    news.map((item) => [item.kind, item.after, item.ticket ?? null]),
+    [
+      ["drew", 4, "waiver"],
+      ["played", 4, "waiver"],
+      ["raised", 5, null],
+      ["waived", 5, null],
+    ],
+  );
   assert.equal(new Set(news.map((item) => item.id)).size, 4);
 
   // The room, with the viewer on turn and a ticket in hand.

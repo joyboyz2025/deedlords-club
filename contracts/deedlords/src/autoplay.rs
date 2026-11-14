@@ -182,7 +182,13 @@ fn build_pass<R: Rng + ?Sized>(game: &mut Game, seat: &str, plan: &Plan, rng: &m
 /// A throw by the plan: its Festival and its Rent waiver first, each if the seat holds one and may play it now; then
 /// "Pick your steps" with the plan's steps if the seat may play that, else the dice. In a match without tickets none of
 /// them is ever allowed, and this is `Roll`.
-fn throw<R: Rng + ?Sized>(game: &mut Game, seat: &str, tickets: &TicketPlan, rng: &mut R, steps: &mut Vec<Step>) -> Result<(), EngineError> {
+fn throw<R: Rng + ?Sized>(
+    game: &mut Game,
+    seat: &str,
+    tickets: &TicketPlan,
+    rng: &mut R,
+    steps: &mut Vec<Step>,
+) -> Result<(), EngineError> {
     for (wanted, action) in [(tickets.festival, Action::Festival), (tickets.waiver, Action::Waiver)] {
         if wanted && game.check(Some(seat), action).is_ok() {
             apply_logged(game, Some(seat), action, rng, steps)?;

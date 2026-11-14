@@ -1016,7 +1016,6 @@ impl Contract {
         emit("create_match", data);
     }
 
-
     /// `start`, and `play(["Start"])`: the host says go.
     fn start_hosted(&mut self, id: String) {
         let mut m = self.load(&id);

@@ -91,7 +91,10 @@ fn a_ticket_each_at_the_start_and_one_more_at_departure_up_to_two() {
     let mut game = started(Extras { tickets: true, leader_rent: false }, &[0, 3]);
     assert_eq!(game.tickets_of("p0"), [Ticket::Waiver]);
     assert_eq!(game.tickets_of("p1"), [Ticket::Festival]);
-    assert_eq!(game.snapshot()["tickets"], serde_json::json!({ "held": { "p0": ["waiver"], "p1": ["festival"] }, "waiver": false, "festival": [] }));
+    assert_eq!(
+        game.snapshot()["tickets"],
+        serde_json::json!({ "held": { "p0": ["waiver"], "p1": ["festival"] }, "waiver": false, "festival": [] })
+    );
     // 38 + 3 passes Departure: the salary, then one draw.
     game.players[0].position = 38;
     act(&mut game, "p0", Action::Roll, &[1, 2, 1]).unwrap();

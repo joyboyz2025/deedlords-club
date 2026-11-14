@@ -38,8 +38,8 @@ pub mod board;
 mod game;
 
 pub use game::{
-    Action, CardRef, EngineError, Event, Extras, Game, GameResult, Owned, Payee, Phase, Player, Reason, Release, RentMod, Rng, Rules, Stage,
-    Ticket, Tickets, BLITZ_DEAL, HOTEL, MAX_LOG, MAX_SEATS, MAX_TICKETS, MIN_PLAYERS,
+    Action, CardRef, EngineError, Event, Extras, Game, GameResult, Owned, Payee, Phase, Player, Reason, Release, RentMod, Rng, Rules,
+    Stage, Ticket, Tickets, BLITZ_DEAL, HOTEL, MAX_LOG, MAX_SEATS, MAX_TICKETS, MIN_PLAYERS,
 };
 
 #[cfg(test)]

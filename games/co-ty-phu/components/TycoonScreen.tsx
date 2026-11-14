@@ -968,6 +968,12 @@ function Game({
               Trade
             </button>
           )}
+          {/* The flat board has no turn corner: the viewer's tickets open from the bar. */}
+          {active && (view.tickets?.held[mine.id] ?? []).length > 0 && (
+            <button type="button" className={`tp-btn${myTurn && (view.tickets?.can ?? []).length > 0 ? " tp-btn--main" : ""}`} onClick={() => setSheet({ kind: "tickets" })}>
+              Tickets · {view.tickets!.held[mine.id].length}
+            </button>
+          )}
           <button type="button" className="tp-btn tp-btn--quiet" onClick={() => setSheet({ kind: "rules" })}>
             Rules
           </button>
@@ -982,6 +988,7 @@ function Game({
       {sheet?.kind === "assets" && <AssetsSheet view={view} playerId={sheet.playerId} send={send} onClose={() => setSheet(null)} />}
       {sheet?.kind === "trade" && <TradeSheet view={view} send={send} onClose={() => setSheet(null)} />}
       {sheet?.kind === "rules" && <RulesSheet view={view} onClose={() => setSheet(null)} />}
+      {sheet?.kind === "tickets" && <TicketsSheet view={view} send={send} ready={!(chain?.busy ?? false)} onRules={() => setSheet({ kind: "rules" })} onClose={() => setSheet(null)} />}
     </div>
   );
 }

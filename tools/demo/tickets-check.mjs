@@ -57,7 +57,16 @@ try {
     await page.evaluate(`document.querySelector(".fd-terms").scrollIntoView({ block: "center" })`);
     await sleep(600);
     await shot(page, "gate");
-    if (EXPECT === "tickets") expect(/Special tickets/i.test(terms) && /Rent waiver\./.test(terms) && /Pick your steps\./.test(terms) && /Takeover\./.test(terms) && /Festival\./.test(terms) && /leads on net worth pays double rent/.test(terms), "the gate says each ticket and the leader's rent");
+    if (EXPECT === "tickets")
+      expect(
+        /Special tickets/i.test(terms) &&
+          /Rent waiver\./.test(terms) &&
+          /Pick your steps\./.test(terms) &&
+          /Takeover\./.test(terms) &&
+          /Festival\./.test(terms) &&
+          /leads on net worth pays double rent/.test(terms),
+        "the gate says each ticket and the leader's rent",
+      );
     else expect(!/ticket|Festival|leads on net worth/i.test(terms), "the gate says nothing of tickets");
     expect(!(await page.evaluate(`document.documentElement.scrollWidth > window.innerWidth + 1`)), "the gate is no wider than the screen");
     throw null;
@@ -107,7 +116,10 @@ try {
     await page.click('button[aria-label^="More"]', { after: 1400 });
     await page.click({ text: "^Rules$", tag: "button", within: ".tp-more" }, { ms: 300, after: 900 });
     const rules = await text(page, ".tp-rules");
-    expect(/Rent waiver/.test(rules) && /Pick your steps/.test(rules) && /Takeover/.test(rules) && /Festival/.test(rules) && /leads on net worth pays double rent/.test(rules), "the rules sheet says each ticket and the leader's rent");
+    expect(
+      /Rent waiver/.test(rules) && /Pick your steps/.test(rules) && /Takeover/.test(rules) && /Festival/.test(rules) && /leads on net worth pays double rent/.test(rules),
+      "the rules sheet says each ticket and the leader's rent",
+    );
     await shot(page, "rules");
     await page.click({ text: "^Close$", tag: "button" }, { after: 500 });
 
@@ -116,7 +128,8 @@ try {
     let opened = false;
     let overflow = false;
     const until = Date.now() + MINUTES * 60_000;
-    const mine = () => page.evaluate(`[...document.querySelectorAll(".tp-hud__name")].find((el) => /\\(you\\)/.test(el.innerText))?.innerText.replace(/\\s*\\(you\\)/, "").trim() ?? ""`);
+    const mine = () =>
+      page.evaluate(`[...document.querySelectorAll(".tp-hud__name")].find((el) => /\\(you\\)/.test(el.innerText))?.innerText.replace(/\\s*\\(you\\)/, "").trim() ?? ""`);
     const me = await mine();
     const agentPlayed = () => [...news].some((line) => / plays /.test(line) && !line.startsWith(`${me} `));
     while (Date.now() < until && !(played && agentPlayed() && [...news].some((line) => line.startsWith(`${me} `)))) {
@@ -160,7 +173,10 @@ try {
     }
     await shot(page, "end");
     expect(Boolean(played), `the guest played a ticket (${played ?? "none"})`);
-    expect([...news].some((line) => line.startsWith(`${me} `)), "the guest's own ticket was announced");
+    expect(
+      [...news].some((line) => line.startsWith(`${me} `)),
+      "the guest's own ticket was announced",
+    );
     expect(agentPlayed(), "the house agent played a ticket and the table said so");
     expect(!overflow, "the page never grew wider than the screen");
     console.log(`  everything the table said: ${JSON.stringify([...news])}`);

@@ -202,6 +202,13 @@ pub enum Release {
 /// Serialized with a `kind` tag, e.g. `{ "kind": "rent", "player": "p1", "owner": "p0", "square": 3, "amount": 5 }`.
 /// New kinds go last: the logs of matches stored before a kind existed must still read. `Resign` (the player gave up
 /// the game) is always followed by a `Bankrupt`: that is how a player leaves.
+///
+/// The last five belong to tickets and the leader's rent (ENGINE-RULES §10). `Drew`: a ticket was drawn, at the start or
+/// passing Departure. `Played`: a ticket was played; `value` is the steps chosen (`Steps`), the square taken over
+/// (`Takeover`), else 0. `Waived`: a rent of `amount` was not charged, the player's Rent waiver took it. `Taken`:
+/// `player` bought `square` from `owner` for `amount` with a Takeover. `Raised`: the rent `player` owes on `square` is
+/// raised (the owner's Festival is on, the player leads, or both); it comes right before the `Rent` or `Waived` it
+/// explains.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Event {
@@ -224,16 +231,10 @@ pub enum Event {
     Auto { player: String },
     End { reason: Reason },
     Resign { player: String },
-    /// A ticket was drawn: at the start, or passing Departure.
     Drew { player: String, ticket: Ticket },
-    /// A ticket was played. `value`: the steps chosen (`Steps`), the square taken over (`Takeover`), else 0.
     Played { player: String, ticket: Ticket, value: u8 },
-    /// A rent of `amount` was not charged: the player's Rent waiver took it.
     Waived { player: String, owner: String, square: u8, amount: i64 },
-    /// `player` bought `square` from `owner` for `amount` with a Takeover ticket.
     Taken { player: String, owner: String, square: u8, amount: i64 },
-    /// The rent `player` owes on `square` is raised: the owner's Festival is on, the player leads, or both. It comes
-    /// right before the `Rent` (or `Waived`) it explains.
     Raised { player: String, square: u8, festival: bool, leader: bool },
 }
 
@@ -282,8 +283,8 @@ pub enum Action {
 impl Action {
     /// The op names used in trace files, in [`Action`] order.
     pub const OPS: [&'static str; 19] = [
-        "start", "roll", "buy", "skip", "end", "bail", "card", "pay", "bankrupt", "build", "sell", "mortgage", "redeem", "auto", "resign", "waiver",
-        "steps", "takeover", "festival",
+        "start", "roll", "buy", "skip", "end", "bail", "card", "pay", "bankrupt", "build", "sell", "mortgage", "redeem", "auto", "resign",
+        "waiver", "steps", "takeover", "festival",
     ];
 
     /// Trace op name.
