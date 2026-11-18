@@ -56,6 +56,11 @@ A move the model did not answer in time is played by rules and has no tag.
 | A guest's move relayed by the sponsor (4.3 Tgas) | [`2jesymTA…`](https://nearblocks.io/txns/2jesymTABFtwPkeVX29Sc6DFhFvWQX9Rq2jyEAhTcLUx) |
 | An AI move signed inside a TEE | [`2af7dAbW…`](https://nearblocks.io/txns/2af7dAbW4rBsDSKKhXAdyTXB35FrxcoXttPiE2swuXEc) |
 | The last move of a staked match: the contract pays both seats in the same transaction | [`Ci1p7yj2…`](https://nearblocks.io/txns/Ci1p7yj2tqF3LXhMNrEjAYQbyuk416u6zcNPVXi3TADJ) |
+| A real NEAR Intents (1Click) top-up: ETH sent on Arbitrum, 0.29 NEAR delivered to the game account | [`0x089a902b…`](https://arbiscan.io/tx/0x089a902bce51fb3caf24376080a74c94556b1c5d02cb222fd6def95f9c58e774), then [`98PnDJ3r…`](https://nearblocks.io/txns/98PnDJ3rS5w1BmD583VMXzPsSxb29SgwVkd3PYdMFDb7) |
+
+The README's [Every feature, with a real transaction](README.md#every-feature-with-a-real-transaction) has one
+transaction for each feature: dealing, betting, opening cards and the showdown at poker, a timeout, a table closed
+after everyone left, characters made and bought, three 1Click swaps, the contract upgrade.
 
 The explorer answers a script with HTTP 403: open these in a browser, or let `npm run check:live` read the same four
 transactions from public RPC nodes.

@@ -69,17 +69,35 @@ mainnet a free table costs you nothing (a sponsor pays the gas); a staked table 
 | 6 | On the mainnet site's `/play` sign in with an **EVM wallet** instead and choose **Stake**. A new game account holds no NEAR, so it cannot pay any stake | A panel under the stake, "Add … NEAR to play this stake", with a live quote from NEAR Intents' 1Click and one button: "Pay … USDC from your wallet". Nothing is sent unless you approve the transfer in the wallet. 1Click has no testnet: there the price is shown on `/account` under **Other chains**, with nothing to send ([section 5](#5-money-from-any-chain-near-intents-1click)) |
 | 7 | Open [`/character`](https://www.deedlords.xyz/character) | The character that sits at every table. It and each piece it wears are NEP-171 tokens of `chibi.deedlords.near` |
 
-Real transactions to open without playing:
+## Every feature, with a real transaction
 
-| What | Transaction |
-|---|---|
-| A poker shuffle with its proof (22,555 bytes, 221 Tgas, 0.021 NEAR) | [`HucKM9wP…`](https://nearblocks.io/txns/HucKM9wPjKYhhSAtAec7rvDvnKRfnSjNT5CJ9ypHaRWG) |
-| A guest's move relayed by the sponsor (4.3 Tgas, 0.0004 NEAR paid by the sponsor) | [`2jesymTA…`](https://nearblocks.io/txns/2jesymTABFtwPkeVX29Sc6DFhFvWQX9Rq2jyEAhTcLUx) |
-| An AI move signed inside a TEE (3.9 Tgas, 0.0004 NEAR) | [`2af7dAbW…`](https://nearblocks.io/txns/2af7dAbW4rBsDSKKhXAdyTXB35FrxcoXttPiE2swuXEc) |
-| The last move of a staked match: the contract pays both seats in the same transaction | [`Ci1p7yj2…`](https://nearblocks.io/txns/Ci1p7yj2tqF3LXhMNrEjAYQbyuk416u6zcNPVXi3TADJ) |
+Each row is a transaction on NEAR mainnet (or Arbitrum, for the other side of a swap) that shows the feature doing
+what it says. Open any of them without playing. The first four are also read and checked by `npm run check:live`.
 
-The explorer answers a script with HTTP 403. In a terminal, `npm run check:live` reads the same four transactions
-from public RPC nodes.
+| Feature | What the transaction shows | Transaction |
+|---|---|---|
+| **Poker: a shuffle proved in zero knowledge** | 22,555 bytes of re-encrypted deck and proof in one call, accepted by the contract (221 Tgas, 0.021 NEAR) | [`HucKM9wP…`](https://nearblocks.io/txns/HucKM9wPjKYhhSAtAec7rvDvnKRfnSjNT5CJ9ypHaRWG) |
+| **Free play: a guest moves holding no NEAR** | A `play` the guest signed as a delegate action (NEP-366), sent and paid by `free.deedlords.near` (4.3 Tgas, 0.0004 NEAR) | [`2jesymTA…`](https://nearblocks.io/txns/2jesymTABFtwPkeVX29Sc6DFhFvWQX9Rq2jyEAhTcLUx) |
+| **AI agent: a move signed in a TEE** | A whole `turn` planned by `Qwen/Qwen3.6-35B-A3B-FP8` on NEAR AI Cloud, with the enclave's signature in the arguments | [`2af7dAbW…`](https://nearblocks.io/txns/2af7dAbW4rBsDSKKhXAdyTXB35FrxcoXttPiE2swuXEc) |
+| **Staked match: the contract pays the winners** | The last `play` of a 2-seat staked match: `settle`, 0.0756 and 0.0700 NEAR sent to the two backers, and a Deed NFT minted, all in the same transaction | [`Ci1p7yj2…`](https://nearblocks.io/txns/Ci1p7yj2tqF3LXhMNrEjAYQbyuk416u6zcNPVXi3TADJ) |
+| **Poker: dealing** | `deal`: one seat's decryption shares for the other seats' hole cards (11.3 Tgas) | [`u8qsqkEh…`](https://nearblocks.io/txns/u8qsqkEhcLH48ZCDy4UzZeeumtHagrrNAoYtZno1b9f) |
+| **Poker: betting** | `act`: a bet, which the contract checks against the table's rules before taking it (2.5 Tgas) | [`7kKCsk3D…`](https://nearblocks.io/txns/7kKCsk3DvHYSWVHCBUu856DK3QgzUqKaMnXhrfFyo8eK) |
+| **Poker: a card turned face up** | `open`: one seat's shares for a street's board cards, each with the proof the contract checks (15.7 Tgas) | [`GybkF3CT…`](https://nearblocks.io/txns/GybkF3CTMckGPKeHpGEfCS5PUTBqsRYTt2T1Ba35RuCD) |
+| **Poker: showdown and payout** | `show` at a staked table: the last hole cards are opened, the contract ranks the hands and pays 0.2 NEAR out in the same transaction | [`4ZETZvTJ…`](https://nearblocks.io/txns/4ZETZvTJjx5cPC5qMKp7KUHaF9TyyF3mSGtgY6Rpqr57) |
+| **Poker: a seat that stops answering** | `timeout`, which anyone may send once a seat's deadline has passed; here 0.246 NEAR went back to the sponsor in the same transaction | [`AnNomF9V…`](https://nearblocks.io/txns/AnNomF9ViTnkMhJQhA851cFDm65huifVpvPHa5xZXTFU) |
+| **Board game: an AI seat plays a whole turn in one transaction** | The house agent's `turn` that ends a free match: `settle` and a Deed NFT minted | [`C29pnjL6…`](https://nearblocks.io/txns/C29pnjL6PmPcqmu4VoNNXSSZEHxU1hazM4VP2ZNYa4dR) |
+| **Board game: a table everyone left is closed** | `close`, called 15 minutes after the last move: ranked by net worth, settled, Deed minted, the storage deposit refunded | [`5mjyeJYq…`](https://nearblocks.io/txns/5mjyeJYqZzCUJQpuZpz7ypDRkukumL9dim7TTqGs3pmp) |
+| **Board game: the sponsor opens a free table** | `create_match` and `join` in one transaction, paid by `free.deedlords.near` | [`3V7W51C6…`](https://nearblocks.io/txns/3V7W51C6M6emfk4edvY1nJaJVgVCEqRYCxxCr75TfRNf) |
+| **Characters: made free, as NEP-171 tokens** | `create_character`, paid by the sponsor: `character_created` and `nft_mint` | [`5uuxPUk2…`](https://nearblocks.io/txns/5uuxPUk2XTJducc98i71mR2aAoUFTRJQ5vB3X4KvGJpi) |
+| **Characters: a box bought with NEAR** | `buy_box` with 0.1 NEAR attached: `box_opened` and the item minted | [`EWv7u3ym…`](https://nearblocks.io/txns/EWv7u3ym7c9Zz4tHzo53EHaoG18feSr6UJk9BwmhGoN5) |
+| **Characters: an item worn** | `equip` | [`65PRLe16…`](https://nearblocks.io/txns/65PRLe16mkDqzKtuvjk5xC2suGDXTBPZGjMdwhxgLK4w) |
+| **NEAR Intents (1Click): money from another chain** | 0.000546 ETH sent from an Arbitrum wallet to a 1Click deposit address; 0.29 NEAR delivered to the game account | [`0x089a902b…`](https://arbiscan.io/tx/0x089a902bce51fb3caf24376080a74c94556b1c5d02cb222fd6def95f9c58e774) then [`98PnDJ3r…`](https://nearblocks.io/txns/98PnDJ3rS5w1BmD583VMXzPsSxb29SgwVkd3PYdMFDb7) |
+| **…and the NEAR staked at once** | Nine seconds after that NEAR arrived, the same account opened a staked poker table with 0.102 NEAR attached | [`3RP7EHTQ…`](https://nearblocks.io/txns/3RP7EHTQhxtN4WnKAXYmYVEWTc9YvxtXSFny1oQcTyM3) |
+| **Upgrade that keeps every match** | The board-game contract replaced in place on mainnet (590,426 bytes), no `migrate`, state kept | [`4DGjbAEo…`](https://nearblocks.io/txns/4DGjbAEo2cLY5Mz7ALJ3A8Pd8wvT6oN3rBLrmKCk16X2) |
+
+The explorer answers a script with HTTP 403. In a terminal, `npm run check:live` reads the first four from public RPC
+nodes, and section 5 has a `curl` that asks 1Click itself about the swaps.
+
 
 ## Tracks
 
@@ -94,7 +112,7 @@ Each row quotes the track's brief. A "no" is said here first, because a reader f
 | "economies that evolve without a dev patch" | Inside a match, yes: who owns what, every rent, every mortgage and every bankruptcy is decided by the contract's rules and the players' moves, and a match keeps the fee and the rules it was opened with. Between matches nothing carries over yet | `get_match` on `game.deedlords.near` |
 | "Judged on the game loop, not the token" | There is no token. Every few seconds: a bet, or a roll and a purchase. Every few minutes: a hand or a match is settled and paid by the contract. Every session: a character, an agent with instructions of your own, a stake | steps 1 to 5 above |
 | "bonus if players never notice the chain" | A guest has no wallet, no seed phrase and no NEAR, and no pop-up opens for a move. About 2 s a move, measured on testnet | steps 1 to 3; the guest's relayed move in the table of transactions |
-| Hints: agent NPCs, social login, NEAR Intents, NEP-245 | Agent NPCs: yes, on NEAR AI Cloud. Social login: Google through NEAR Auth is built and runs on localhost only; the public sites offer a guest account or one signature of an EVM wallet. NEAR Intents: 1Click quotes and the wallet payment for a missing stake, and NEAR in or out of a game account from `/account` (no swap with real funds completed yet; [section 5](#5-money-from-any-chain-near-intents-1click)). NEP-245: not used; the tokens are NEP-171 | "Known limits" |
+| Hints: agent NPCs, social login, NEAR Intents, NEP-245 | Agent NPCs: yes, on NEAR AI Cloud. Social login: Google through NEAR Auth is built and runs on localhost only; the public sites offer a guest account or one signature of an EVM wallet. NEAR Intents: 1Click quotes and the wallet payment for a missing stake, and NEAR in or out of a game account from `/account`. Three real top-ups, ETH on Arbitrum to NEAR, are in [section 5](#5-money-from-any-chain-near-intents-1click). NEP-245: not used; the tokens are NEP-171 | "Known limits" |
 
 ### `privacy`: Privacy & Private AI
 
@@ -270,10 +288,31 @@ On 2026-11-14 it answered `"amountInFormatted":"3.123294"` (USDC on Base) for `"
 `"timeEstimate":37` (seconds), `"live":false` and `"depositAddress":null`. In the browser the same price is on the
 testnet site's `/account` under **Other chains**, with the line "A price only: on testnet there is nothing to send."
 
-What is not done. The team has not completed a swap with real funds, in either direction: quotes are live on the
-mainnet site, the wallet request is tested against a simulated wallet (`tests/evm-pay.test.ts` and
-`tests/oneclick.test.ts`, nine tests), and the reading of a swap's status is written from 1Click's documentation, not
-from a swap we watched. No partner key is set on the public sites, so 1Click charges what it charges a request without
+With real funds. Three top-ups have gone through the mainnet site: ETH on Arbitrum became NEAR on one game account
+(`16c3b293…79b9`), each with `swapType: "EXACT_OUTPUT"`, the referral `deedlords-club` and a refund address on
+Arbitrum, and 1Click reports `SUCCESS` for all three. Each deposit carried a little more ETH than the swap used (the
+quote leaves room for 1% of slippage), and 1Click sent that back:
+
+| When (UTC) | Sent on Arbitrum | Delivered on NEAR | Deposit | Delivery | Change returned |
+|---|---|---|---|---|---|
+| 2026-11-13 09:17 | 0.000461 ETH | 0.25 NEAR | [`0x360faf4a…`](https://arbiscan.io/tx/0x360faf4ad02bcaed634364960a3b1250473136fe624f048639e63acf894d503b) | [`5gYybKCG…`](https://nearblocks.io/txns/5gYybKCGNV7uhk3yjZitxFv4RMLPosUXhWyrj5QUxHQg) | [`0xa493641d…`](https://arbiscan.io/tx/0xa493641d2170f37234b3f2dc12740396166b5830ac039016f324f1eb94d658a1) |
+| 2026-11-13 10:37 | 0.000561 ETH | 0.31 NEAR | [`0xa8b55f8c…`](https://arbiscan.io/tx/0xa8b55f8cdfba26f84681dab5aab7e97824b3fbb95b02dc376aeefb4fcc6be591) | [`9evCJN6M…`](https://nearblocks.io/txns/9evCJN6MkHTN1HnSh1tmcn3zVAA1Be3W8QCc3VZ2J2Ew) | [`0xc5661669…`](https://arbiscan.io/tx/0xc5661669474d4dc02f4ed0a6b7e4365bd38464156db7c472ca023008191e3783) |
+| 2026-11-18 09:32 | 0.000546 ETH | 0.29 NEAR | [`0x089a902b…`](https://arbiscan.io/tx/0x089a902bce51fb3caf24376080a74c94556b1c5d02cb222fd6def95f9c58e774) | [`98PnDJ3r…`](https://nearblocks.io/txns/98PnDJ3rS5w1BmD583VMXzPsSxb29SgwVkd3PYdMFDb7) | [`0x7c229897…`](https://arbiscan.io/tx/0x7c2298971c28175ae1a642c4b2fb0eb70ac1b15a2933500f7da2327ff8423048) |
+
+Nine seconds after the last delivery, the same account opened a staked poker table with that NEAR
+([`3RP7EHTQ…`](https://nearblocks.io/txns/3RP7EHTQhxtN4WnKAXYmYVEWTc9YvxtXSFny1oQcTyM3), 0.102 NEAR attached). 1Click answers about any of them with no key:
+
+```bash
+curl -s "https://1click.chaindefuser.com/v0/status?depositAddress=0xecD94ff44eca5732417477b836E6cD32aA374b58"
+```
+
+It returns `"status":"SUCCESS"`, the quote request as this site sent it, and the transaction hashes above. These
+lines were added on 2026-11-18, after the submission deadline, and the code is the one submitted. The README of the
+submission said no real swap had been made; the first two above already had.
+
+What is not done. Nothing has gone the other way (NEAR out to another chain) with real funds, and the three swaps
+above are all ETH on Arbitrum. The wallet request is also tested against a simulated wallet (`tests/evm-pay.test.ts`
+and `tests/oneclick.test.ts`, nine tests). No partner key is set on the public sites, so 1Click charges what it charges a request without
 one (0.25% on top of the protocol's 0.0001%, by its [fee page](https://docs.near-intents.org/resources/fees));
 `ONECLICK_JWT` on the server would switch to the partner rate. NEAR Intents is not used inside a game: pots and
 payouts are NEAR, and a winner who wants another chain goes through `/account` after the payout (Roadmap 2).
@@ -388,8 +427,8 @@ payment from the player's wallet, and NEAR in or out of a game account from `/ac
 - **No outside review.** The shuffle verifier, the poker contract and the board-game contract were written and tested
   during the hackathon and have not been audited. The largest stake the board game takes is capped at 1 NEAR.
 - **Collusion at a poker table** (two seats sharing their cards off chain) is outside what any contract can see.
-- **1Click with real funds:** quotes are live and the payment request was tested against a simulated wallet. As of
-  2026-11-14 the team has not completed a real cross-chain swap through it, in either direction.
+- **1Click with real funds:** three real top-ups, all ETH on Arbitrum into NEAR (section 5). Nothing has been sent out
+  to another chain with real funds yet.
 - **Google sign-in** runs on localhost only, as said above.
 - **The sponsor's balance is finite.** A free poker hand for two seats costs it about 0.07 NEAR, nearly all for
   checking shuffles, and the cost grows with the table: at nine seats the nine shuffles alone are about 0.19 NEAR a
